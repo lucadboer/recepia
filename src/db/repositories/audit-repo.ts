@@ -19,6 +19,12 @@ export interface AuditEntry {
 export async function appendAudit(q: Pool | PoolClient, entry: AuditEntry): Promise<void> {
   await q.query(
     "INSERT INTO audit_log (entity, entity_id, action, actor, payload) VALUES ($1, $2, $3, $4, $5)",
-    [entry.entity, entry.entityId, entry.action, entry.actor, JSON.stringify(entry.payload ?? null)],
+    [
+      entry.entity,
+      entry.entityId,
+      entry.action,
+      entry.actor,
+      JSON.stringify(entry.payload ?? null),
+    ],
   );
 }

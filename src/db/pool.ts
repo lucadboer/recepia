@@ -6,5 +6,5 @@ export function makePool(connectionString: string | undefined = process.env.DATA
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
   }
-  return new pg.Pool({ connectionString });
+  return new pg.Pool({ connectionString, max: 20 });
 }

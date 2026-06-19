@@ -1,6 +1,6 @@
 import { migrate } from "../../src/db/migrate";
-import { makePool } from "../../src/db/pool";
 import type { Pool } from "../../src/db/pool";
+import { makePool } from "../../src/db/pool";
 
 export function testPool(): Pool {
   return makePool();
@@ -12,7 +12,9 @@ export async function ensureSchema(pool: Pool): Promise<void> {
 
 /** Clear all mutable + capacity tables so each test starts clean. */
 export async function resetDb(pool: Pool): Promise<void> {
-  await pool.query("TRUNCATE booking, audit_log, capacity_rule, capacity_override RESTART IDENTITY");
+  await pool.query(
+    "TRUNCATE booking, audit_log, capacity_rule, capacity_override RESTART IDENTITY",
+  );
 }
 
 export async function seedRule(
@@ -48,4 +50,35 @@ export async function countActiveHolds(pool: Pool, start: Date, now: Date): Prom
     [start, now],
   );
   return rows[0].n;
+}
+
+const SLOT_MS = 30 * 60 * 1000;
+
+export async function seedConfirmed(
+  pool: Pool,
+  startIso: string,
+  phone = "+550000",
+): Promise<void> {
+  const start = new Date(startIso);
+  const end = new Date(start.getTime() + SLOT_MS);
+  await pool.query(
+    `INSERT INTO booking (patient_phone, patient_name, appointment_type, start_ts, end_ts, status, google_event_id, created_via, consent_at)
+     VALUES ($1, 'Teste', 'cleaning', $2, $3, 'confirmed', $4, 'ai', now())`,
+    [phone, start, end, `evt_${phone}_${startIso}`],
+  );
+}
+
+export async function seedHeld(
+  pool: Pool,
+  startIso: string,
+  phone: string,
+  expiresAt: Date,
+): Promise<void> {
+  const start = new Date(startIso);
+  const end = new Date(start.getTime() + SLOT_MS);
+  await pool.query(
+    `INSERT INTO booking (patient_phone, appointment_type, start_ts, end_ts, status, expires_at, created_via)
+     VALUES ($1, 'cleaning', $2, $3, 'held', $4, 'ai')`,
+    [phone, start, end, expiresAt],
+  );
 }

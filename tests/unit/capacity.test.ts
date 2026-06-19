@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { capacityFor } from "../../src/domain/capacity";
 import type { CapacityOverrideRow, CapacityRuleRow } from "../../src/db/repositories/capacity-repo";
+import { capacityFor } from "../../src/domain/capacity";
 
 const rules: CapacityRuleRow[] = [
   { weekday: 1, startTime: "09:00", endTime: "18:00", capacity: 2 },

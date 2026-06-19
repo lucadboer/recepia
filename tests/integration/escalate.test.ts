@@ -2,8 +2,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
-import type { Deps } from "../../src/deps";
 import type { Pool } from "../../src/db/pool";
+import type { Deps } from "../../src/deps";
 import { escalateToHuman } from "../../src/tools/escalate-to-human";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
 

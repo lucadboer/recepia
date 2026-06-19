@@ -1,6 +1,6 @@
 import { loadEnv } from "./env";
-import { makePool } from "./pool";
 import type { Pool } from "./pool";
+import { makePool } from "./pool";
 
 /** Demo capacity: Mon–Fri 09:00–18:00, capacity 2. Idempotent (replaces rules). */
 export async function seed(pool: Pool = makePool()): Promise<void> {
