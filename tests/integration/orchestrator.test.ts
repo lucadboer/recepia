@@ -1,0 +1,201 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FakeLLM, finalTurn, toolUse, toolUseTurn } from "../../src/adapters/fakes/fake-llm";
+import { recordConsent } from "../../src/agent/consent";
+import { handleInbound } from "../../src/agent/orchestrator";
+import { TOOL_NAMES } from "../../src/agent/tool-schemas";
+import type { InboundMessage } from "../../src/agent/types";
+import { AGENT_MAX_ITERATIONS } from "../../src/config";
+import type { Pool } from "../../src/db/pool";
+import type { LLMPort } from "../../src/ports/llm-port";
+import { AGENT_NOW, DAY_END, lastHoldId, makeAgent, RECEPTION } from "../helpers/agent";
+import {
+  countAudit,
+  ensureSchema,
+  resetDb,
+  seedConfirmed,
+  seedRule,
+  testPool,
+} from "../helpers/db";
+
+const PHONE = "+55pac";
+const FIRST_SLOT = "2026-06-15T14:00:00.000Z"; // 11:00 local = now+2h
+
+let pool: Pool;
+
+beforeAll(async () => {
+  pool = testPool();
+  await ensureSchema(pool);
+});
+afterAll(async () => {
+  await pool.end();
+});
+beforeEach(async () => {
+  await resetDb(pool);
+  await seedRule(pool, { weekday: 1, startTime: "09:00", endTime: "18:00", capacity: 2 });
+});
+
+function inbound(text: string, id = "m1"): InboundMessage {
+  return { phone: PHONE, text, providerMessageId: id };
+}
+async function bookingCount(): Promise<number> {
+  const { rows } = await pool.query("SELECT count(*)::int AS n FROM booking");
+  return rows[0].n;
+}
+
+describe("orchestrator — behavioral (assert tool side-effects, not LLM text)", () => {
+  it("books end-to-end: availability -> hold -> confirm (1 event, consent stamped)", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Confirmado! Até breve."),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("replied");
+    expect(h.calendar.createdCount).toBe(1);
+    expect(h.messaging.sent.some((m) => m.to === PHONE)).toBe(true);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    const { rows } = await pool.query(
+      "SELECT consent_at, created_via FROM booking WHERE patient_phone = $1 AND status = 'confirmed'",
+      [PHONE],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].consent_at).not.toBeNull();
+    expect(rows[0].created_via).toBe("ai");
+  });
+
+  it("LLM-never-writes: an unknown/hostile tool produces zero writes", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(toolUse("writeBooking", { sql: "DROP TABLE booking" })),
+      finalTurn("ok"),
+    ]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("oi"));
+    expect(h.calendar.createdCount).toBe(0);
+    expect(await bookingCount()).toBe(0);
+  });
+
+  it("confirm requires a hold created in this conversation (no event for a foreign holdId)", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.confirm, {
+          hold_id: "00000000-0000-0000-0000-000000000000",
+          patient_name: "Intruso",
+        }),
+      ),
+      finalTurn("ok"),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE); // pass the consent gate so guardrail-3 is what blocks
+    await handleInbound(h.deps, inbound("pode confirmar"));
+    expect(h.calendar.createdCount).toBe(0);
+  });
+
+  it("slots only come from get_availability (holding a never-offered slot writes nothing)", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      finalTurn("ok"),
+    ]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("quero marcar"));
+    expect(await bookingCount()).toBe(0);
+  });
+
+  it("deterministic triage escalates WITHOUT calling the LLM", async () => {
+    const llm = new FakeLLM([]); // would throw if ever called
+    const h = makeAgent(pool, llm);
+    const r = await handleInbound(h.deps, inbound("estou com muita dor"));
+    expect(r.status).toBe("escalated");
+    expect(llm.callCount).toBe(0);
+    expect(await countAudit(pool, "escalated")).toBe(1);
+    expect(h.messaging.sent.some((m) => m.to === RECEPTION)).toBe(true);
+    expect(h.messaging.sent.some((m) => m.to === PHONE)).toBe(true);
+    expect(await bookingCount()).toBe(0);
+  });
+
+  it("bounds the loop at MAX_ITERATIONS, then escalates", async () => {
+    const script = Array.from({ length: AGENT_MAX_ITERATIONS + 2 }, () =>
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+    );
+    const llm = new FakeLLM(script);
+    const h = makeAgent(pool, llm);
+    const r = await handleInbound(h.deps, inbound("quero marcar"));
+    expect(r.status).toBe("max_iterations");
+    expect(llm.callCount).toBe(AGENT_MAX_ITERATIONS);
+    expect(await countAudit(pool, "escalated")).toBe(1);
+    expect(await bookingCount()).toBe(0);
+  });
+
+  it("is idempotent for a duplicate providerMessageId", async () => {
+    const llm = new FakeLLM([finalTurn("olá")]);
+    const h = makeAgent(pool, llm);
+    const r1 = await handleInbound(h.deps, inbound("oi", "dup-1"));
+    const r2 = await handleInbound(h.deps, inbound("oi", "dup-1"));
+    expect(r1.status).toBe("replied");
+    expect(r2.status).toBe("noop");
+    expect(h.messaging.sent.filter((m) => m.to === PHONE)).toHaveLength(1);
+    expect(llm.callCount).toBe(1);
+  });
+
+  it("recovers from a tool error (slot taken) by holding an alternative", async () => {
+    let step = 0;
+    const racing: LLMPort = {
+      async turn(i) {
+        step++;
+        if (step === 1)
+          return toolUseTurn(
+            toolUse(TOOL_NAMES.availability, {
+              from: AGENT_NOW.toISOString(),
+              to: DAY_END,
+              type: "cleaning",
+            }),
+          );
+        if (step === 2) {
+          // the offered 14:00 slot fills up before we hold it
+          await seedConfirmed(pool, FIRST_SLOT, "+55x", 0);
+          await seedConfirmed(pool, FIRST_SLOT, "+55y", 1);
+          return toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" }));
+        }
+        if (step === 3)
+          return toolUseTurn(
+            toolUse(TOOL_NAMES.hold, { start: "2026-06-15T14:30:00.000Z", type: "cleaning" }),
+          );
+        if (step === 4)
+          return toolUseTurn(
+            toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+          );
+        return finalTurn("Confirmado no horário alternativo!");
+      },
+    };
+    const h = makeAgent(pool, racing);
+    await recordConsent(h.deps, PHONE);
+    const r = await handleInbound(h.deps, inbound("quero marcar"));
+    expect(r.status).toBe("replied");
+    expect(h.calendar.createdCount).toBe(1);
+    const { rows } = await pool.query(
+      "SELECT start_ts FROM booking WHERE patient_phone = $1 AND status = 'confirmed'",
+      [PHONE],
+    );
+    expect(rows).toHaveLength(1);
+    expect(new Date(rows[0].start_ts).toISOString()).toBe("2026-06-15T14:30:00.000Z");
+  });
+});

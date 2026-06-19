@@ -27,3 +27,19 @@ export class CalendarWriteError extends Error {
     this.name = "CalendarWriteError";
   }
 }
+
+/** A real adapter was used without its credentials (needs-creds boundary). */
+export class NotConfigured extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NotConfigured";
+  }
+}
+
+/** The LLM tool-use loop hit its safety cap without finishing. */
+export class MaxIterationsExceeded extends Error {
+  constructor(message = "Limite de iterações da conversa excedido.") {
+    super(message);
+    this.name = "MaxIterationsExceeded";
+  }
+}

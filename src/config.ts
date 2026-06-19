@@ -18,6 +18,9 @@ export const HORIZON_DAYS = 30; // book at most 30 days ahead
 export const CALENDAR_MAX_ATTEMPTS = 3;
 export const CALENDAR_RETRY_BASE_MS = 25;
 
+// Safety cap on the LLM tool-use loop. TODO(product): tune final value (NEEDS-USER).
+export const AGENT_MAX_ITERATIONS = 8;
+
 export const ROUTINE_TYPES = ["evaluation", "cleaning", "follow_up", "consultation"] as const;
 export type AppointmentType = (typeof ROUTINE_TYPES)[number];
 

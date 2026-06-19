@@ -33,3 +33,19 @@ export function classifyIntent(text: string): Intent {
   if (GREETING.some((p) => p.test(n))) return "greeting";
   return "other";
 }
+
+const AFFIRMATIVE = [
+  /\bsim\b/,
+  /\bautorizo\b/,
+  /\bconcordo\b/,
+  /\baceito\b/,
+  /\bpode sim\b/,
+  /\bclaro\b/,
+  /\bisso\b/,
+];
+
+/** Used only to capture an opt-in reply when the orchestrator is awaiting consent. */
+export function isAffirmative(text: string): boolean {
+  const n = normalize(text);
+  return AFFIRMATIVE.some((p) => p.test(n));
+}

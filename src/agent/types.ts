@@ -18,6 +18,7 @@ export interface ConversationState {
   lastConfirmedBookingId: string | null;
   processedInboundIds: string[];
   patientName: string | null;
+  awaitingConsent: boolean; // set when confirm was blocked pending opt-in
   updatedAt: Date;
 }
 

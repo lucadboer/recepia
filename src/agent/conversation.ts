@@ -13,8 +13,17 @@ export function emptyState(phone: string, now: Date): ConversationState {
     lastConfirmedBookingId: null,
     processedInboundIds: [],
     patientName: null,
+    awaitingConsent: false,
     updatedAt: now,
   };
+}
+
+export function setAwaitingConsent(
+  s: ConversationState,
+  awaiting: boolean,
+  now: Date,
+): ConversationState {
+  return { ...s, awaitingConsent: awaiting, updatedAt: now };
 }
 
 export function appendMessage(s: ConversationState, m: LlmMessage, now: Date): ConversationState {
