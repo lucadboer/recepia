@@ -54,5 +54,5 @@ Anthropic key+model (see `claude-api` skill), Google Calendar creds, WhatsApp Ev
 - [ ] T221 Finalize the LGPD legal opt-in/opt-out wording in the consent flow (`consent.ts`/`reply.ts`), per FR-205, Constitution V / spec [DEFERRED] legal copy (partial; `TODO(legal)` placeholder)
 - [ ] T222 Define and implement LGPD retention/finalidade + a purge job for `conversation_state` and `patient_consent`, per Constitution V / spec [DEFERRED] retention (missing; no purge job)
 - [ ] T223 Define the escalation routing policy (single number vs queue, business hours, hand-off tone) and wire it into `escalateToHuman`/reception notification, per FR-204 / spec [DEFERRED] routing (partial; escalation fires, routing target undecided)
-- [ ] T224 Webhook hosting: an HTTP entrypoint that verifies the provider signature, edge-dedupes, and calls `handleInbound` (deploy target), per FR-207, US1 / spec [DEFERRED] hosting (missing)
+- [x] T224 Webhook hosting: an HTTP entrypoint that verifies the provider signature, edge-dedupes, and calls `handleInbound` (deploy target), per FR-207, US1 / spec [DEFERRED] hosting (missing)
 - [ ] T225 Set the final `AGENT_MAX_ITERATIONS`/per-conversation timeout (currently default 8) as a product/safety decision, per FR-206, SC-204 / spec [DEFERRED] (partial; sensible default in place, SC-204 bound already satisfied)
