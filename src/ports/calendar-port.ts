@@ -18,4 +18,6 @@ export interface CreateEventResult {
  */
 export interface CalendarPort {
   createEvent(input: CreateEventInput): Promise<CreateEventResult>;
+  /** Best-effort compensation: remove an event by its idempotency key (booking id). */
+  deleteEvent(idempotencyKey: string): Promise<void>;
 }

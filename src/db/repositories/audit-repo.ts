@@ -1,10 +1,11 @@
-import type { Pool, PoolClient } from "../pool";
+import type { PoolClient } from "../pool";
 
 export type AuditAction =
   | "hold_created"
   | "hold_expired"
   | "hold_released"
   | "booking_confirmed"
+  | "calendar_orphan_compensated"
   | "escalated";
 
 export interface AuditEntry {
@@ -15,8 +16,8 @@ export interface AuditEntry {
   payload: unknown;
 }
 
-/** Append-only. Pass the same client used by the surrounding transaction. */
-export async function appendAudit(q: Pool | PoolClient, entry: AuditEntry): Promise<void> {
+/** Append-only. Requires the client of the surrounding transaction (same-tx atomicity). */
+export async function appendAudit(q: PoolClient, entry: AuditEntry): Promise<void> {
   await q.query(
     "INSERT INTO audit_log (entity, entity_id, action, actor, payload) VALUES ($1, $2, $3, $4, $5)",
     [

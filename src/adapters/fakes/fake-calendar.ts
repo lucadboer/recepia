@@ -7,6 +7,7 @@ import type { CalendarPort, CreateEventInput, CreateEventResult } from "../../po
  */
 export class FakeCalendar implements CalendarPort {
   readonly events = new Map<string, { eventId: string; input: CreateEventInput }>();
+  readonly deleted: string[] = [];
   createdCount = 0;
   attempts = 0;
   failTimes = 0;
@@ -25,5 +26,10 @@ export class FakeCalendar implements CalendarPort {
     this.events.set(input.idempotencyKey, { eventId, input });
     this.createdCount++;
     return { eventId };
+  }
+
+  async deleteEvent(idempotencyKey: string): Promise<void> {
+    this.deleted.push(idempotencyKey);
+    if (this.events.delete(idempotencyKey)) this.createdCount--;
   }
 }

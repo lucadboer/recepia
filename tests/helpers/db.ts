@@ -10,11 +10,22 @@ export async function ensureSchema(pool: Pool): Promise<void> {
   await migrate(pool);
 }
 
-/** Clear all mutable + capacity tables so each test starts clean. */
+/**
+ * Clear all mutable + capacity tables so each test starts clean. audit_log is
+ * append-only (UPDATE/DELETE/TRUNCATE blocked by triggers), so we disable user
+ * triggers on it for the truncate as the table owner, then re-enable them.
+ */
 export async function resetDb(pool: Pool): Promise<void> {
-  await pool.query(
-    "TRUNCATE booking, audit_log, capacity_rule, capacity_override RESTART IDENTITY",
-  );
+  const client = await pool.connect();
+  try {
+    await client.query("ALTER TABLE audit_log DISABLE TRIGGER USER");
+    await client.query(
+      "TRUNCATE booking, audit_log, capacity_rule, capacity_override RESTART IDENTITY",
+    );
+  } finally {
+    await client.query("ALTER TABLE audit_log ENABLE TRIGGER USER").catch(() => {});
+    client.release();
+  }
 }
 
 export async function seedRule(

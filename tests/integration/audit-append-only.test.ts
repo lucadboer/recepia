@@ -25,6 +25,7 @@ describe("audit_log is append-only (DB-enforced)", () => {
       /append-only/,
     );
     await expect(pool.query("DELETE FROM audit_log")).rejects.toThrow(/append-only/);
+    await expect(pool.query("TRUNCATE audit_log")).rejects.toThrow(/append-only/);
 
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM audit_log");
     expect(rows[0].n).toBe(1);

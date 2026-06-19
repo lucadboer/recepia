@@ -1,0 +1,115 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FakeClock } from "../../src/adapters/fakes/fake-clock";
+import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
+import type { Pool } from "../../src/db/pool";
+import { getById } from "../../src/db/repositories/booking-repo";
+import type { Deps } from "../../src/deps";
+import { HoldExpiredError } from "../../src/domain/errors";
+import type { CalendarPort } from "../../src/ports/calendar-port";
+import { confirmBooking } from "../../src/tools/confirm-booking";
+import { holdSlot } from "../../src/tools/hold-slot";
+import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+
+const NOW = new Date("2026-06-15T12:00:00Z");
+const SLOT = new Date("2026-06-15T14:00:00Z");
+const RECEPTION = "+5511999999999";
+const PATIENT = { phone: "+55a", name: "Maria" };
+
+// A calendar whose createEvent succeeds (so an event IS written), but is harmless
+// for placing the hold first.
+const inertCalendar: CalendarPort = {
+  async createEvent() {
+    return { eventId: "x" };
+  },
+  async deleteEvent() {},
+};
+
+let pool: Pool;
+
+beforeAll(async () => {
+  pool = testPool();
+  await ensureSchema(pool);
+});
+afterAll(async () => {
+  await pool.end();
+});
+beforeEach(async () => {
+  await resetDb(pool);
+  await seedRule(pool, { weekday: 1, startTime: "09:00", endTime: "18:00", capacity: 2 });
+});
+
+function depsWith(calendar: CalendarPort, messaging: FakeMessaging): Deps {
+  return { pool, clock: new FakeClock(NOW), calendar, messaging, receptionPhone: RECEPTION };
+}
+
+describe("confirm_booking — orphan-event compensation", () => {
+  it("deletes the event, escalates, and throws when the hold vanishes after the event is written", async () => {
+    const messaging = new FakeMessaging();
+    const hold = await holdSlot(
+      depsWith(inertCalendar, messaging),
+      { start: SLOT, type: "cleaning" },
+      PATIENT,
+    );
+
+    const deleted: string[] = [];
+    // Race: while writing the event, the hold gets swept/expired in the DB.
+    const racingCalendar: CalendarPort = {
+      async createEvent(input) {
+        await pool.query(
+          "UPDATE booking SET status='expired', expires_at=NULL WHERE id=$1 AND status='held'",
+          [input.idempotencyKey],
+        );
+        return { eventId: "evt_orphan" };
+      },
+      async deleteEvent(key) {
+        deleted.push(key);
+      },
+    };
+
+    await expect(
+      confirmBooking(depsWith(racingCalendar, messaging), hold.id, PATIENT),
+    ).rejects.toBeInstanceOf(HoldExpiredError);
+
+    expect(deleted).toContain(hold.id); // orphan event compensated
+    expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1); // escalated
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0); // no patient confirmation
+
+    const booking = await getById(pool, hold.id);
+    expect(booking?.status).toBe("expired");
+    expect(booking?.googleEventId).toBeNull();
+    expect(await countAudit(pool, "calendar_orphan_compensated")).toBe(1);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(0);
+  });
+
+  it("returns idempotently and keeps the event when a concurrent confirm already won", async () => {
+    const messaging = new FakeMessaging();
+    const hold = await holdSlot(
+      depsWith(inertCalendar, messaging),
+      { start: SLOT, type: "cleaning" },
+      PATIENT,
+    );
+
+    const deleted: string[] = [];
+    const WINNER_EVENT = "evt_winner";
+    // Race: another confirm wins (marks the booking confirmed with the same event id).
+    const racingCalendar: CalendarPort = {
+      async createEvent(input) {
+        await pool.query(
+          "UPDATE booking SET status='confirmed', google_event_id=$2, consent_at=now(), expires_at=NULL WHERE id=$1 AND status='held'",
+          [input.idempotencyKey, WINNER_EVENT],
+        );
+        return { eventId: WINNER_EVENT };
+      },
+      async deleteEvent(key) {
+        deleted.push(key);
+      },
+    };
+
+    const result = await confirmBooking(depsWith(racingCalendar, messaging), hold.id, PATIENT);
+
+    expect(result.status).toBe("confirmed");
+    expect(result.googleEventId).toBe(WINNER_EVENT);
+    expect(deleted).toHaveLength(0); // must NOT delete the winner's event
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0); // winner already messaged
+  });
+});
