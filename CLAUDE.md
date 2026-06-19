@@ -58,9 +58,9 @@ Detalhes completos na [constituição](.specify/memory/constitution.md). Cumprir
 - Ao referenciar arquivos em respostas, use links markdown clicáveis `[texto](caminho)`.
 
 <!-- SPECKIT START -->
-**Active feature**: `001-autonomous-routine-booking` — deterministic booking foundation (US1: autonomous routine booking, no overbooking). Plan: [specs/001-autonomous-routine-booking/plan.md](specs/001-autonomous-routine-booking/plan.md).
+**Active feature**: `002-conversational-orchestration` — Claude tool-use orchestrator over the (done) deterministic tools of 001. Plan: [specs/002-conversational-orchestration/plan.md](specs/002-conversational-orchestration/plan.md). Feature 001 (deterministic booking foundation, no overbooking) is complete.
 
-Stack (this slice): TypeScript on Node 20+, **pnpm** (via Corepack) as package manager + **tsx** for TS scripts, PostgreSQL via `pg` (per-slot advisory-lock holds), **Vitest** (incl. the mandatory concurrency test). Google Calendar and WhatsApp sit behind ports (`CalendarPort`, `MessagingPort`, `Clock`) with in-memory fakes. **No LLM in this slice** — only the deterministic tools write. Dependency policy (always latest via `pnpm add`, audited, HTTPS registry): [CONTRIBUTING.md](CONTRIBUTING.md).
+Stack: TypeScript on Node 20+, **pnpm** (via Corepack) + **tsx**, PostgreSQL via `pg`, **Vitest**. The LLM proposes; the deterministic 001 tools remain the **only writers** ("A LLM nunca escreve" — enforced structurally by 3 gates). LLM/Calendar/WhatsApp sit behind ports (`LLMPort`, `CalendarPort`, `MessagingPort`, `Clock`) with in-memory fakes; real adapters are needs-creds scaffolds. The conversation layer is validated by **behavioral tests over the tools it calls, not LLM text**. Dependency policy: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-For full technical context, project structure, and commands, read the plan plus its `research.md`, `data-model.md`, and `contracts/`.
+For full technical context, read the 002 plan plus `spec.md`, `data-model.md`, and `contracts/`; the deterministic surface lives under specs/001.
 <!-- SPECKIT END -->
