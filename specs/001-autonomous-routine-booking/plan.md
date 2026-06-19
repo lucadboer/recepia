@@ -10,7 +10,7 @@ Build the **deterministic booking foundation** for User Story 1: a patient asks 
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.x on Node 20+ (package manager & script runner: **Bun**)
+**Language/Version**: TypeScript 6.x on Node 20+ (package manager: **pnpm** via Corepack; TS scripts run via **tsx**). Dependencies are installed at latest via `pnpm add` and audited (`pnpm audit`, zero HIGH/CRITICAL) — see [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 **Primary Dependencies**: `pg` (node-postgres) for Postgres access with explicit transactions + advisory locks; Vitest as test framework. No LLM SDK, no Google/WhatsApp SDK in this slice — integrations are behind ports with fakes.
 

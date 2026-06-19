@@ -4,25 +4,32 @@
   "private": true,
   "type": "module",
   "description": "Autonomous routine dental appointment booking — deterministic foundation (feature 001)",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
-    "migrate": "bun run src/db/migrate.ts",
-    "seed": "bun run src/db/seed.ts",
+    "migrate": "tsx src/db/migrate.ts",
+    "seed": "tsx src/db/seed.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:concurrency": "vitest run tests/concurrency",
+    "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write ."
   },
   "dependencies": {
-    "pg": "^8.13.1"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
-    "@types/pg": "^8.11.10",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "@biomejs/biome": "^2.5.0",
+    "@types/node": "^25.9.3",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
   }
 }

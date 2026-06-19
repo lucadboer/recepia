@@ -25,7 +25,7 @@ description: "Task list for 001-autonomous-routine-booking"
 **Purpose**: Project initialization and tooling.
 
 - [ ] T001 Create the project structure per [plan.md](plan.md): `src/{domain,tools,ports,adapters/fakes,db/migrations,db/repositories,jobs}` and `tests/{unit,integration,concurrency}`
-- [ ] T002 Initialize the Bun + TypeScript project: `package.json`, `tsconfig.json` (strict), install `pg`, `vitest`, `@types/pg`, `typescript` (use Bun, not npm)
+- [ ] T002 Initialize the pnpm + TypeScript project: `package.json`, `tsconfig.json` (strict); install latest `pg`, `vitest`, `@biomejs/biome`, `@types/pg`, `@types/node`, `typescript`, `tsx` via `pnpm add` (latest versions, `pnpm audit` clean) — see [CONTRIBUTING.md](../../CONTRIBUTING.md)
 - [ ] T003 [P] Add `package.json` scripts (`migrate`, `seed`, `test:unit`, `test:integration`, `test:concurrency`, `test`) and `vitest.config.ts`
 - [ ] T004 [P] Configure formatter/linter in `biome.json`; add `node_modules` and `.env` to `.gitignore`
 - [ ] T005 [P] Add local Postgres setup `docker-compose.yml` and `.env.example` with `DATABASE_URL`

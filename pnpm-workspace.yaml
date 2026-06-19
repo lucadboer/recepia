@@ -1,0 +1,14 @@
+# pnpm 11 reads settings from here (no longer from package.json's "pnpm" field).
+
+# Approve esbuild's install script (used by tsx/vitest). Every other package's
+# build script stays blocked by pnpm's supply-chain policy by default.
+allowBuilds:
+  esbuild: true
+
+# pnpm's supply-chain "minimum release age" gate is kept ON. pg 8.22.0 was
+# published very recently and would be held back; we allow it explicitly because
+# it is the latest and has no known CVEs (verified via `pnpm audit`).
+minimumReleaseAgeExclude:
+  - pg-connection-string@2.14.0
+  - pg-protocol@1.15.0
+  - pg@8.22.0

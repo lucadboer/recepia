@@ -4,27 +4,26 @@ Run and validate User Story 1's deterministic layer end-to-end **without any LLM
 
 ## Prerequisites
 
-- **Bun** (package manager + runner), Node 20+ toolchain.
-- **PostgreSQL** reachable via `DATABASE_URL` (local Docker is fine):
+- **pnpm** (via Corepack), Node 20+ toolchain; TS scripts run via **tsx**.
+- **PostgreSQL** via the bundled compose file (host port 5434 — 5432/5433 are used by other local projects; `.env` holds `DATABASE_URL`):
   ```bash
-  docker run --rm -d --name recepia-pg -e POSTGRES_PASSWORD=dev -p 5432:5432 postgres:16
-  export DATABASE_URL=postgres://postgres:dev@localhost:5432/postgres
+  pnpm db:up   # docker compose up -d --wait → recepia-pg on localhost:5434
   ```
 
 ## Setup
 
 ```bash
-bun install
-bun run migrate          # applies src/db/migrations (capacity_rule, capacity_override, booking, audit_log)
-bun run seed             # demo capacity: Mon–Fri 09:00–18:00, capacity 2 (America/Sao_Paulo)
+pnpm install
+pnpm migrate          # applies src/db/migrations (capacity_rule, capacity_override, booking, audit_log)
+pnpm seed             # demo capacity: Mon–Fri 09:00–18:00, capacity 2 (America/Sao_Paulo)
 ```
 
 ## Run the test suites
 
 ```bash
-bun run test:unit         # pure domain: capacity, availability, slot grid, state machine
-bun run test:integration  # tools against real Postgres + fakes (Calendar/Messaging/Clock)
-bun run test:concurrency  # MANDATORY: N concurrent holds on one slot never exceed capacity
+pnpm test:unit         # pure domain: capacity, availability, slot grid, state machine
+pnpm test:integration  # tools against real Postgres + fakes (Calendar/Messaging/Clock)
+pnpm test:concurrency  # MANDATORY: N concurrent holds on one slot never exceed capacity
 ```
 
 The **concurrency suite is the gate**: it must prove that firing N simultaneous `hold_slot` calls at a capacity-C slot yields exactly C holds and N−C `SlotUnavailableError`s, with the DB showing ≤ C active holds. See [contracts/booking-tools.md](contracts/booking-tools.md#hold_slotslot-patientref---hold).

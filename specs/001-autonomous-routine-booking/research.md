@@ -4,9 +4,9 @@ All decisions below resolve the Technical Context. No `NEEDS CLARIFICATION` rema
 
 ## 1. Runtime & tooling
 
-- **Decision**: TypeScript on Node 20+, with **Bun** as the package manager and script runner; **Vitest** as the test framework.
-- **Rationale**: SPEC.md fixes TS + Vitest. Bun is the user's preferred PM/runner. Bun runs the `pg` driver and Vitest fine; we keep Vitest (not `bun test`) because SPEC.md names it and the concurrency suite benefits from Vitest's fixtures/config.
-- **Alternatives**: `npm`/`pnpm` (rejected: user preference is Bun); `bun test` (rejected: SPEC.md specifies Vitest).
+- **Decision**: TypeScript on Node 20+, with **pnpm** (pinned via Corepack, `packageManager` field) as the package manager and **tsx** as the TS script runner; **Vitest** as the test framework. Dependencies are installed at their latest versions via `pnpm add` and gated by `pnpm audit` (zero HIGH/CRITICAL). pnpm's supply-chain controls are kept ON: build scripts blocked by default (only `esbuild` allowed, in `pnpm-workspace.yaml`), minimum-release-age policy, and an HTTPS registry (project `.npmrc`, since the global `~/.npmrc` used insecure HTTP).
+- **Rationale**: SPEC.md fixes TS + Vitest. pnpm was chosen for its strong supply-chain posture and to keep dependencies current (no hand-pinned stale versions). `tsx` runs the migrate/seed TS scripts under Node; Vitest handles TS in tests. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
+- **Alternatives**: `npm` (rejected: weaker default supply-chain controls); **Bun** (the project's earlier default — superseded by the explicit pnpm direction; Bun remains usable as a local runtime but is not the PM); `bun test` (rejected: SPEC.md specifies Vitest).
 
 ## 2. Postgres access layer
 
