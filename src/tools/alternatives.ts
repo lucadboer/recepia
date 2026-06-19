@@ -2,7 +2,7 @@ import type { Deps } from "../deps";
 import { bookingWindow } from "../domain/time";
 import type { Slot } from "../domain/types";
 import { escalateToHuman } from "./escalate-to-human";
-import { type Period, getAvailability } from "./get-availability";
+import { getAvailability, type Period } from "./get-availability";
 
 /**
  * Slots for the requested window if it has capacity; otherwise the next real free
