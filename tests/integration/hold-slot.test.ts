@@ -69,8 +69,8 @@ describe("hold_slot", () => {
   });
 
   it("rejects a hold on a full slot with SlotUnavailableError", async () => {
-    await seedConfirmed(pool, SLOT.toISOString(), "+55x");
-    await seedConfirmed(pool, SLOT.toISOString(), "+55y"); // capacity 2 reached
+    await seedConfirmed(pool, SLOT.toISOString(), "+55x", 0);
+    await seedConfirmed(pool, SLOT.toISOString(), "+55y", 1); // capacity 2 reached
     const d = makeDeps(new FakeClock(NOW));
 
     await expect(

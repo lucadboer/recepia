@@ -38,7 +38,8 @@ Demo seed: Mon–Fri, 09:00–18:00, capacity 2.
 | `appointment_type` | text | routine set: `evaluation` \| `cleaning` \| `follow_up` \| `consultation` |
 | `start_ts` | timestamptz | 30-min grid aligned |
 | `end_ts` | timestamptz | `start_ts + 30 min` (uniform MVP) |
-| `status` | text enum | `held` \| `confirmed` \| `patient_confirmed` \| `cancelled` \| `done` \| `expired` |
+| `status` | text enum | `held` \| `confirmed` \| `patient_confirmed` \| `cancelled` \| `done` \| `expired` (`cancelled`/`expired` are terminal & free the seat) |
+| `seat` | smallint | seat index in `[0, capacity)`; assigned on hold. Backs the structural no-overbooking guarantee |
 | `expires_at` | timestamptz | set **iff** `status='held'`; `start_ts`-independent (= hold creation + 10m) |
 | `google_event_id` | text | set on confirm; null while held; idempotency anchor |
 | `attended_by` | text | nullable (pooled — usually null in this slice) |
@@ -51,6 +52,7 @@ Demo seed: Mon–Fri, 09:00–18:00, capacity 2.
 - `(start_ts, status)` — fast per-slot counting for availability.
 - Partial index on `(start_ts)` where `status='held'` — sweep + active-hold counting.
 - Partial unique on `(patient_phone, start_ts)` where `status='held'` — enforces hold idempotency (no duplicate active hold for same patient+slot).
+- **Partial unique on `(start_ts, seat)` where `status NOT IN ('cancelled','expired')`** — the STRUCTURAL no-overbooking backstop: at most one active booking per seat, so a slot can never hold more than `capacity` distinct seats even if a writer bypasses the advisory lock. The advisory lock is now only a contention optimization.
 
 ### `audit_log` — append-only trace
 
@@ -59,12 +61,12 @@ Demo seed: Mon–Fri, 09:00–18:00, capacity 2.
 | `id` | uuid PK | |
 | `entity` | text | e.g. `booking` |
 | `entity_id` | uuid | |
-| `action` | text | `hold_created` \| `hold_expired` \| `booking_confirmed` \| `hold_released` \| `escalated` |
+| `action` | text | `hold_created` \| `hold_expired` \| `booking_confirmed` \| `hold_released` \| `calendar_orphan_compensated` \| `escalated` |
 | `actor` | text | `ai` \| `system` \| `human` |
 | `payload` | jsonb | before/after snapshot or context |
 | `created_at` | timestamptz | |
 
-Append-only: no `UPDATE`/`DELETE` (enforce by convention + revoked grants later). Written in the **same transaction** as the state change it describes.
+Append-only: `UPDATE`/`DELETE`/`TRUNCATE` are blocked by DB triggers (migrations 002–003). Written in the **same transaction** as the state change it describes (`appendAudit` requires the transaction's client).
 
 ## Derived (non-persisted)
 
@@ -89,7 +91,7 @@ Append-only: no `UPDATE`/`DELETE` (enforce by convention + revoked grants later)
 
 ## Invariants (test targets)
 
-1. **No overbooking**: for every slot `T`, `count(status='confirmed') + count(status='held' AND expires_at > now) ≤ capacity(T)`. (Mandatory concurrency test.)
+1. **No overbooking (STRUCTURAL)**: for every slot `T`, the active bookings (`status NOT IN ('cancelled','expired')`) occupy distinct seats in `[0, capacity(T))`, so their count ≤ `capacity(T)`. Enforced by the `(start_ts, seat)` partial unique index — not merely by the advisory lock. (Mandatory concurrency test + lock-bypass test.)
 2. `expires_at IS NOT NULL` ⇔ `status='held'`.
 3. `google_event_id IS NOT NULL` ⇒ `status IN ('confirmed','patient_confirmed','done')`.
 4. Every state-changing row has a matching `audit_log` row committed in the same transaction.

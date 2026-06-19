@@ -58,8 +58,8 @@ describe("get_availability", () => {
   });
 
   it("returns nothing for a slot whose capacity is exhausted", async () => {
-    await seedConfirmed(pool, SLOT_AT_11, "+55a");
-    await seedConfirmed(pool, SLOT_AT_11, "+55b"); // capacity 2 reached
+    await seedConfirmed(pool, SLOT_AT_11, "+55a", 0);
+    await seedConfirmed(pool, SLOT_AT_11, "+55b", 1); // capacity 2 reached
 
     const slots = await getAvailability(
       deps(),
@@ -86,8 +86,8 @@ describe("get_availability", () => {
 
   it("counts an active hold against capacity but ignores an expired one", async () => {
     const future = new Date(NOW.getTime() + 5 * 60_000);
-    await seedHeld(pool, SLOT_AT_11, "+55a", future);
-    await seedHeld(pool, SLOT_AT_11, "+55b", future); // 2 active holds -> full
+    await seedHeld(pool, SLOT_AT_11, "+55a", future, 0);
+    await seedHeld(pool, SLOT_AT_11, "+55b", future, 1); // 2 active holds -> full
 
     let slots = await getAvailability(
       deps(),
@@ -102,8 +102,8 @@ describe("get_availability", () => {
       await seedRule(pool, { weekday: wd, startTime: "09:00", endTime: "18:00", capacity: 2 });
     }
     const past = new Date(NOW.getTime() - 60_000);
-    await seedHeld(pool, SLOT_AT_11, "+55a", past);
-    await seedHeld(pool, SLOT_AT_11, "+55b", past);
+    await seedHeld(pool, SLOT_AT_11, "+55a", past, 0);
+    await seedHeld(pool, SLOT_AT_11, "+55b", past, 1);
 
     slots = await getAvailability(
       deps(),

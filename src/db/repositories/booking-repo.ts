@@ -40,15 +40,25 @@ export function rowToBooking(r: BookingRow): Booking {
   };
 }
 
-/** Count of capacity-consuming bookings for one slot (confirmed + active holds). */
-export async function countActiveForSlot(q: Queryable, start: Date, now: Date): Promise<number> {
-  const { rows } = await q.query(
-    `SELECT count(*)::int AS n FROM booking
-     WHERE start_ts = $1
-       AND (status IN ('confirmed','patient_confirmed','done') OR (status = 'held' AND expires_at > $2))`,
+/** Lazy reclaim: expire this slot's holds whose TTL elapsed, freeing their seats now. */
+export async function reclaimExpiredHoldsForSlot(
+  q: Queryable,
+  start: Date,
+  now: Date,
+): Promise<void> {
+  await q.query(
+    "UPDATE booking SET status = 'expired', expires_at = NULL, updated_at = now() WHERE start_ts = $1 AND status = 'held' AND expires_at <= $2",
     [start, now],
   );
-  return rows[0].n;
+}
+
+/** Seats currently occupying a slot (every state except cancelled/expired). */
+export async function occupiedSeats(q: Queryable, start: Date): Promise<number[]> {
+  const { rows } = await q.query(
+    "SELECT seat FROM booking WHERE start_ts = $1 AND status NOT IN ('cancelled','expired') ORDER BY seat",
+    [start],
+  );
+  return rows.map((r) => r.seat as number);
 }
 
 /** Map of slot-start (ms) -> active count, for a range. One query for availability. */
@@ -93,13 +103,21 @@ export async function insertHold(
     start: Date;
     end: Date;
     expiresAt: Date;
+    seat: number;
   },
 ): Promise<Booking> {
   const { rows } = await q.query(
-    `INSERT INTO booking (patient_phone, appointment_type, start_ts, end_ts, status, expires_at, created_via)
-     VALUES ($1, $2, $3, $4, 'held', $5, 'ai')
+    `INSERT INTO booking (patient_phone, appointment_type, start_ts, end_ts, status, expires_at, created_via, seat)
+     VALUES ($1, $2, $3, $4, 'held', $5, 'ai', $6)
      RETURNING *`,
-    [input.patientPhone, input.appointmentType, input.start, input.end, input.expiresAt],
+    [
+      input.patientPhone,
+      input.appointmentType,
+      input.start,
+      input.end,
+      input.expiresAt,
+      input.seat,
+    ],
   );
   return rowToBooking(rows[0]);
 }

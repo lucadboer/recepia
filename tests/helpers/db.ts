@@ -69,13 +69,14 @@ export async function seedConfirmed(
   pool: Pool,
   startIso: string,
   phone = "+550000",
+  seat = 0,
 ): Promise<void> {
   const start = new Date(startIso);
   const end = new Date(start.getTime() + SLOT_MS);
   await pool.query(
-    `INSERT INTO booking (patient_phone, patient_name, appointment_type, start_ts, end_ts, status, google_event_id, created_via, consent_at)
-     VALUES ($1, 'Teste', 'cleaning', $2, $3, 'confirmed', $4, 'ai', now())`,
-    [phone, start, end, `evt_${phone}_${startIso}`],
+    `INSERT INTO booking (patient_phone, patient_name, appointment_type, start_ts, end_ts, status, google_event_id, created_via, consent_at, seat)
+     VALUES ($1, 'Teste', 'cleaning', $2, $3, 'confirmed', $4, 'ai', now(), $5)`,
+    [phone, start, end, `evt_${phone}_${startIso}`, seat],
   );
 }
 
@@ -84,12 +85,13 @@ export async function seedHeld(
   startIso: string,
   phone: string,
   expiresAt: Date,
+  seat = 0,
 ): Promise<void> {
   const start = new Date(startIso);
   const end = new Date(start.getTime() + SLOT_MS);
   await pool.query(
-    `INSERT INTO booking (patient_phone, appointment_type, start_ts, end_ts, status, expires_at, created_via)
-     VALUES ($1, 'cleaning', $2, $3, 'held', $4, 'ai')`,
-    [phone, start, end, expiresAt],
+    `INSERT INTO booking (patient_phone, appointment_type, start_ts, end_ts, status, expires_at, created_via, seat)
+     VALUES ($1, 'cleaning', $2, $3, 'held', $4, 'ai', $5)`,
+    [phone, start, end, expiresAt, seat],
   );
 }
