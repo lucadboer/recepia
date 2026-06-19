@@ -28,6 +28,13 @@ export class CalendarWriteError extends Error {
   }
 }
 
+export class MessagingSendError extends Error {
+  constructor(message = "Falha ao enviar a mensagem.") {
+    super(message);
+    this.name = "MessagingSendError";
+  }
+}
+
 /** A real adapter was used without its credentials (needs-creds boundary). */
 export class NotConfigured extends Error {
   constructor(message: string) {
