@@ -17,11 +17,13 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
     "test:concurrency": "vitest run tests/concurrency",
+    "test:live": "vitest run --config vitest.live.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write ."
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.2",
     "pg": "^8.22.0"
   },
   "devDependencies": {

@@ -1,9 +1,11 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // Live (network) tests are out of the default suite — run via `pnpm test:live`.
+    exclude: [...configDefaults.exclude, "tests/live/**"],
     setupFiles: ["tests/setup.ts"],
     // DB-backed tests share one Postgres; run files serially and tests
     // non-concurrently so they don't clobber each other's rows.
