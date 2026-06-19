@@ -1,0 +1,28 @@
+{
+  "name": "recepia",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous routine dental appointment booking — deterministic foundation (feature 001)",
+  "scripts": {
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "migrate": "bun run src/db/migrate.ts",
+    "seed": "bun run src/db/seed.ts",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:concurrency": "vitest run tests/concurrency",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

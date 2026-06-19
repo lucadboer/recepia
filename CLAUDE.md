@@ -58,6 +58,9 @@ Detalhes completos na [constituição](.specify/memory/constitution.md). Cumprir
 - Ao referenciar arquivos em respostas, use links markdown clicáveis `[texto](caminho)`.
 
 <!-- SPECKIT START -->
-For additional context about technologies to be used, project structure,
-shell commands, and other important information, read the current plan
+**Active feature**: `001-autonomous-routine-booking` — deterministic booking foundation (US1: autonomous routine booking, no overbooking). Plan: [specs/001-autonomous-routine-booking/plan.md](specs/001-autonomous-routine-booking/plan.md).
+
+Stack (this slice): TypeScript on Node 20+, **Bun** as package manager/runner, PostgreSQL via `pg` (per-slot advisory-lock holds), **Vitest** (incl. the mandatory concurrency test). Google Calendar and WhatsApp sit behind ports (`CalendarPort`, `MessagingPort`, `Clock`) with in-memory fakes. **No LLM in this slice** — only the deterministic tools write.
+
+For full technical context, project structure, and commands, read the plan plus its `research.md`, `data-model.md`, and `contracts/`.
 <!-- SPECKIT END -->
