@@ -43,7 +43,7 @@ description: "Task list for 001-autonomous-routine-booking"
 - [ ] T008 [P] Define ports in `src/ports/clock.ts`, `src/ports/calendar-port.ts`, `src/ports/messaging-port.ts` (interfaces per [contracts/ports.md](contracts/ports.md))
 - [ ] T009 [P] Implement fakes in `src/adapters/fakes/fake-clock.ts`, `fake-calendar.ts` (idempotent by key, configurable failure), `fake-messaging.ts` (captures sent messages)
 - [ ] T010 Implement `src/db/pool.ts` (pg `Pool` from `DATABASE_URL`)
-- [ ] T011 Create SQL migrations in `src/db/migrations/` for `capacity_rule`, `capacity_override`, `booking`, `audit_log` per [data-model.md](data-model.md) — incl. index `(start_ts, status)`, partial index on held `(start_ts)`, and partial unique `(patient_phone, start_ts) WHERE status='held'`
+- [ ] T011 Create SQL migrations in `src/db/migrations/` for `capacity_rule`, `capacity_override`, `booking`, `audit_log` per [data-model.md](data-model.md) — `booking` includes `created_via` and nullable `consent_at`; incl. index `(start_ts, status)`, partial index on held `(start_ts)`, and partial unique `(patient_phone, start_ts) WHERE status='held'`
 - [ ] T012 [P] Implement seed script `src/db/seed.ts` (demo capacity rule: Mon–Fri 09:00–18:00 capacity 2)
 - [ ] T013 [P] Implement `src/db/repositories/audit-repo.ts` (append an `audit_log` row using a provided tx client)
 - [ ] T014 [P] Implement `src/db/repositories/capacity-repo.ts` (load rules + overrides for a date range)
@@ -69,8 +69,8 @@ description: "Task list for 001-autonomous-routine-booking"
 
 - [ ] T022 [P] [US1] Availability test in `tests/integration/get-availability.test.ts`: empty when full; honors `capacity_override` (incl. 0); never returns off-hours/off-grid/`<now+2h`/`>now+30d`; an active hold reduces `free(T)`, an expired hold does not
 - [ ] T023 [P] [US1] **MANDATORY concurrency test** in `tests/concurrency/hold-slot.concurrency.test.ts`: N concurrent `hold_slot` on one slot with capacity C ⇒ exactly C succeed, N−C raise `SlotUnavailableError`, DB shows ≤ C active holds
-- [ ] T024 [P] [US1] Hold test in `tests/integration/hold-slot.test.ts`: idempotent for same `patient_phone`+slot; expired hold releases the seat (lazy + sweep, advancing `FakeClock`); full slot → `SlotUnavailableError`; `hold_created` audit row
-- [ ] T025 [P] [US1] Confirm test in `tests/integration/confirm-booking.test.ts`: writes one event + one pt-BR message; expired hold → `HoldExpiredError` and writes nothing; repeat confirm is idempotent; persistent calendar failure → retry → escalate + release hold + no confirmation + `CalendarWriteError`; `booking_confirmed` audit row
+- [ ] T024 [P] [US1] Hold test in `tests/integration/hold-slot.test.ts`: idempotent for same `patient_phone`+slot; expired hold releases the seat (lazy + sweep, advancing `FakeClock`); full slot → `SlotUnavailableError`; `hold_created` audit row; **asserts `created_via='ai'`** (FR-016)
+- [ ] T025 [P] [US1] Confirm test in `tests/integration/confirm-booking.test.ts`: writes one event + one pt-BR message; expired hold → `HoldExpiredError` and writes nothing; repeat confirm is idempotent; persistent calendar failure → retry → escalate + release hold + no confirmation + `CalendarWriteError`; `booking_confirmed` audit row; **asserts `created_via='ai'` and `consent_at` stamped** (FR-016, FR-020)
 - [ ] T026 [P] [US1] End-to-end happy-path test in `tests/integration/booking-e2e.test.ts` (Acceptance Scenario 1: availability → hold → confirm → event + confirmation, no human)
 
 ### Implementation for User Story 1
@@ -78,8 +78,8 @@ description: "Task list for 001-autonomous-routine-booking"
 - [ ] T027 [P] [US1] Implement `src/domain/availability.ts`: `free(T) = capacity − confirmed − activeHolds`; enumerate offerable grid slots within the horizon
 - [ ] T028 [P] [US1] Implement `src/domain/booking.ts`: state machine `held → confirmed | expired` with guards (`held → confirmed` requires `expires_at > now` and a written event)
 - [ ] T029 [US1] Implement `src/tools/get-availability.ts` (uses `time` + `capacity` + `availability` + `booking-repo`) — make T022 pass
-- [ ] T030 [US1] Implement `src/tools/hold-slot.ts` (advisory-lock tx: `pg_advisory_xact_lock(slot)` → recheck `used < capacity` → insert `held`, `expires_at = clock.now()+10m` → audit; idempotency by `patient_phone`+slot) — make T023, T024 pass
-- [ ] T031 [US1] Implement `src/tools/confirm-booking.ts` (validate non-expired hold; `CalendarPort.createEvent` idempotent by booking id; set `google_event_id`; `status → confirmed`; pt-BR confirmation via `MessagingPort`; on failure retry ≤3 → `escalate_to_human` + release hold; audit in same tx) — make T025, T026 pass
+- [ ] T030 [US1] Implement `src/tools/hold-slot.ts` (advisory-lock tx: `pg_advisory_xact_lock(slot)` → recheck `used < capacity` → insert `held`, `expires_at = clock.now()+10m`, `created_via='ai'` → audit; idempotency by `patient_phone`+slot) — make T023, T024 pass
+- [ ] T031 [US1] Implement `src/tools/confirm-booking.ts` (validate non-expired hold; `CalendarPort.createEvent` idempotent by booking id; set `google_event_id`; `status → confirmed`; stamp `consent_at`; pt-BR confirmation via `MessagingPort`; on failure retry ≤3 → `escalate_to_human` + release hold; audit in same tx) — make T025, T026 pass
 - [ ] T032 [US1] Implement `src/jobs/expire-holds.ts` (sweep `held → expired` past TTL + `hold_expired` audit) — assertions covered by T024
 
 **Checkpoint**: User Story 1 is fully functional and independently testable — this is the MVP.

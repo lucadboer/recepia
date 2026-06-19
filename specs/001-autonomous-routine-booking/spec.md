@@ -108,7 +108,7 @@ When the patient asks for something that is not a routine appointment (e.g., Inv
 - **FR-017**: Booking MUST NOT depend on any slot inferred by the language layer — every offered and written slot comes exclusively from the deterministic availability query.
 - **FR-018**: The system MUST accept and process requests at any time of day, every day (24/7 operation).
 - **FR-019**: Every patient-facing message MUST be in Portuguese.
-- **FR-020**: The system MUST collect only the minimum data needed to book (name, phone, and appointment type) and record the patient's consent (opt-in) for processing that data.
+- **FR-020**: The system MUST collect only the minimum data needed to book (name, phone, and appointment type) and record the patient's consent (opt-in) for processing that data. *Note: the deterministic tools assume consent was captured upstream by the conversational layer and persist it as `consent_at`; enforcing the opt-in capture flow itself is owned by that later slice.*
 - **FR-021**: If writing the event to the clinic calendar fails at confirmation, the system MUST retry briefly; if it still fails, it MUST escalate to reception and release the hold, and MUST NOT send a confirmation to the patient (no confirmation without a written event).
 - **FR-022**: The system MUST only offer slots at least 2 hours ahead of the current time and no more than 30 days into the future (the booking horizon).
 

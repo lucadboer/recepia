@@ -43,6 +43,7 @@ Demo seed: Mon–Fri, 09:00–18:00, capacity 2.
 | `google_event_id` | text | set on confirm; null while held; idempotency anchor |
 | `attended_by` | text | nullable (pooled — usually null in this slice) |
 | `created_via` | text enum | `ai` \| `human` |
+| `consent_at` | timestamptz | LGPD opt-in timestamp; **nullable**. Captured upstream by the conversational layer; the deterministic tools assume consent was given and stamp it on confirm. |
 | `created_at` | timestamptz | |
 | `updated_at` | timestamptz | |
 
