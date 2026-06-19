@@ -6,7 +6,9 @@ export type AuditAction =
   | "hold_released"
   | "booking_confirmed"
   | "calendar_orphan_compensated"
-  | "escalated";
+  | "escalated"
+  | "consent_recorded"
+  | "consent_revoked";
 
 export interface AuditEntry {
   entity: string;
