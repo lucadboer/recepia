@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
+    "googleapis": "^173.0.0",
     "pg": "^8.22.0"
   },
   "devDependencies": {
