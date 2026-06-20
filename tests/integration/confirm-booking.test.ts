@@ -110,4 +110,47 @@ describe("confirm_booking", () => {
     expect(await countAudit(pool, "hold_released")).toBe(1);
     expect(await countAudit(pool, "escalated")).toBe(1);
   });
+
+  it("retries a TRANSIENT calendar failure and succeeds without escalating", async () => {
+    const clock = new FakeClock(NOW);
+    const calendar = new FakeCalendar();
+    calendar.failTimes = 1; // fail once, then succeed on retry
+    const messaging = new FakeMessaging();
+    const d = makeDeps(clock, calendar, messaging);
+
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, PATIENT);
+    const booking = await confirmBooking(d, hold.id, PATIENT);
+
+    expect(calendar.attempts).toBe(2); // 1 failure + 1 success
+    expect(calendar.createdCount).toBe(1);
+    expect(booking.status).toBe("confirmed");
+    expect(booking.googleEventId).toBeTruthy();
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(1);
+    expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(0);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    expect(await countAudit(pool, "hold_released")).toBe(0);
+    expect(await countAudit(pool, "escalated")).toBe(0);
+  });
+
+  it("two REAL concurrent confirms on the same hold are idempotent (one event, one message)", async () => {
+    const clock = new FakeClock(NOW);
+    const calendar = new FakeCalendar();
+    const messaging = new FakeMessaging();
+    const d = makeDeps(clock, calendar, messaging);
+
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, PATIENT);
+    const [a, b] = await Promise.all([
+      confirmBooking(d, hold.id, PATIENT),
+      confirmBooking(d, hold.id, PATIENT),
+    ]);
+
+    expect(a.id).toBe(hold.id);
+    expect(b.id).toBe(hold.id);
+    expect(calendar.createdCount).toBe(1); // single event despite two callers
+    expect(calendar.deleted).toHaveLength(0); // no orphan compensation
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(1);
+    expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(0);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    expect(await countAudit(pool, "calendar_orphan_compensated")).toBe(0);
+  });
 });
