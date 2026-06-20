@@ -112,4 +112,27 @@ describe("get_availability", () => {
     );
     expect(slots.map((s) => s.start.toISOString())).toContain(SLOT_AT_11);
   });
+
+  it("returns an empty list when the only slot in the period is fully booked", async () => {
+    await seedConfirmed(pool, SLOT_AT_11, "+55a", 0);
+    await seedConfirmed(pool, SLOT_AT_11, "+55b", 1); // capacity 2 reached
+
+    const slots = await getAvailability(
+      deps(),
+      { from: NOW, to: new Date("2026-06-15T14:30:00Z") }, // only the 11:00 slot is in range
+      "cleaning",
+    );
+    expect(slots).toEqual([]);
+  });
+
+  it("never offers a slot at or beyond now+30d (horizon upper bound)", async () => {
+    const sixtyDays = new Date(NOW.getTime() + 60 * 24 * 3600_000);
+    const slots = await getAvailability(deps(), { from: NOW, to: sixtyDays }, "cleaning");
+    const horizonEnd = NOW.getTime() + 30 * 24 * 3600_000;
+
+    expect(slots.length).toBeGreaterThan(0);
+    for (const s of slots) {
+      expect(s.start.getTime()).toBeLessThan(horizonEnd);
+    }
+  });
 });

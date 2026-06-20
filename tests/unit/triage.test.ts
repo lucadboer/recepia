@@ -28,4 +28,37 @@ describe("triage — deterministic escalation signals (escalate-on-doubt)", () =
   ])("does NOT escalate %j", (text) => {
     expect(triage(text).escalate).toBe(false);
   });
+
+  // Per-regex-branch coverage so a single pattern can't regress unnoticed.
+  it.each([
+    ["está doendo muito", "urgency"],
+    ["doi quando mastigo", "urgency"],
+    ["minha gengiva está sangrando", "urgency"],
+    ["meu rosto está inchado", "urgency"],
+    ["preciso fazer canal", "specialized_procedure"],
+    ["quero uma prótese", "specialized_procedure"],
+    ["vou por aparelho", "specialized_procedure"],
+    ["preciso de uma cirurgia", "specialized_procedure"],
+    ["tenho que arrancar o siso", "specialized_procedure"],
+    ["quero continuar o tratamento", "ongoing_treatment"],
+    ["é sobre meu tratamento", "ongoing_treatment"],
+    ["queria a doutora Marina", "specific_professional"],
+    ["atende com a dra Paula", "specific_professional"],
+    ["quero processar a clínica", "complaint"],
+    ["o atendimento foi horrível", "complaint"],
+    ["estou insatisfeito", "complaint"],
+    ["foi péssimo", "complaint"],
+    ["qual o valor", "financial"],
+    ["meu plano cobre?", "financial"],
+    ["posso parcelar?", "financial"],
+    ["tem desconto?", "financial"],
+    ["quero um orçamento", "financial"],
+    ["como faço o pagamento", "financial"],
+    ["quero falar com um humano", "human_requested"],
+    ["me transfere pra recepção", "human_requested"],
+  ])("branch: escalates %j -> %s", (text, reason) => {
+    const r = triage(text);
+    expect(r.escalate).toBe(true);
+    expect(r.reason).toBe(reason);
+  });
 });

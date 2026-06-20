@@ -4,7 +4,8 @@ import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import { emptyState } from "../../src/agent/conversation";
 import { dispatchTool, type ToolContext } from "../../src/agent/tool-registry";
-import { TOOL_NAMES } from "../../src/agent/tool-schemas";
+import { TOOL_NAMES, toolDefs } from "../../src/agent/tool-schemas";
+import { ROUTINE_TYPES } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
 import { ensureSchema, resetDb, seedHeld, seedRule, testPool } from "../helpers/db";
@@ -147,3 +148,33 @@ async function countAll(table: string): Promise<number> {
   const { rows } = await pool.query(`SELECT count(*)::int AS n FROM ${table}`);
   return rows[0].n;
 }
+
+describe("tool schemas + input validation", () => {
+  it("exposes exactly the four allowlisted tools, no duplicates", () => {
+    const names = toolDefs.map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length); // no duplicates
+    expect([...names].sort()).toEqual([...Object.values(TOOL_NAMES)].sort());
+  });
+
+  it("availability + hold expose `type` as the ROUTINE_TYPES enum", () => {
+    for (const key of [TOOL_NAMES.availability, TOOL_NAMES.hold]) {
+      const def = toolDefs.find((t) => t.name === key);
+      const schema = def?.inputSchema as { properties: { type: { enum: string[] } } };
+      expect(schema.properties.type.enum).toEqual([...ROUTINE_TYPES]);
+    }
+  });
+
+  it.each([
+    [TOOL_NAMES.availability, { from: NOW.toISOString(), type: "cleaning" }], // missing `to`
+    [TOOL_NAMES.hold, { type: "cleaning" }], // missing `start`
+    [TOOL_NAMES.hold, { start: "not-a-date", type: "cleaning" }], // invalid date
+    [TOOL_NAMES.confirm, { hold_id: ["array"], patient_name: "X" }], // wrong type
+    [TOOL_NAMES.confirm, null], // null input
+  ])("rejects malformed input for %s with no writes", async (name, input) => {
+    const r = await dispatchTool(ctx(), name, input);
+    expect(r.isError).toBe(true);
+    expect(await bookingCount()).toBe(0);
+    expect(await countAll("audit_log")).toBe(0);
+    expect(await countAll("patient_consent")).toBe(0);
+  });
+});

@@ -43,4 +43,14 @@ describe("escalate_to_human", () => {
     expect(rows[0].n).toBe(0);
     expect(await countAudit(pool, "escalated")).toBe(1);
   });
+
+  it("audits the escalation with the exact reason and context in the payload", async () => {
+    const messaging = new FakeMessaging();
+    await escalateToHuman(makeDeps(messaging), "non_routine", "Paciente pediu Invisalign");
+
+    const { rows } = await pool.query("SELECT payload FROM audit_log WHERE action = 'escalated'");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].payload.reason).toBe("non_routine");
+    expect(rows[0].payload.context).toBe("Paciente pediu Invisalign");
+  });
 });
