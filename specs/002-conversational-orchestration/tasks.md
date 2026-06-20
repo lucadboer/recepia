@@ -48,7 +48,7 @@ Anthropic key+model (see `claude-api` skill), Google Calendar creds, WhatsApp Ev
 
 ### Open — remaining work
 - [x] T217 Implement the real `EvolutionMessaging` outbound adapter (dev WhatsApp) replacing the `NotConfigured` scaffold; add a live test behind a `LIVE_*` flag, out of the default `pnpm test`, per FR-210 / plan: MessagingPort (Evolution) (partial)
-- [ ] T218 Implement the real `CloudApiMessaging` outbound adapter (prod WhatsApp Cloud API — not open-wa) replacing the `NotConfigured` scaffold; add a live test behind a `LIVE_*` flag, per FR-210 / plan: MessagingPort (Cloud API) (partial)
+- [x] T218 Implement the real `CloudApiMessaging` outbound adapter (prod WhatsApp Cloud API — not open-wa) replacing the `NotConfigured` scaffold; add a live test behind a `LIVE_*` flag, per FR-210 / plan: MessagingPort (Cloud API) (partial)
 - [x] T219 Add a composition root that builds `AgentDeps` from real adapters (`AnthropicLLM`, `GoogleCalendar`, real messaging, `DbConversationStore`, `pg` pool) and wires `handleInbound`; add a live end-to-end conversation test (availability → hold → confirm) behind a `LIVE_*` flag — no production wiring exists today (adapters are only built in tests), per US1 (live) / plan: orchestrator wiring (missing)
 - [ ] T220 Finalize the patient-facing pt-BR copy (greeting, slot offer, confirmation request, recovery) in `reply.ts`/`system-prompt.ts`, per FR-208 / spec [DEFERRED] patient copy (partial; [draft] greeting/offer/confirmation examples added in system-prompt — final wording NEEDS-USER)
 - [ ] T221 Finalize the LGPD legal opt-in/opt-out wording in the consent flow (`consent.ts`/`reply.ts`), per FR-205, Constitution V / spec [DEFERRED] legal copy (partial; `TODO(legal)` placeholder)
