@@ -28,6 +28,15 @@ function start(onInbound: (m: InboundMessage) => Promise<unknown>) {
 
 const settle = () => new Promise((r) => setTimeout(r, 30)); // let background onInbound run
 
+function startSrv(opts: Parameters<typeof createWebhookServer>[0]) {
+  return new Promise<{ server: Server; port: number }>((resolve) => {
+    const server = createWebhookServer(opts);
+    server.listen(0, "127.0.0.1", () => {
+      resolve({ server, port: (server.address() as AddressInfo).port });
+    });
+  });
+}
+
 describe("webhook server (node:http)", () => {
   let server: Server | null = null;
   afterEach(() => {
@@ -84,5 +93,62 @@ describe("webhook server (node:http)", () => {
     await fetch(url, { method: "POST", headers, body: upsert("DUP-1") });
     await settle();
     expect(calls).toBe(1);
+  });
+
+  it("routes a background onInbound rejection to onError, still acking 200", async () => {
+    const sentinel = new Error("boom");
+    let captured: unknown = null;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: () => Promise.reject(sentinel),
+      onError: (e) => {
+        captured = e;
+      },
+    });
+    server = s.server;
+    const res = await fetch(`http://127.0.0.1:${s.port}${BASE}/${SECRET}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: upsert("ERR-1"),
+    });
+    expect(res.status).toBe(200); // ack is independent of background processing
+    await settle();
+    expect(captured).toBe(sentinel);
+  });
+
+  it("returns 404 for non-POST methods and never calls onInbound", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+      },
+    });
+    server = s.server;
+    for (const method of ["GET", "PUT", "DELETE"]) {
+      const res = await fetch(`http://127.0.0.1:${s.port}${BASE}/${SECRET}`, { method });
+      expect(res.status).toBe(404);
+    }
+    await settle();
+    expect(calls).toBe(0);
+  });
+
+  it("returns 404 for an unrelated path and never calls onInbound", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+      },
+    });
+    server = s.server;
+    const res = await fetch(`http://127.0.0.1:${s.port}/nope`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: upsert("X"),
+    });
+    expect(res.status).toBe(404);
+    await settle();
+    expect(calls).toBe(0);
   });
 });

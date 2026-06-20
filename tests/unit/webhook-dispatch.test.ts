@@ -80,4 +80,52 @@ describe("parseAndAccept", () => {
     expect(second.status).toBe(200);
     expect(second.msg).toBeUndefined();
   });
+
+  it("rejects when the path token matches but the header is WRONG -> 401", () => {
+    const r = parseAndAccept(base({ authHeader: "totally-different-token" }));
+    expect(r.status).toBe(401);
+    expect(r.msg).toBeUndefined();
+  });
+
+  it("rejects when the path token matches but the header is ABSENT -> 401", () => {
+    const r = parseAndAccept(base({ authHeader: undefined }));
+    expect(r.status).toBe(401);
+    expect(r.msg).toBeUndefined();
+  });
+
+  it("accepts an Authorization header carrying a 'Bearer ' prefix", () => {
+    const r = parseAndAccept(base({ authHeader: `Bearer ${SECRET}` }));
+    expect(r.status).toBe(200);
+    expect(r.msg).toBeDefined();
+  });
+
+  it("verifies auth BEFORE parsing: bad secret + malformed JSON -> 401 (not 400)", () => {
+    const r = parseAndAccept(
+      base({ authHeader: "wrong", pathToken: "wrong", rawBody: "{not json" }),
+    );
+    expect(r.status).toBe(401);
+  });
+});
+
+describe("RecentIds (bounded FIFO edge dedupe)", () => {
+  it("evicts the oldest id once `max` is exceeded", () => {
+    const seen = new RecentIds(2);
+    seen.add("A");
+    seen.add("B");
+    seen.add("C"); // exceeds max=2 -> A evicted
+    expect(seen.has("A")).toBe(false);
+    expect(seen.has("B")).toBe(true);
+    expect(seen.has("C")).toBe(true);
+  });
+
+  it("a duplicate add does not refresh FIFO ordering", () => {
+    const seen = new RecentIds(2);
+    seen.add("A");
+    seen.add("B");
+    seen.add("B"); // duplicate — must NOT move B to the back nor evict A
+    seen.add("C"); // still evicts the genuine oldest (A)
+    expect(seen.has("A")).toBe(false);
+    expect(seen.has("B")).toBe(true);
+    expect(seen.has("C")).toBe(true);
+  });
 });
