@@ -45,4 +45,25 @@ describe("EvolutionMessaging", () => {
 
     await expect(m.sendMessage("+5531999998888", "x")).rejects.toThrow(MessagingSendError);
   });
+
+  // Fail-fast must trigger if ANY of the three creds is missing, not only when all are.
+  it.each([
+    ["", "k", "i"],
+    ["b", "", "i"],
+    ["b", "k", ""],
+    ["", "", "i"],
+    ["", "k", ""],
+    ["b", "", ""],
+    ["", "", ""],
+  ])("throws NotConfigured for an incomplete cred combo (base=%j key=%j inst=%j)", (base, key, inst) => {
+    expect(() => new EvolutionMessaging(base, key, inst)).toThrow(NotConfigured);
+  });
+
+  it("includes the HTTP status (and provider detail) in the MessagingSendError message", async () => {
+    const { fetchFn } = recorder({ ok: false, status: 502, text: "upstream down" });
+    const m = new EvolutionMessaging("https://evo.example.com", "k", "i", fetchFn);
+
+    await expect(m.sendMessage("+5531999998888", "x")).rejects.toThrow(/HTTP 502/);
+    await expect(m.sendMessage("+5531999998888", "x")).rejects.toThrow(/upstream down/);
+  });
 });
