@@ -56,3 +56,21 @@ Anthropic key+model (see `claude-api` skill), Google Calendar creds, WhatsApp Ev
 - [ ] T223 Define the escalation routing policy (single number vs queue, business hours, hand-off tone) and wire it into `escalateToHuman`/reception notification, per FR-204 / spec [DEFERRED] routing (partial; escalation fires, routing target undecided)
 - [x] T224 Webhook hosting: an HTTP entrypoint that verifies the provider signature, edge-dedupes, and calls `handleInbound` (deploy target), per FR-207, US1 / spec [DEFERRED] hosting (missing)
 - [ ] T225 Set the final `AGENT_MAX_ITERATIONS`/per-conversation timeout (currently default 8) as a product/safety decision, per FR-206, SC-204 / spec [DEFERRED] (partial; sensible default in place, SC-204 bound already satisfied)
+
+## Phase 10 — Audit findings (NEEDS-USER decision; from the 2026-06-19 hardening/Codex pass)
+
+> Read-only audit (me + 3 Explore agents + Codex CLI gpt-5.5 xhigh). Safe coverage gaps were already closed with TDD (commits `93df4d3`,`b08a4bc`,`aaeb409`,`1c1a922`,`935d7c2`; suite 121→188). The items below CHANGE core behavior / touch a non-negotiable / are product/policy, so they are recorded — NOT implemented — pending your decision. `[~]` = open decision.
+
+### Core / non-negotiable (Codex-found, confirmed in code)
+- [ ] T226 [P0, núcleo] **Anti-overbooking não é totalmente estrutural.** `004_seat_model.sql` garante só `seat>=0` + `unique(start_ts,seat)`; falta `seat < capacity`. O caminho real (holdSlot escolhe assento em [0,capacity) sob advisory lock; teste 16×cap2) é seguro, mas um writer direto com `seat>=capacity` furaria — a alegação "STRUCTURAL backstop" excede o que o DB garante. DECISÃO: cap estrutural real (difícil por overrides de capacidade por slot — ex.: exclusion constraint / capacidade materializada por slot) OU ajustar a alegação/escopo. Teste decisório: inserir `seat=2` em cap 2 deve falhar (hoje passa). per Constitution I (no-overbooking).
+- [ ] T227 [P0, produto = #6] **Dupla mensagem ao paciente no confirm.** `confirmBooking` (confirm-booking.ts:113) envia a confirmação determinística E o orquestrador (orchestrator.ts:138-140) envia o texto final da LLM → 2 mensagens no caminho feliz. DECISÃO: qual camada é dona da mensagem de fechamento. per orchestration.md "one message".
+- [ ] T228 [P0, não-negociável V] **Lazy reclaim sem audit.** `reclaimExpiredHoldsForSlot` (booking-repo.ts:43-53) faz held→expired SEM linha de `audit_log`; o sweep (`expireHolds`) audita `hold_expired`. Fere "toda escrita registra em audit_log". DECISÃO: auditar o reclaim dentro da transação do holdSlot. per Constitution V.
+
+### Robustez / política (Codex-found)
+- [ ] T229 [P1] **Colisão de prefixo no path do webhook:** `startsWith(basePath)` (server.ts:30) faz `/webhook/evolutionary/...` cair em auth (401) em vez de 404. Fix sugerido: exigir separador após o basePath (baixo risco; vira safe-fix se aprovado).
+- [ ] T230 [P1] **Dedupe de borda × reentrega após falha:** o id é gravado em `RecentIds` antes de `onInbound` ter sucesso (dispatch.ts:87/server.ts:49); o orquestrador também marca processed no início. DECISÃO: semântica at-least-once × at-most-once.
+- [ ] T231 [P1] **Falha de mensageria pós-commit sem recuperação:** se o envio ao paciente falhar após o commit, o booking fica confirmado sem notificação; retry retorna idempotente sem reenviar. DECISÃO: contrato de recuperação (reenvio/escala).
+- [ ] T232 [P2, latente] **`confirmed` atribuído antes do COMMIT** (confirm-booking.ts): se o COMMIT lançar após `confirmHeld`, o código ainda envia confirmação e retorna `confirmed` apesar do rollback. Edge raro; avaliar guarda.
+
+### Mine
+- [ ] T233 [recomendado NÃO fazer] Teste direto de fail-fast do composition root `buildAgentDeps`: cobertura efetiva já existe via adapters individuais (adapter-scaffolds-notconfigured.test.ts); teste direto é frágil (acoplado a `loadEnv()/.env`). Recomendo encerrar sem ação.
