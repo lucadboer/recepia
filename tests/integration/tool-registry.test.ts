@@ -7,7 +7,7 @@ import { dispatchTool, type ToolContext } from "../../src/agent/tool-registry";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
-import { ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { ensureSchema, resetDb, seedHeld, seedRule, testPool } from "../helpers/db";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
 const PHONE = "+55a";
@@ -98,4 +98,52 @@ describe("tool-registry — structural guardrails", () => {
     expect(r.content).toMatch(/não reconhecida/);
     expect(calendar.createdCount).toBe(0);
   });
+
+  it("protects a REAL held booking from another conversation (gate 3, no writes)", async () => {
+    // A genuine, still-active hold exists in the DB but was NOT created in THIS
+    // conversation (state.activeHoldIds is empty) — confirm must be rejected.
+    const slot = "2026-06-15T15:00:00.000Z";
+    const expiresAt = new Date(NOW.getTime() + 10 * 60 * 1000);
+    await seedHeld(pool, slot, "+55outsider", expiresAt);
+    const { rows } = await pool.query(
+      "SELECT id FROM booking WHERE patient_phone = $1 AND status = 'held'",
+      ["+55outsider"],
+    );
+    const foreignHoldId = rows[0].id as string;
+
+    const c = ctx(); // emptyState -> no activeHoldIds
+    const calendar = c.deps.calendar as FakeCalendar;
+    const messaging = c.deps.messaging as FakeMessaging;
+    const r = await dispatchTool(c, TOOL_NAMES.confirm, {
+      hold_id: foreignHoldId,
+      patient_name: "Intruso",
+    });
+
+    expect(r.isError).toBe(true);
+    expect(r.content).toMatch(/não reconhecida/);
+    expect(r.state).toBe(c.state); // state untouched
+    expect(calendar.createdCount).toBe(0);
+    expect(messaging.sent).toHaveLength(0);
+
+    const after = await pool.query("SELECT status, google_event_id FROM booking WHERE id = $1", [
+      foreignHoldId,
+    ]);
+    expect(after.rows[0].status).toBe("held"); // still held, not confirmed
+    expect(after.rows[0].google_event_id).toBeNull();
+    expect(await countAll("audit_log")).toBe(0); // gate rejected before any write
+    expect(await countAll("patient_consent")).toBe(0);
+  });
+
+  it("unknown tool and non-offered slot leave audit_log and patient_consent untouched", async () => {
+    await dispatchTool(ctx(), "writeBooking", { sql: "DROP" });
+    await dispatchTool(ctx(), TOOL_NAMES.hold, { start: "2026-06-15T14:00:00Z", type: "cleaning" });
+    expect(await bookingCount()).toBe(0);
+    expect(await countAll("audit_log")).toBe(0);
+    expect(await countAll("patient_consent")).toBe(0);
+  });
 });
+
+async function countAll(table: string): Promise<number> {
+  const { rows } = await pool.query(`SELECT count(*)::int AS n FROM ${table}`);
+  return rows[0].n;
+}
