@@ -90,7 +90,19 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
           });
           res.writeHead(result.status).end();
           for (const s of result.statuses) logStatus(s); // statuses: log only
-          for (const m of result.msgs) void cloud.onInbound(m).catch(onError); // messages → orchestrator
+          for (const m of result.msgs) {
+            // Observability: phone masked (LGPD — last 4 digits); never logs message text.
+            console.log(
+              `[webhook][cloud][inbound] from=***${m.phone.slice(-4)} id=${m.providerMessageId}`,
+            );
+            void cloud
+              .onInbound(m) // messages → orchestrator
+              .then((r) => {
+                const status = (r as { status?: string } | null)?.status ?? "done";
+                console.log(`[webhook][cloud][handled] id=${m.providerMessageId} status=${status}`);
+              })
+              .catch(onError);
+          }
         });
         return;
       }
