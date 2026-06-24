@@ -1,0 +1,69 @@
+# Local Evolution API v2 stack for recepia dev/e2e. Based on the official compose
+# (evolution-foundation/evolution-api) but trimmed for local use:
+#   - image pinned to evoapicloud/evolution-api:v2.3.7 (latest stable; 2.4.0 is rc only)
+#   - frontend (evolution-manager) and external dokploy-network removed
+#   - only the API is exposed to the host, on 8081 (8080 is taken); Postgres/Redis internal
+# Secrets/config come from evolution/.env (gitignored). Data lives in named volumes.
+name: recepia-evolution
+
+services:
+  api:
+    container_name: recepia-evolution-api
+    image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8080" # host 8081 -> container SERVER_PORT 8080, localhost only
+    env_file:
+      - .env
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - evolution-net
+
+  postgres:
+    container_name: recepia-evolution-pg
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - evolution_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME} -d ${POSTGRES_DATABASE}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - evolution-net
+
+  redis:
+    container_name: recepia-evolution-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - evolution-net
+
+volumes:
+  evolution_instances:
+  evolution_pg:
+  evolution_redis:
+
+networks:
+  evolution-net:
+    name: recepia-evolution-net
+    driver: bridge
