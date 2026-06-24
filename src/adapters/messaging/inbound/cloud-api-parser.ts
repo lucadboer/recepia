@@ -37,3 +37,48 @@ export function parseCloudApiInbound(payload: unknown): InboundMessage[] {
   }
   return out;
 }
+
+/** A delivery-status event from a Cloud API webhook (sent/delivered/read/failed). */
+export interface CloudStatus {
+  id: string;
+  status: string;
+  recipientId?: string;
+  errors?: { code: number; title?: string }[];
+}
+
+interface CloudStatusPayload {
+  entry?: Array<{
+    changes?: Array<{
+      value?: {
+        statuses?: Array<{
+          id?: string;
+          status?: string;
+          recipient_id?: string;
+          errors?: Array<{ code?: number; title?: string }>;
+        }>;
+      };
+    }>;
+  }>;
+}
+
+/**
+ * Parse a Cloud API webhook's `value.statuses[]` (delivery receipts) — kept SEPARATE
+ * from `parseCloudApiInbound` (patient messages). Statuses are for observability/logging
+ * only and must NEVER be routed to the orchestrator.
+ */
+export function parseCloudApiStatuses(payload: unknown): CloudStatus[] {
+  const p = payload as CloudStatusPayload;
+  const out: CloudStatus[] = [];
+  for (const entry of p.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      for (const s of change.value?.statuses ?? []) {
+        if (!s.id || !s.status) continue;
+        const errors = s.errors
+          ?.filter((e): e is { code: number; title?: string } => typeof e.code === "number")
+          .map((e) => ({ code: e.code, title: e.title }));
+        out.push({ id: s.id, status: s.status, recipientId: s.recipient_id, errors });
+      }
+    }
+  }
+  return out;
+}
