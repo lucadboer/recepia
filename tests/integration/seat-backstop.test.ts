@@ -45,7 +45,7 @@ async function seatOf(id: string): Promise<number> {
   return rows[0].seat;
 }
 
-describe("seat model — STRUCTURAL no-overbooking backstop", () => {
+describe("seat model — DB seat-collision backstop + holdSlot capacity cap (no-overbooking)", () => {
   beforeEach(async () => {
     await resetDb(pool);
     await seedRule(pool, { weekday: 1, startTime: "09:00", endTime: "18:00", capacity: 2 });
@@ -69,6 +69,29 @@ describe("seat model — STRUCTURAL no-overbooking backstop", () => {
     ).rejects.toThrow(/duplicate key value violates unique constraint/i);
 
     expect(await countActiveHolds(pool, SLOT, NOW)).toBe(2); // still capped
+  });
+
+  it("documents the LIMITATION: the DB does not enforce seat < capacity (only holdSlot does) [T226]", async () => {
+    const d = makeDeps(new FakeClock(NOW));
+    await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" }); // seat 0
+    await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55b" }); // seat 1 (cap 2 full)
+
+    // A direct writer that bypasses holdSlot CAN still exceed capacity by using a
+    // seat >= capacity: the unique(slot, seat) index only blocks DUPLICATE seats, and
+    // CHECK(seat >= 0) has no upper bound. So this INSERT must NOT throw — that is the
+    // known, accepted gap. The capacity cap lives in holdSlot (the sole writer); the
+    // real per-resource STRUCTURAL cap arrives in 003 (resource-based). If a future
+    // migration adds that cap, this characterization test will flip and flag the change.
+    await pool.query(
+      `INSERT INTO booking (patient_phone, appointment_type, start_ts, end_ts, status, created_via, seat)
+       VALUES ('+55overflow', 'cleaning', $1, $2, 'confirmed', 'ai', 2)`,
+      [SLOT, END],
+    );
+    const { rows } = await pool.query(
+      "SELECT count(*)::int AS n FROM booking WHERE start_ts = $1 AND status NOT IN ('cancelled','expired')",
+      [SLOT],
+    );
+    expect(rows[0].n).toBe(3); // 3 active in a capacity-2 slot — the DB did not stop it
   });
 
   it("lazily reclaims an expired hold's seat for a new hold WITHOUT the sweeper job", async () => {

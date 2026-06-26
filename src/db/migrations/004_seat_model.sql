@@ -1,6 +1,8 @@
--- Make the no-overbooking guarantee STRUCTURAL (DB-enforced), not just behavioral.
--- Each occupying booking holds a distinct seat in [0, capacity) for its slot; a
--- partial unique index forbids two active bookings on the same (slot, seat).
+-- Seat model for no-overbooking. The partial unique index below is the STRUCTURAL
+-- guarantee: no two active bookings may share the same (slot, seat). It does NOT
+-- enforce seat < capacity — holdSlot (the sole writer) assigns seats in [0, capacity)
+-- under an advisory lock, and that is what caps a slot at its capacity. A true
+-- per-slot/per-resource structural cap arrives with the 003 resource-based model.
 
 ALTER TABLE booking ADD COLUMN seat smallint NOT NULL DEFAULT 0 CHECK (seat >= 0);
 ALTER TABLE booking ALTER COLUMN seat DROP DEFAULT;

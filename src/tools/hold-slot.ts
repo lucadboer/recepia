@@ -25,11 +25,16 @@ function isUniqueViolation(err: unknown, constraint?: string): boolean {
 }
 
 /**
- * Atomically reserve a slot using a seat model. The advisory lock is an
- * optimization that cuts contention; the no-overbooking GUARANTEE is structural:
- * the UNIQUE(start_ts, seat) partial index forbids two active bookings on one seat,
- * so even a writer that bypasses the lock cannot exceed capacity. Idempotent per
- * patient+slot. Expired holds are reclaimed lazily (no dependency on the sweeper).
+ * Atomically reserve a slot using a seat model. Two layers cooperate:
+ *  - STRUCTURAL (DB): the UNIQUE(start_ts, seat) partial index forbids two active
+ *    bookings on the SAME seat, so racing writers can never collide on a seat.
+ *  - APP (this function, the sole writer): picks a seat in [0, capacity) under an
+ *    advisory lock — this is what actually caps a slot at its capacity.
+ * The index alone does NOT enforce seat < capacity: a direct writer using a seat
+ * >= capacity would bypass the cap. That is acceptable here only because holdSlot is
+ * the single writer; the per-resource STRUCTURAL cap arrives with the 003
+ * resource-based model (unique(tenant_id, professional_id, start_ts)).
+ * Idempotent per patient+slot. Expired holds are reclaimed lazily (no sweeper dep).
  */
 export async function holdSlot(deps: Deps, slot: SlotRequest, patient: PatientRef): Promise<Hold> {
   if (!isRoutineType(slot.type)) throw new OutOfScopeError(slot.type);
