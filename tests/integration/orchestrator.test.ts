@@ -77,6 +77,64 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(rows[0].created_via).toBe("ai");
   });
 
+  it("sends EXACTLY ONE patient message on a successful booking — no duplicate [T227]", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Confirmado! Até breve."),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("replied");
+    expect(h.calendar.createdCount).toBe(1);
+    // The deterministic confirmation (confirm_booking) is the SINGLE patient-facing
+    // message; the orchestrator must NOT also send its closing LLM text on top of it.
+    expect(h.messaging.sent.filter((m) => m.to === PHONE)).toHaveLength(1);
+  });
+
+  it("on a FAILED confirm the patient still gets exactly ONE message (not zero) [T227]", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Tive um problema ao confirmar; já acionei a recepção."),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+    h.calendar.failAlways = true; // confirm_booking fails persistently -> CalendarWriteError
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("replied");
+    expect(h.calendar.createdCount).toBe(0); // no event written
+    // confirm_booking sent nothing to the patient (it escalated to reception instead),
+    // so the suppression must NOT apply on failure — the LLM reply is the one message.
+    expect(h.messaging.sent.filter((m) => m.to === PHONE)).toHaveLength(1);
+    expect(h.messaging.sent.some((m) => m.to === RECEPTION)).toBe(true); // escalation landed
+  });
+
   it("LLM-never-writes: an unknown/hostile tool produces zero writes", async () => {
     const llm = new FakeLLM([
       toolUseTurn(toolUse("writeBooking", { sql: "DROP TABLE booking" })),

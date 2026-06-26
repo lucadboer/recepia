@@ -83,6 +83,9 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // 4. Bounded LLM tool-use loop.
   const system = buildSystemPrompt();
   let finalText: string | null = null;
+  // confirm_booking sends the patient the canonical confirmation itself; track a
+  // successful confirm so the closing reply below isn't sent on top of it (T227).
+  let confirmationDelivered = false;
   let iterations = 0;
   while (iterations < AGENT_MAX_ITERATIONS) {
     iterations++;
@@ -112,6 +115,9 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
       const ctx: ToolContext = { deps, phone: msg.phone, state, now };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
+      // Only a SUCCESSFUL confirm delivers the patient confirmation; on failure the
+      // patient must still get the orchestrator's closing reply (never zero).
+      if (tu.name === TOOL_NAMES.confirm && !dispatched.isError) confirmationDelivered = true;
       toolResults.push({
         type: "tool_result",
         toolUseId: tu.id,
@@ -137,6 +143,8 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 
   const replyText = finalText.trim().length > 0 ? finalText : reply.couldNotComplete();
   await deps.conversations.save(state);
-  await deps.messaging.sendMessage(msg.phone, replyText);
+  // Suppress the closing send ONLY when confirm_booking already messaged the patient,
+  // so a successful booking yields exactly one patient message — not two (T227).
+  if (!confirmationDelivered) await deps.messaging.sendMessage(msg.phone, replyText);
   return { status: state.status === "escalated" ? "escalated" : "replied", reply: replyText };
 }
