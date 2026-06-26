@@ -45,7 +45,17 @@ export async function holdSlot(deps: Deps, slot: SlotRequest, patient: PatientRe
 
     // Lazy reclaim: free seats of holds whose TTL elapsed, and move them to the
     // terminal 'expired' state so reassigning the seat won't collide with the index.
-    await reclaimExpiredHoldsForSlot(client, start, now);
+    // Audit each within this transaction — every booking write is logged (Constitution V).
+    const reclaimedIds = await reclaimExpiredHoldsForSlot(client, start, now);
+    for (const expiredId of reclaimedIds) {
+      await appendAudit(client, {
+        entity: "booking",
+        entityId: expiredId,
+        action: "hold_expired",
+        actor: "system",
+        payload: { reason: "lazy_reclaim", start: start.toISOString() },
+      });
+    }
 
     const existing = await findActiveHold(client, patient.phone, start, now);
     if (existing) {

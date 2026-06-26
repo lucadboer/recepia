@@ -7,7 +7,14 @@ import type { Pool } from "../../src/db/pool";
 import { getById } from "../../src/db/repositories/booking-repo";
 import type { Deps } from "../../src/deps";
 import { holdSlot } from "../../src/tools/hold-slot";
-import { countActiveHolds, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import {
+  countActiveHolds,
+  countAudit,
+  ensureSchema,
+  resetDb,
+  seedRule,
+  testPool,
+} from "../helpers/db";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
 const SLOT = new Date("2026-06-15T14:00:00Z"); // Monday 11:00 local
@@ -81,5 +88,22 @@ describe("seat model — STRUCTURAL no-overbooking backstop", () => {
 
     const aAfter = await getById(pool, a.id);
     expect(aAfter?.status).toBe("expired"); // reclaimed to terminal state
+  });
+
+  it("audits the lazy reclaim (held -> expired) inside holdSlot's transaction [T228]", async () => {
+    await resetDb(pool);
+    await seedRule(pool, { weekday: 1, startTime: "09:00", endTime: "18:00", capacity: 1 });
+
+    const clock = new FakeClock(NOW);
+    const d = makeDeps(clock);
+    await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" }); // seat 0
+    clock.advance(HOLD_TTL_MS + 1000); // a's hold is now past its TTL
+
+    // A new hold on the same slot triggers the lazy reclaim of a's expired hold.
+    await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55b" });
+
+    // Constitution V: EVERY write to booking is audited — the lazy reclaim included
+    // (the sweep already audits hold_expired; the lazy path must too).
+    expect(await countAudit(pool, "hold_expired")).toBe(1);
   });
 });

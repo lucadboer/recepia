@@ -40,16 +40,20 @@ export function rowToBooking(r: BookingRow): Booking {
   };
 }
 
-/** Lazy reclaim: expire this slot's holds whose TTL elapsed, freeing their seats now. */
+/**
+ * Lazy reclaim: expire this slot's holds whose TTL elapsed, freeing their seats now.
+ * Returns the ids that were expired so the caller can audit each (Constitution V).
+ */
 export async function reclaimExpiredHoldsForSlot(
   q: Queryable,
   start: Date,
   now: Date,
-): Promise<void> {
-  await q.query(
-    "UPDATE booking SET status = 'expired', expires_at = NULL, updated_at = now() WHERE start_ts = $1 AND status = 'held' AND expires_at <= $2",
+): Promise<string[]> {
+  const { rows } = await q.query(
+    "UPDATE booking SET status = 'expired', expires_at = NULL, updated_at = now() WHERE start_ts = $1 AND status = 'held' AND expires_at <= $2 RETURNING id",
     [start, now],
   );
+  return rows.map((r) => r.id as string);
 }
 
 /** Seats currently occupying a slot (every state except cancelled/expired). */
