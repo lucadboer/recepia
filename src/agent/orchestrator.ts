@@ -83,9 +83,20 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // 4. Bounded LLM tool-use loop.
   const system = buildSystemPrompt();
   let finalText: string | null = null;
-  // confirm_booking sends the patient the canonical confirmation itself; track a
-  // successful confirm so the closing reply below isn't sent on top of it (T227).
-  let confirmationDelivered = false;
+  // "Confirmation delivered" must mean a confirmation message was REALLY sent to the
+  // patient this turn — not merely that the confirm tool returned without error (an
+  // idempotent re-confirm succeeds but sends nothing). So count patient-facing sends
+  // made by the tools through a turn-scoped messaging wrapper, and use that below (T227).
+  let patientMessagesSent = 0;
+  const turnDeps: AgentDeps = {
+    ...deps,
+    messaging: {
+      async sendMessage(to, body) {
+        if (to === msg.phone) patientMessagesSent++;
+        await deps.messaging.sendMessage(to, body);
+      },
+    },
+  };
   let iterations = 0;
   while (iterations < AGENT_MAX_ITERATIONS) {
     iterations++;
@@ -112,12 +123,9 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
         });
         continue;
       }
-      const ctx: ToolContext = { deps, phone: msg.phone, state, now };
+      const ctx: ToolContext = { deps: turnDeps, phone: msg.phone, state, now };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
-      // Only a SUCCESSFUL confirm delivers the patient confirmation; on failure the
-      // patient must still get the orchestrator's closing reply (never zero).
-      if (tu.name === TOOL_NAMES.confirm && !dispatched.isError) confirmationDelivered = true;
       toolResults.push({
         type: "tool_result",
         toolUseId: tu.id,
@@ -128,6 +136,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     state = appendMessage(state, { role: "user", content: toolResults }, now);
   }
 
+  // A confirmation counts as delivered only if a patient-facing message actually went
+  // out during the tool loop (a fresh confirm_booking). Idempotent re-confirms send
+  // nothing, so the closing reply below must still reach the patient (T227).
+  const confirmationDelivered = patientMessagesSent > 0;
+
   // 5. Loop exhausted without a final reply → escalate + pt-BR fallback.
   if (finalText === null) {
     await escalateToHuman(
@@ -137,14 +150,18 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     );
     state = markEscalated(state, now);
     await deps.conversations.save(state);
-    await deps.messaging.sendMessage(msg.phone, reply.couldNotComplete());
+    // Don't tell the patient "couldn't complete" if a confirmation already went out (T227).
+    if (!confirmationDelivered) {
+      await deps.messaging.sendMessage(msg.phone, reply.couldNotComplete());
+    }
     return { status: "max_iterations", reply: reply.couldNotComplete() };
   }
 
   const replyText = finalText.trim().length > 0 ? finalText : reply.couldNotComplete();
   await deps.conversations.save(state);
-  // Suppress the closing send ONLY when confirm_booking already messaged the patient,
-  // so a successful booking yields exactly one patient message — not two (T227).
+  // Suppress the closing send only when a confirmation was actually delivered: a
+  // successful booking yields exactly one patient message (not two), and a re-confirm
+  // that sent nothing still gets a reply (not zero) — T227.
   if (!confirmationDelivered) await deps.messaging.sendMessage(msg.phone, replyText);
   return { status: state.status === "escalated" ? "escalated" : "replied", reply: replyText };
 }

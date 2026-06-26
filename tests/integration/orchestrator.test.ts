@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { FakeLLM, finalTurn, toolUse, toolUseTurn } from "../../src/adapters/fakes/fake-llm";
+import {
+  FakeLLM,
+  finalTurn,
+  type ScriptedTurn,
+  toolUse,
+  toolUseTurn,
+} from "../../src/adapters/fakes/fake-llm";
 import { recordConsent } from "../../src/agent/consent";
 import { handleInbound } from "../../src/agent/orchestrator";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
@@ -133,6 +139,86 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     // so the suppression must NOT apply on failure — the LLM reply is the one message.
     expect(h.messaging.sent.filter((m) => m.to === PHONE)).toHaveLength(1);
     expect(h.messaging.sent.some((m) => m.to === RECEPTION)).toBe(true); // escalation landed
+  });
+
+  it("a re-confirm of an already-confirmed hold still sends exactly ONE message (not zero) [T227 #1]", async () => {
+    const llm = new FakeLLM([
+      // Turn 1: a normal booking — patient gets the deterministic confirmation.
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Confirmado!"),
+      // Turn 2: the LLM re-confirms the SAME (already-confirmed) hold, then replies.
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Sua consulta já está confirmada 🙂"),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+
+    await handleInbound(h.deps, inbound("quero marcar uma limpeza", "m1"));
+    const beforeReconfirm = h.messaging.sent.filter((m) => m.to === PHONE).length;
+
+    const r2 = await handleInbound(h.deps, inbound("obrigado, ficou tudo certo?", "m2"));
+
+    expect(r2.status).toBe("replied");
+    expect(h.calendar.createdCount).toBe(1); // idempotent — still exactly one event
+    // The re-confirm sends NO confirmation (idempotent), so the orchestrator must send
+    // its closing reply — the patient can't be left with silence on a follow-up.
+    const forReconfirm = h.messaging.sent.filter((m) => m.to === PHONE).length - beforeReconfirm;
+    expect(forReconfirm).toBe(1);
+  });
+
+  it("a successful confirm that then loops to MAX_ITERATIONS still sends exactly ONE message (not two) [T227 #2]", async () => {
+    const turns: ScriptedTurn[] = [
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+    ];
+    // After a successful confirm, keep emitting tool-use turns (never a final text) so
+    // the loop runs to AGENT_MAX_ITERATIONS and hits the couldNotComplete branch.
+    while (turns.length < AGENT_MAX_ITERATIONS) {
+      turns.push(
+        toolUseTurn(
+          toolUse(TOOL_NAMES.availability, {
+            from: AGENT_NOW.toISOString(),
+            to: DAY_END,
+            type: "cleaning",
+          }),
+        ),
+      );
+    }
+    const llm = new FakeLLM(turns);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("max_iterations");
+    expect(h.calendar.createdCount).toBe(1); // the booking did succeed
+    // The deterministic confirmation already went out; the max-iter branch must NOT
+    // send couldNotComplete on top of it.
+    expect(h.messaging.sent.filter((m) => m.to === PHONE)).toHaveLength(1);
   });
 
   it("LLM-never-writes: an unknown/hostile tool produces zero writes", async () => {
