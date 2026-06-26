@@ -39,7 +39,7 @@ Demo seed: Mon–Fri, 09:00–18:00, capacity 2.
 | `start_ts` | timestamptz | 30-min grid aligned |
 | `end_ts` | timestamptz | `start_ts + 30 min` (uniform MVP) |
 | `status` | text enum | `held` \| `confirmed` \| `patient_confirmed` \| `cancelled` \| `done` \| `expired` (`cancelled`/`expired` are terminal & free the seat) |
-| `seat` | smallint | seat index in `[0, capacity)`; assigned on hold. Backs the structural no-overbooking guarantee |
+| `seat` | smallint | seat index assigned on hold — `holdSlot` picks the lowest free seat in `[0, capacity)`. Backs the seat-collision guarantee; the capacity cap itself is enforced by `holdSlot`, not by the DB (see Indexes / Invariants) |
 | `expires_at` | timestamptz | set **iff** `status='held'`; `start_ts`-independent (= hold creation + 10m) |
 | `google_event_id` | text | set on confirm; null while held; idempotency anchor |
 | `attended_by` | text | nullable (pooled — usually null in this slice) |
@@ -52,7 +52,7 @@ Demo seed: Mon–Fri, 09:00–18:00, capacity 2.
 - `(start_ts, status)` — fast per-slot counting for availability.
 - Partial index on `(start_ts)` where `status='held'` — sweep + active-hold counting.
 - Partial unique on `(patient_phone, start_ts)` where `status='held'` — enforces hold idempotency (no duplicate active hold for same patient+slot).
-- **Partial unique on `(start_ts, seat)` where `status NOT IN ('cancelled','expired')`** — the STRUCTURAL no-overbooking backstop: at most one active booking per seat, so a slot can never hold more than `capacity` distinct seats even if a writer bypasses the advisory lock. The advisory lock is now only a contention optimization.
+- **Partial unique on `(start_ts, seat)` where `status NOT IN ('cancelled','expired')`** — the seat-collision backstop: at most one active booking per `(slot, seat)`. This does **not** enforce `seat < capacity` — a direct writer using `seat >= capacity` would bypass the cap. The capacity cap is enforced by `holdSlot` (the sole writer), which assigns seats in `[0, capacity)` under the advisory lock; the lock is what actually caps a slot at its capacity. A true per-resource structural cap is deferred to the 003 resource-based model.
 
 ### `audit_log` — append-only trace
 
@@ -91,7 +91,7 @@ Append-only: `UPDATE`/`DELETE`/`TRUNCATE` are blocked by DB triggers (migrations
 
 ## Invariants (test targets)
 
-1. **No overbooking (STRUCTURAL)**: for every slot `T`, the active bookings (`status NOT IN ('cancelled','expired')`) occupy distinct seats in `[0, capacity(T))`, so their count ≤ `capacity(T)`. Enforced by the `(start_ts, seat)` partial unique index — not merely by the advisory lock. (Mandatory concurrency test + lock-bypass test.)
+1. **No overbooking**: for every slot `T`, `holdSlot` (the sole writer) assigns active bookings (`status NOT IN ('cancelled','expired')`) to distinct seats in `[0, capacity(T))` under an advisory lock, so their count ≤ `capacity(T)`. The `(start_ts, seat)` partial unique index structurally prevents two active bookings from sharing a seat (proven by the lock-bypass test), but does **not** by itself enforce `seat < capacity` — that cap is the writer's responsibility (mandatory concurrency test; characterization test pins the gap). A fully DB-enforced per-resource cap is deferred to 003.
 2. `expires_at IS NOT NULL` ⇔ `status='held'`.
 3. `google_event_id IS NOT NULL` ⇒ `status IN ('confirmed','patient_confirmed','done')`.
 4. Every state-changing row has a matching `audit_log` row committed in the same transaction.
