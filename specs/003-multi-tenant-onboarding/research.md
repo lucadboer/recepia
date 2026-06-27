@@ -1,160 +1,169 @@
 # Phase 0 Research (DECIDED): Multi-Tenant Onboarding — `003-multi-tenant-onboarding`
 
-> **Status: discovery, decisions D1–D7 RESOLVED.** Still **not a spec** and **no code** — 003 stays on hold until a real 2nd clinic exists (YAGNI, constitution III). This doc now records the resolved product/policy calls (see §7) and reflects them in the model below. External claims are cited (§9); unverified bits are marked **[a confirmar]**. The constitution is **not** edited here — only a **proposed amendment** is drafted (§8) to apply later via `/speckit.constitution`.
+> **Status: discovery; decisions D1–D11 RESOLVED.** Still **not a spec** and **no code** — 003 stays on hold until a real 2nd clinic exists (YAGNI, constitution III). This doc records the resolved product direction and the concrete *HOW* questions for the spec. External claims are cited (§10); unverified bits are **[a confirmar]**. The constitution is **not** edited here — **two** proposed amendments are drafted (§9) to apply later via `/speckit.constitution`.
 >
-> **North star (now aligned with the decided model):** a clinic goes live by connecting **WhatsApp + their calendar** — those two connections are the canonical, and near-only, effort on their side.
+> **Product north star (decided):** a clinic **self-serves**: creates an account, logs in, connects WhatsApp + their calendar, and **configures its own hours, professionals, and procedures** — with **no manual step from us**. Two third-party review gates (Meta + Google) make "same-day go-live" unrealistic (§2, §3).
 
 ## 0. What changes vs today (single-tenant)
-Today recepia is single-tenant: one Postgres, one Google Calendar, one WABA, one `receptionPhone`, all from a single `.env`. `buildAgentDeps()` ([src/composition.ts](../../src/composition.ts)) reads one clinic's config; the webhook ([src/webhook/server.ts](../../src/webhook/server.ts)) routes every inbound to one `handleInbound`. Ports (`CalendarPort`, `MessagingPort`, `Clock`) are already injected — the lever that makes multi-tenant an **evolution, not a rewrite** (§6).
+Today recepia is single-tenant: one Postgres, one Google Calendar, one WABA, one `receptionPhone`, all from one `.env`. `buildAgentDeps()` ([src/composition.ts](../../src/composition.ts)) reads one clinic; the webhook ([src/webhook/server.ts](../../src/webhook/server.ts)) routes every inbound to one `handleInbound`. Ports (`CalendarPort`, `MessagingPort`, `Clock`) are injected — the lever that makes multi-tenant an **evolution, not a rewrite** (§7). **Note:** the capacity model also changes from **pooled** to **resource-based** (§4, D10) — a deeper change than multi-tenancy alone.
 
 ---
 
-## 1. Catalog: everything it took to wire ONE clinic (from what we lived)
+## 1. Self-service onboarding (D8) — the clinic does it alone
+The clinic signs up, logs in, and connects everything itself; we never hand-configure a tenant. Three self-service connect/config steps:
+- **Connect WhatsApp** via Embedded Signup (§2).
+- **Connect calendar** via Google 1-click OAuth (§3).
+- **Self-configure** hours / professionals / procedures via our UI (§5, D9).
 
-| # | Item | Per-clinic? | Automatable / eliminable (clinic-side)? | Irreducible minimum |
-|---|------|-------------|------------------------------------------|---------------------|
-| 1 | Create Meta Developer **App** (`Recepia Bot`) | **Provider, one-time** | Yes — done once by us | none (clinic) |
-| 2 | Create + **verify Business Account** (hit lock `131031` → CNPJ) | Per business | Partial — Embedded Signup guides it; each clinic's **own WABA** stays tied to **their** business | Clinic authorizes/owns a WABA (their CNPJ) — §2 |
-| 3 | Get `phone_number_id` + token | Per clinic | **Yes** — returned by Embedded Signup code-exchange, stored automatically | none (clinic) |
-| 4 | Verify test recipient + open 24h window | Test-mode only | **Eliminated in production** (real number → no allow-list; 24h window is an inherent messaging rule) | none |
-| 5 | Token lifecycle (temp 24h → permanent) | Per clinic | **Yes** — Embedded Signup yields a long-lived **Business Integration System User token** [src: Access Tokens] | none (clinic) |
-| 6 | Calendar connection (was SA-share + calendar id) | Per clinic | Becomes **1-click Google OAuth**; **necessary** (read+write reconciliation, §3), not cosmetic | ~3 clicks (Google consent) |
-| 7 | Populate `.env` | Per clinic | **Yes** — replaced by a `tenant` row created during onboarding | none |
-| 8 | Reception number, capacity/hours, appointment types | Per clinic | Partial — smart defaults + quick form | a few fields (defaultable) |
-
-**Reading:** almost everything that hurt is provider-side one-time or automatable. The genuinely clinic-side irreducible bits are **(a)** authorizing their own WhatsApp number (§2), **(b)** connecting their calendar (§3, now required for correctness), and **(c)** their working hours/types (defaultable).
+The two account logins the clinic needs: a **Meta Business** account (for WhatsApp — §2) and a **Google** account (for calendar — §3). Clinics without a Meta Business account must create one — **that is part of onboarding, documented honestly, not hidden**.
 
 ---
 
-## 2. WhatsApp with minimum friction — Tech Provider + Embedded Signup  *(reflects D4)*
+## 2. WhatsApp per clinic — Tech Provider + Embedded Signup (D4 + D11)
 
-**Mechanism (official, decided as the only production channel).** Become a **Tech Provider** and embed **Embedded Signup** — "a scalable authentication and authorization interface launched directly from your website or client portal" ([Embedded Signup overview]). The clinic clicks, logs into Facebook, selects/creates **their** WABA + phone number, and we receive a `code` we **exchange for a Business Integration System User access token** — for "programmatic, automated actions on customer WABAs, without … future re-authentication" ([Access Tokens]). Post-flow we list shared WABAs (`client_whatsapp_business_accounts`) and resolve the WABA id via Debug Token ([Manage accounts]).
+**Our one-time prerequisites (provider side).** Become a **Tech Provider**: verify **our** business, and pass **App Review** to get **Advanced Access** to `whatsapp_business_messaging` (send on behalf of clients) + `whatsapp_business_management` (clients' WABA settings + templates) ([Become a Tech Provider]). App Review requires a **screencast** demonstrating the permission's use — e.g. a recording of the API Setup cURL **sending a message**, and/or **WhatsApp Manager creating a template** ([App Review sample submission]). After verification + App Review + Access Verification, our customer-onboarding limit rises to **200 new business customers / rolling 7 days** ([Solution Providers]).
+- **⚠️ Build on Embedded Signup v4.** **Embedded Signup v2 is deprecated 2026-10-15** — migrate to **v4** ([Embedded Signup overview]). **[a confirmar]** the exact v4 flow params (auth response `code`, session config) at spec time.
 
-**Provider prerequisites (one-time, our side).** App Review + **Advanced Access** for `whatsapp_business_management` + `whatsapp_business_messaging` before onboarding clients ([Become a Tech Provider]).
+**The clinic's flow (irreducible — honest).**
+1. The clinic **authenticates with THEIR own Meta/Facebook Business account** — there is **no Embedded Signup without a Meta login**. Clinics without one must create it (part of onboarding).
+2. They authorize **their WABA**, and **pick or migrate a phone number**. We exchange the returned `code` → a **Business Integration System User token** (no re-auth) ([Access Tokens]); resolve the WABA id via Debug Token ([Manage accounts]).
+3. **The clinic must add a PAYMENT METHOD (card) to their WABA.** For **Tech Providers**, "clients onboarded by Tech Providers must provide their own payment method after onboarding" ([Pricing]). **This is a business-model fact:** the clinic **pays Meta directly** for WhatsApp usage, **on top of** what they pay us. WhatsApp pricing is **per-message** (charged per delivered template message) **since 2025-07-01** ([Pricing]). *(Contrast: a **Solution Partner** can extend its own credit line so clients don't enter payment — a different partner type we are NOT choosing for v1; [a confirmar] if worth revisiting.)*
+4. **Business verification timeline:** varies by region; can take **days to weeks** — onboarding is **not** "live the same day." **[a confirmar]** Meta publishes no fixed SLA.
+5. **Number already used in the WhatsApp Business app:** migration is supported but needs a **customized Embedded Signup flow** ("Onboard WhatsApp Business app users") — **[a confirmar]** the exact steps/screens ([Onboard WhatsApp Business app users]).
 
-**Irreducible truth (cravado).** On the **official Cloud API there is no "just give me your number"** — the clinic must own/authorize **their own WABA**, tied to a verified business (**CNPJ**). Embedded Signup is the lowest-friction official path. **CNPJ is not a barrier** — the customer is a clinic, and clinics have a CNPJ (D7).
+**Routing:** the webhook payload's `metadata.phone_number_id` → maps to the tenant (§7).
 
-**Evolution / Baileys — dev only (decided D4).** Keeps the "zero-effort, we scan the QR" property but is **unofficial / against WhatsApp ToS / ban-risk**. Allowed only for **dev/demo** (and an eventual first quick demo) — **never a production default, never on a clinic's main line.** Both adapters already sit behind `MessagingPort` + a `MESSAGING_PROVIDER` switch ([src/composition.ts](../../src/composition.ts)), so this is config.
+**Dev/test without real clinics:** Meta **sandbox accounts are valid 30 days** (then deactivated/reclaim) — use them to build/QA the Embedded Signup integration ([Solution Providers]).
+
+**D4 reaffirmed:** production is **always** official Cloud API via Embedded Signup. **Evolution/Baileys is dev/demo only — never production**, never a clinic's main line (ToS/ban risk).
 
 ---
 
-## 3. Calendar — the **reconciliation** model  *(reflects D1 + D2; supersedes the old "optional mirror")*
+## 3. Calendar — reconciliation model + Google OAuth (D1 + D2 + D6, extended)
 
-**Decided operating model: recepia COEXISTS with other booking channels** (phone, walk-in, the dentist's manual blocks). recepia is **not** the exclusive owner of the agenda. Therefore:
+**Decided operating model: recepia COEXISTS with other booking channels** (phone, walk-in, manual blocks). recepia is **not** the exclusive owner of the agenda:
+- **Postgres is the booking ENGINE + source of truth** for recepia's own bookings + holds + the atomic no-overbooking guarantee (kept — the jewel).
+- **The clinic's calendar is BIDIRECTIONAL:** write sink (push confirmed) **+** read source (free/busy) to subtract occupations made outside recepia.
+- **Availability = reconciliation:** `free = capacity − recepiaBookings [Postgres] − externalBusy [calendar free/busy]`. Connecting a calendar is **necessary** (not cosmetic) for any clinic that books off-platform (≈ all).
 
-- **Postgres is the booking ENGINE and source of truth for recepia's own bookings + holds + the atomic no-overbooking guarantee** (the seat model + `unique(start_ts, seat)` — **kept; it is the jewel, not replaced**). See [src/db/migrations/004_seat_model.sql](../../src/db/migrations/004_seat_model.sql).
-- **The clinic's calendar is BIDIRECTIONAL:** a **write sink** (push confirmed bookings) **and** a **read source** (free/busy) to subtract occupations created **outside** recepia.
-- **Availability is reconciliation, not a single source:**
-  `free(slot) = capacity(slot) − recepiaBookings(slot) [Postgres] − externalBusy(slot) [calendar free/busy]`.
-- **Connecting the calendar is NECESSARY, not optional** (this replaces old Design (c)'s cosmetic mirror): any clinic that books outside recepia (≈ all of them) needs the read-back, otherwise recepia offers slots the dentist already filled → **double-booking**. "Skip calendar" is acceptable **only** for a clinic that books 100% through recepia.
+**Per-clinic linking = 1-click Google OAuth (D8).** Replaces the current single-tenant Service-Account-share. Flow:
+`"Conectar Google Agenda" → consent on THEIR Google account → code → exchange for refresh token → store ENCRYPTED per tenant (D3) → server reads free/busy + writes events with their token.`
 
-**Provider matrix (decided D6: Google only in v1).** Free/busy read support matters now:
+**⚠️ NEW gate found — Google OAuth app verification.** Calendar scopes (`calendar.events` for write, plus `calendar.readonly`/`calendar.freebusy` for free/busy read) are **sensitive/restricted** → require **Google's OAuth app verification** before any Google account can grant access in production ([Google sensitive-scope verification], [Choose Calendar scopes]). So there are **TWO review gates** at onboarding: **Meta** (§2) **and** **Google**. **[a confirmar]** the exact least-privilege scope set (events-write + free/busy-read).
+- **⚠️ 7-day refresh-token trap:** while the OAuth consent screen is in **"Testing"** publishing status, refresh tokens **expire in 7 days** ([OAuth web-server / policies]). Production REQUIRES the app **published + verified**, else per-clinic tokens die weekly. Also: a refresh token dies if the user **revokes** or it's **unused for 6 months** — the adapter must handle re-auth.
 
-| Provider | v1? | OAuth 1-click | Free/busy read | Notes |
+**Provider matrix (D6: Google only in v1).**
+
+| Provider | v1? | 1-click OAuth | Free/busy read | Notes |
 |---|---|---|---|---|
-| **Google Calendar** | ✅ **v1** | ✅ | ✅ (FreeBusy API) | We already speak this API (002); read+write both supported |
-| **Microsoft 365 / Outlook** | ⏳ when a real clinic asks | ✅ (Graph + `offline_access`, `Calendars.ReadWrite`) | ✅ (getSchedule) | Adapter when demanded — **not speculative** (YAGNI) |
-| **Apple / iCloud** | ❌ out | ❌ (no public OAuth; CalDAV + app-specific password) | — | High friction; excluded |
-| **Calendly** | ❌ out | ⚠️ | — | Competing scheduler / model conflict; excluded |
+| **Google Calendar** | ✅ v1 | ✅ (needs Google app verification) | ✅ FreeBusy API | We already speak it (002) |
+| **Microsoft 365 / Outlook** | ⏳ on demand | ✅ (`offline_access`, `Calendars.ReadWrite`) | ✅ getSchedule | Adapter when a clinic asks (YAGNI) |
+| **Apple / iCloud** | ❌ out | ❌ (CalDAV + app-specific password) | — | High friction |
+| **Calendly** | ❌ out | ⚠️ | — | Competing scheduler / model conflict |
 
-`CalendarPort` abstracts the sink today ([src/ports/calendar-port.ts](../../src/ports/calendar-port.ts)); the read-back adds a **free/busy read** capability to the port (new method, e.g. `busy(range)`), implemented per provider — still adapter work, not a rewrite.
+`CalendarPort` gains a **free/busy read** method (e.g. `busy(range, resourceRef)`), implemented per provider — adapter work, not a rewrite.
 
-### 3a. OPEN design sub-decision **DS1** — pooled capacity ↔ calendar free/busy *(NOT decided; needs the first clinic's real workflow)*
-Pooled capacity is a **counter of N chairs**; calendar free/busy is **busy intervals on a calendar**, which don't carry "how many chairs". Candidate conventions:
-- **Option A — dedicated recepia calendar, 1 event = 1 chair.** Clean for recepia-written events; but external busy lives on *other* calendars and still doesn't say how many chairs it consumes.
-- **Option B (v1 simplification) — any external busy = "whole clinic busy" for that interval** (subtract full capacity / mark slot unavailable). Simplest and **safe** (never double-books), but **over-blocks** (one dentist's personal event blocks all chairs).
-- **Option C — one calendar per chair**, free/busy maps 1:1 to a seat. Most accurate; **heavy onboarding** (clinic maintains N calendars) and fights the pooled simplicity.
-- **Tradeoff summary:** B = simplest/safe/over-blocks; C = accurate/heavy; A = middle. **Recommend deciding with the first clinic**, after seeing how they actually block time. Left **open**.
-
-### 3b. ⚠️ MVP correction note (affects the CURRENT single-tenant build, not only 003)
-Today `get_availability` reads **Postgres only** ([src/tools/get-availability.ts](../../src/tools/get-availability.ts)) — so if the dentist blocks time **directly in her Google Calendar** (off-platform), recepia still offers that slot → **double-booking**. This is a real correctness gap in the **current MVP**, surfaced by the reconciliation decision. **Do NOT build the read-back now** (YAGNI + we need the real workflow): **validate the actual operational model with the first clinic during the pilot/consult** (do they book off-platform? how? on which calendar?), and only then implement read-back. Track it as a **task conditioned on that validation** (relates to 002 deferred items; not started).
+### 3a. ⚠️ MVP correction note (affects the CURRENT single-tenant build)
+Today `get_availability` reads **Postgres only** ([src/tools/get-availability.ts](../../src/tools/get-availability.ts)) — a dentist blocking time **directly in Google Calendar** is **not** seen → recepia could **double-book**. Real gap in the current MVP. **Do NOT build read-back speculatively** — validate the real workflow with clinic #1, then implement. (DS1 below is largely answered by the resource-based model.)
 
 ---
 
-## 4. Tenant segregation  *(reflects D5 + D3)*
+## 4. Capacity model: POOLED → RESOURCE-BASED (per professional/specialty) — **D10, the deep change**
 
-- **Inbound routing → tenant.** Cloud API webhook carries `entry[].changes[].value.metadata.phone_number_id` → tenant; Evolution maps by instance. One endpoint, resolve tenant, then `handleInbound(depsForTenant, msg)`. Our `cloud-api-parser` currently **drops** `metadata` ([src/adapters/messaging/inbound/cloud-api-parser.ts](../../src/adapters/messaging/inbound/cloud-api-parser.ts)) — it would surface `phone_number_id`.
-- **Data isolation (D5): shared DB + `tenant_id` + Postgres RLS.** Add `tenant_id` to `booking`, `capacity_rule`, `capacity_override`, `conversation_state`, `patient_consent`, `audit_log`. No-overbooking index → **`unique(tenant_id, start_ts, seat)`**. `conversation_state`/consent keyed by **`(tenant_id, phone)`** (same patient may use multiple clinics). RLS policies `USING (tenant_id = current_setting('app.current_tenant')::uuid)`.
-  - **Gotcha (record):** set the tenant with **`SET LOCAL app.current_tenant` per transaction** so it never leaks across pooled connections — **special care with PgBouncer in transaction mode** (transaction-scoped GUC, not session). **[a confirmar]** at impl.
-  - DB-per-tenant / schema-per-tenant **only** if a large client demands physical isolation.
-- **Config & secrets (D3): application-level encryption.** Per-tenant tokens encrypted **in the app** (libsodium/age), with the encryption key stored as a **Fly secret** — **not** pgcrypto alone (key sitting next to the DB doesn't protect against a DB dump). **External KMS** is a future upgrade if compliance/scale demands. Secrets live in the `tenant` registry (encrypted columns), never in env or plaintext.
-- **Composition.** `buildAgentDeps(tenantId)` becomes a factory: resolve tenant → decrypt secrets → build ports. Repos take `tenant_id` or rely on the RLS GUC.
-- **LGPD.** Each clinic is an **independent data controller**; consent per `(tenant_id, phone)`; RLS makes "clinic A never sees clinic B" a DB-level guarantee. Ties to 002's deferred retention task (T222).
+**Decided target model.** The clinic registers **professionals**, each with **specialties**, and booking respects them — e.g. one does only ortho/aparelho, another only consultation/initial eval, another only surgery. This **replaces the pooled "N generic chairs"** model. **This contradicts the current constitution** ("Modelo de capacidade pooled… Modo `assigned` fica fora do escopo até spec dedicada") → **needs a constitution amendment (§9).** It is also what the constitution foresaw as "a dedicated spec" — this is that spec's direction.
 
----
+**Concretely, what changes (not trivial):**
+- **Data model.** New `professional` (id, name, specialties[]) and `procedure_type`; an M:N **procedure → qualified professionals** mapping; **per-professional working schedule** (today's `capacity_rule` becomes per-professional, not a single pooled counter); `booking` gains `professional_id`.
+- **No-overbooking guarantee evolves but stays structural.** From `unique(start_ts, seat)` (pooled seats) → effectively **`unique(professional_id, start_ts)` for active states** (a professional can't hold two bookings at once). Plus `tenant_id` (§7) → `unique(tenant_id, professional_id, start_ts)`. The advisory-lock + atomic-recheck pattern carries over per professional.
+- **`get_availability` resolves PER professional.** For procedure P: find professionals qualified for P → union of each one's free slots (their schedule − their bookings − their holds − **their** external free/busy). Replaces the single capacity counter.
+- **Reconciliation becomes PER professional (this answers DS1).** External free/busy is read **per professional** — ideally **each professional's own calendar** maps 1:1 to that professional's availability, removing the old pooled "how many chairs does this busy block consume?" ambiguity. Trade-off: **N calendar connections per clinic** (one per professional) vs **one shared calendar with per-professional sub-calendars/labels**. **[a confirmar / design]** which we support v1.
+- **Triage (001) becomes DATA-DRIVEN, not a fixed blocklist.** Today aparelho/ortodontia/implante/cirurgia **always escalate** (out of routine scope). With specialized professionals registered, those procedures become **auto-bookable for the qualified professional**. So the rule flips: **escalate procedures the clinic does NOT support** (no qualified professional configured); **keep escalating** urgency/pain, ambiguity, complaints, financial, ongoing-treatment, specific-doubt (the safety net stays). The clinic's procedure config drives what's bookable vs escalated.
 
-## 5. Onboarding funnel (the "fast & friendly" floor)  *(updated for reconciliation)*
-
-| Step | Clinic action | Clicks | Data typed |
-|---|---|---|---|
-| 1. Sign up | Email / Google login | ~2 | clinic name, admin email |
-| 2. **Connect WhatsApp** | Embedded Signup (FB login → pick/create WABA → pick/add number) | ~5 (Meta UI) | **nothing typed to us** — we get code→token |
-| 3. **Connect calendar (Google)** | 1-click OAuth consent (read+write) | ~3 | none |
-| 4. Schedule config | Confirm weekly hours grid (prefilled defaults), appointment types (defaults: avaliação/limpeza/retorno/consulta), reception number, timezone (auto) | a few | reception number; tweak hours |
-| 5. Go live | Confirm + send a test message | 1 | none |
-
-**Floor:** **two connections (WhatsApp + Google) + a one-field config** → live in ~3–4 minutes. This *is* the user's north star ("ela só conecta WhatsApp e agenda, nada além"). Note: vs the earlier draft, **Step 3 is no longer skippable** for clinics that book off-platform (reconciliation correctness, §3).
+**Implementation questions for the spec (HOW, not IF):**
+1. Does the patient **choose/see the professional** ("com a Dra. X") or stays abstracted ("ter 14h livre")? (UX + privacy.)
+2. **One calendar per professional** vs **one clinic calendar with markers** for free/busy read — what do we require/support v1?
+3. How do **procedure→specialty→professional** mappings get modeled and edited in the self-config UI (§5)?
+4. Per-professional schedule + clinic-wide overrides (holidays) — precedence rules.
+5. How does triage read the clinic's "supported procedures" set to decide auto-book vs escalate, **without ever weakening the escalate-on-doubt non-negotiable**?
+6. Migration of the seat model → resource model in the schema (the 001 concurrency/anti-overbooking tests must stay green, re-cast per professional).
 
 ---
 
-## 6. Migration: single-tenant → multi-tenant (evolution, not rewrite)
+## 5. Self-configuration UI (D9) — essential product surface
+After login, the clinic configures **itself**, via an interface:
+- **(a) Working hours** it operates (weekly grid + overrides/holidays).
+- **(b) Professionals available** and **how many** — each with their specialties (feeds D10).
+- **(c) Procedure types** it offers, mapped to qualifying professionals (feeds D10 + the triage data-drive).
 
-**003 work:**
-- **Schema:** add `tenant_id` (backfill current clinic as a seed tenant); seat unique index includes `tenant_id`; RLS policies; new `tenant` registry table with encrypted secret columns.
-- **Calendar read-back (new capability):** extend `CalendarPort` with free/busy read; reconcile in `get_availability`. (Also the MVP-correction in §3b — but conditioned on first-clinic validation.)
-- **Webhook:** surface `phone_number_id`/instance → resolve tenant → set RLS context → dispatch. ([src/webhook/dispatch.ts](../../src/webhook/dispatch.ts) stays auth/parse/dedupe.)
-- **Composition:** `buildAgentDeps(tenantId)` factory + tenant resolver + secret decryptor.
-- **Onboarding service + UI:** Embedded Signup callback, Google OAuth callback, tenant CRUD, config form.
-
-**Cheap now (keep the door open — applies to the CURRENT single-tenant work):**
-- When next touching the **schema**, assume a future **`tenant_id`** (don't bake single-clinic assumptions into new columns/indexes).
-- Keep **secrets out of source** (already true) — and prefer app-level-encryptable shapes for when they move into the `tenant` table.
-- The **webhook already exposes `phone_number_id`** (Cloud) — keep it reachable for future routing; `CalendarPort`/`MessagingPort` already swappable.
-- Treat the **calendar read-back gap (§3b) as a known MVP limitation** to validate with clinic #1 — not to build speculatively.
-
-**Do NOT build now (dedicated 003):** RLS, `tenant` table, Embedded Signup, OAuth calendar adapters, free/busy read-back, onboarding UI.
+This UI is **core product**, not nice-to-have — it's what lets each clinic mirror its own way of working without us touching anything. It writes the tenant's `professional` / `procedure_type` / per-professional `capacity_rule` rows.
 
 ---
 
-## 7. RESOLVED decisions (D1–D7)
+## 6. Onboarding funnel (updated for self-service + two review gates)
 
-- **D1 — Source of truth → RECONCILIATION.** Postgres = engine/holds/atomicity + source of truth for recepia bookings; the clinic calendar = write sink + free/busy read source; availability = capacity − recepia bookings − external busy. *Reason:* recepia coexists with phone/walk-in/manual blocks; a single source would double-book. Requires a constitution amendment (§8).
-- **D2 — Calendar role → BIDIRECTIONAL, required (not optional mirror).** Connecting a calendar becomes necessary for correctness. *Reason:* without read-back, off-platform bookings cause double-booking.
-- **D3 — Secrets → application-level encryption (libsodium/age), key as a Fly secret.** Not pgcrypto alone; KMS later if needed. *Reason:* protect against DB dump; keep the key out of the database blast radius.
-- **D4 — WhatsApp production → official Cloud API (Embedded Signup) ONLY.** Evolution = dev/demo only, never a production default or a clinic's main line. *Reason:* ToS/ban risk; CNPJ is not a barrier (clients are clinics).
-- **D5 — Isolation → shared DB + `tenant_id` + RLS.** DB/schema-per-tenant only on demand. *Reason:* simplest that scales for many small clinics; RLS gives a DB-level LGPD guarantee. (Gotcha: `SET LOCAL` per tx; PgBouncer care — §4.)
-- **D6 — Calendar providers v1 → Google only.** Outlook when a real clinic asks (adapter, not speculative); Apple/Calendly out. *Reason:* YAGNI; Google + Graph both support free/busy read (fits D1/D2).
-- **D7 — Business verification → require CNPJ + Meta verification per clinic.** *Reason:* every clinic has a CNPJ; not a blocker. **[a confirmar at spec time]:** the pre-verification sending tier (can the clinic send a test before verification completes?) and go-live timing.
+| Step | Clinic action | Note |
+|---|---|---|
+| 1. Sign up + log in | Email/Google login; create Meta Business acct if absent | self-service |
+| 2. Connect WhatsApp | Embedded Signup v4 (Meta login → authorize WABA → pick/migrate number → **add payment method**) | **Meta verification gate (days–weeks)** |
+| 3. Connect calendar | Google 1-click OAuth (free/busy-read + events-write + offline) | **Google app-verification gate** |
+| 4. Self-configure (§5) | hours · professionals+specialties · procedures | the UI |
+| 5. Go live | test message | after both gates clear |
 
-### Remaining open (design sub-decisions, deliberately deferred)
-- **DS1 — pooled capacity ↔ calendar free/busy mapping** (Options A/B/C, §3a) — decide with the first clinic's real workflow.
-- **D7 follow-ups** — the two `[a confirmar]` items above.
+**Honest expectation:** the *clicks* are minutes, but **go-live is gated by Meta business verification (days–weeks) and Google OAuth app verification** — not same-day. The clinic also takes on a **direct Meta bill** (per-message).
 
 ---
 
-## 8. Proposed constitution amendment (DRAFT — apply later via `/speckit.constitution` when approved; NOT applied here)
-
-> Replace, in [.specify/memory/constitution.md](../../.specify/memory/constitution.md) → *Restrições de Domínio*, the line **"Google Calendar é a fonte de verdade dos eventos confirmados; Postgres guarda capacidade, holds e estado de sync"** with:
->
-> *"O agendamento segue um modelo de **reconciliação**: o **Postgres é o motor de booking** — fonte da verdade dos agendamentos feitos pelo recepia, dos holds e da garantia atômica de não-overbooking. A **agenda da clínica (ex.: Google Calendar) é bidirecional**: recebe a escrita dos agendamentos confirmados (sink) e é lida como fonte de **free/busy** para descontar ocupações criadas fora do recepia (telefone, balcão, bloqueio manual). A **disponibilidade oferecida = capacidade configurada − agendamentos do recepia − ocupações externas lidas da agenda**. Nenhuma fonte isolada é autoritativa sobre a disponibilidade; a garantia estrutural anti-overbooking no Postgres é mantida."*
->
-> Rationale to record in the amendment: recepia coexists with other booking channels, so a single source of truth would either ignore off-platform bookings (double-booking) or force the clinic to abandon its own calendar. This preserves the no-overbooking jewel while reflecting reality.
+## 7. Tenant segregation (D5 + D3) — unchanged direction
+- **Routing:** webhook `phone_number_id` → tenant (Cloud); Evolution instance → tenant (dev). `cloud-api-parser` currently drops `metadata` → would surface `phone_number_id`.
+- **Isolation (D5):** shared DB + `tenant_id` on every table + Postgres **RLS** (`USING (tenant_id = current_setting('app.current_tenant')::uuid)`). No-overbooking index now `unique(tenant_id, professional_id, start_ts)` (per D10). `conversation_state`/consent keyed by `(tenant_id, phone)`. **Gotcha:** `SET LOCAL app.current_tenant` per transaction; **PgBouncer transaction-mode care** [a confirmar].
+- **Secrets (D3):** per-tenant tokens (WhatsApp + Google refresh) **app-level encrypted** (libsodium/age), key as a **Fly secret**; not pgcrypto alone; KMS later. Stored in a `tenant` registry, never in env/plaintext.
+- **Composition:** `buildAgentDeps(tenantId)` factory → resolve tenant → decrypt secrets → build ports.
+- **LGPD:** each clinic = independent controller; RLS = DB-level "clinic A never sees clinic B"; consent per `(tenant_id, phone)`.
 
 ---
 
-## 9. Sources (official, consulted)
-- WhatsApp Embedded Signup overview — https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview/
-- Onboarding customers as a Tech Provider — https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-customers-as-a-tech-provider *(JS-rendered; step params **[a confirmar]**)*
-- Become a Tech Provider — https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers
+## 8. Migration single-tenant → multi-tenant (+ pooled→resource): evolution, not rewrite
+**003 work:** `tenant_id` + RLS + `tenant` registry (encrypted secrets); **professional/procedure_type data model + per-professional schedule + resource-based `get_availability`/`hold_slot`** (D10); calendar **free/busy read-back** per professional; webhook tenant resolution; `buildAgentDeps(tenantId)`; **onboarding service + self-config UI** (Embedded Signup v4 callback, Google OAuth callback, tenant CRUD).
+**Cheap now (single-tenant work):** assume a future `tenant_id` when touching schema; keep secrets out of source; webhook already exposes `phone_number_id`; treat read-back gap (§3a) as a known limitation. **Do NOT build** RLS/tenant table/Embedded Signup/OAuth/resource model/UI now.
+
+---
+
+## 9. RESOLVED decisions
+
+**From the first pass (unchanged):** **D1** reconciliation source-of-truth · **D2** calendar bidirectional+required · **D3** app-level secret encryption (Fly key) · **D4** Cloud API only in prod (Evolution dev-only) · **D5** shared DB + `tenant_id` + RLS · **D6** Google-only calendar v1 · **D7** CNPJ + Meta verification per clinic.
+
+**New (this pass):**
+- **D8 — Self-service onboarding with clinic login.** Clinic creates account + connects WhatsApp (Embedded Signup) + Google Calendar (1-click OAuth) itself; no manual step from us. Requires the clinic to have/ create a Meta Business account and a Google account.
+- **D9 — Clinic self-configuration UI.** The clinic sets its own hours, professionals (+specialties), and procedures via our interface — core product.
+- **D10 — Resource-based capacity (per professional/specialty), replacing pooled.** Booking matches procedure→qualified professional; availability/holds/no-overbooking become per professional; triage becomes data-driven (escalate UNSUPPORTED procedures, keep all doubt/urgency escalations). **Needs a constitution amendment (§ below).** Reshapes/answers **DS1** (free/busy maps per professional).
+- **D11 — Embedded Signup v4 + Tech Provider model.** One-time provider prereqs: business verification + App Review (screencast of send-message and/or template-create) for Advanced Access. Clinic adds **its own payment method** (clinic pays Meta per-message directly — business-model impact). Build on **v4** (v2 deprecated 2026-10-15). Dev via 30-day sandbox accounts.
+
+**Still open (deferred):** **DS2 [a confirmar]** — one calendar per professional vs one clinic calendar with markers (free/busy granularity, §4). The §4 "HOW" list. Exact v4 Embedded Signup + WA-Business-app-migration steps. Least-privilege Google scope set. PgBouncer/RLS interaction.
+
+---
+
+## 10. Proposed constitution amendments (DRAFT — apply via `/speckit.constitution` when approved; NOT applied here)
+
+**Amendment 1 — source of truth (from D1/D2).** Replace *"Google Calendar é a fonte de verdade dos eventos confirmados; Postgres guarda capacidade, holds e estado de sync"* with the **reconciliation** model: Postgres = engine/holds/atomicity + source of truth for recepia bookings; the clinic calendar = write sink + free/busy read source; `disponibilidade = capacidade − agendamentos recepia − ocupações externas`. No single source is authoritative; the structural anti-overbooking guarantee is kept.
+
+**Amendment 2 — capacity model (from D10).** Replace the **pooled-only** restriction (*"Modelo de capacidade pooled… Modo assigned fica fora do escopo até spec dedicada"*) with a **resource-based** model: the clinic registers professionals with specialties; availability/holds/no-overbooking resolve **per professional**; procedure→professional matching governs what is auto-bookable; escalation stays the default for unsupported procedures and any doubt/urgency. The atomic no-overbooking guarantee is preserved, re-cast per professional. *(This is the "dedicated spec" the current constitution anticipated.)*
+
+---
+
+## 11. Sources (official, consulted)
+- WhatsApp Embedded Signup overview (v2 deprecation 2026-10-15 → v4) — https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/overview
+- Become a Tech Provider (Advanced Access) — https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/get-started-for-tech-providers
+- App Review sample submission (screencast: send message / create template) — https://developers.facebook.com/docs/whatsapp/solution-providers/app-review/sample-submission
+- Solution Providers overview (payment by partner type; 200/7-day limit; 30-day sandbox) — https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/overview
+- Pricing (per-message since 2025-07-01; Tech-Provider clients provide own payment) — https://developers.facebook.com/documentation/business-messaging/whatsapp/pricing
+- Onboard WhatsApp Business app users (number migration) — https://developers.facebook.com/documentation/business-messaging/whatsapp/embedded-signup/onboarding-business-app-users
 - Access Tokens (Business Integration System User token) — https://developers.facebook.com/documentation/business-messaging/whatsapp/access-tokens/
-- Manage accounts / shared WABAs — https://developers.facebook.com/docs/whatsapp/embedded-signup/manage-accounts/
-- Partner-initiated WABA creation — https://developers.facebook.com/documentation/business-messaging/whatsapp/solution-providers/partner-initiated-waba-creation
-- Messaging limits / verification — https://developers.facebook.com/docs/whatsapp/messaging-limits/
-- Google Calendar FreeBusy (read-back) — https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query
-- Microsoft Graph permissions reference — https://learn.microsoft.com/en-us/graph/permissions-reference
-- Microsoft Graph create event — https://learn.microsoft.com/en-us/graph/api/calendar-post-events?view=graph-rest-1.0
-- Apple — app-specific passwords / iCloud in third-party apps — https://support.apple.com/en-us/102654 · https://support.apple.com/en-us/121539
-- Calendly OAuth 2.0 + scopes — https://developer.calendly.com/api-docs/3cefb59b832eb-calendly-o-auth-2-0 · https://developer.calendly.com/scopes
-- Twilio WhatsApp Sandbox (no-verification dev path) — https://www.twilio.com/docs/whatsapp/sandbox
+- Google — sensitive/restricted scope verification — https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification
+- Google — choose Calendar API scopes — https://developers.google.com/workspace/calendar/api/auth
+- Google — OAuth web-server flow / refresh tokens (7-day testing expiry; revoke/6-month) — https://developers.google.com/identity/protocols/oauth2/web-server · https://developers.google.com/identity/protocols/oauth2/policies
+- Google Calendar FreeBusy — https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query
+- Microsoft Graph (Outlook, on-demand) — https://learn.microsoft.com/en-us/graph/permissions-reference
+- Apple app-specific passwords (excluded) — https://support.apple.com/en-us/102654
+- Calendly OAuth (excluded) — https://developer.calendly.com/api-docs/3cefb59b832eb-calendly-o-auth-2-0
 
-> **Next step (when you choose):** 003 stays on hold until clinic #2 is real. When resumed: apply the §8 amendment via `/speckit.constitution`, then run `/speckit.specify` for 003 using this decided discovery + resolve DS1 with the first clinic. No implementation until then.
+> **Next step (when resumed):** apply §10 amendments via `/speckit.constitution`, then `/speckit.specify` for 003 using this decided direction; resolve the §4 *HOW* list + DS2 with the first clinic. No implementation until clinic #2 is real.
