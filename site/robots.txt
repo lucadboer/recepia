@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://recepia.vercel.app/sitemap.xml
+Sitemap: https://recepia-app.vercel.app/sitemap.xml
