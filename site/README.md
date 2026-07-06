@@ -9,8 +9,8 @@ Landing page institucional/marketing da Recepia. HTML/CSS puro, **sem build**, p
 - `robots.txt`, `sitemap.xml` — SEO/crawlers.
 
 ## ⚠️ Antes de publicar: trocar o domínio
-Os arquivos usam `https://recepia.com.br/` como URL canônica. Se for publicar em outro
-endereço (ex.: `recepia.vercel.app`), substitua `https://recepia.com.br/` por sua URL real em:
+Os arquivos usam `https://recepia.vercel.app/` como URL canônica. Se for publicar em outro
+endereço (ex.: `recepia.vercel.app`), substitua `https://recepia.vercel.app/` por sua URL real em:
 `index.html` (canonical + Open Graph + JSON-LD), `privacidade.html`, `termos.html`,
 `sitemap.xml` e `robots.txt`.
 
