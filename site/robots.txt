@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://recepia.com.br/sitemap.xml
