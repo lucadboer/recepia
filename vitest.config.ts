@@ -15,7 +15,7 @@ export default defineConfig({
     hookTimeout: 20000,
     coverage: {
       provider: "v8",
-      include: ["src/**"],
+      include: ["src/**/*.ts"], // not the .sql migrations (the v8 remapper would try to parse them)
       exclude: [
         "src/server.ts", // process entrypoint — smoke-tested via `pnpm start` + SIGTERM, not unit-testable
         "src/db/seed.ts", // dev-only CLI
