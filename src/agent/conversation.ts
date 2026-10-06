@@ -23,6 +23,7 @@ export function emptyState(phone: string, now: Date): ConversationState {
     awaitingConsent: false,
     escalatedAt: null,
     handoffNoticeAt: null,
+    version: 0,
     updatedAt: now,
   };
 }
@@ -103,6 +104,7 @@ export function resetConversation(s: ConversationState, now: Date): Conversation
     processedInboundIds: s.processedInboundIds,
     patientName: s.patientName,
     lastConfirmedBookingId: s.lastConfirmedBookingId,
+    version: s.version, // the row still exists — keep the CAS chain intact
   };
 }
 

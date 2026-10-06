@@ -75,11 +75,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   ) {
     state = resetConversation(state, now);
   }
-  const persist = async (s: ConversationState): Promise<ConversationState> => {
-    const bounded = boundState(s, now);
-    await deps.conversations.save(bounded);
-    return bounded;
-  };
+  // save() is a compare-and-swap on state.version (T240): the returned state carries the
+  // new version so later saves in this turn chain correctly; a stale save throws
+  // ConversationConflictError and the turn fails loudly (no retry, no patient message).
+  const persist = (s: ConversationState): Promise<ConversationState> =>
+    deps.conversations.save(boundState(s, now));
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
   // our own patient-facing reply. Dispatcher errors never fail the turn — the scheduled
   // dispatcher retries (FR-214).

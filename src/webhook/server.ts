@@ -3,6 +3,7 @@ import type { CloudStatus } from "../adapters/messaging/inbound/cloud-api-parser
 import type { InboundMessage } from "../agent/types";
 import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
 import { parseAndAccept, RecentIds } from "./dispatch";
+import { PerKeyQueue } from "./per-key-queue";
 
 export interface CloudWebhookOptions {
   /** URL prefix for the Cloud API webhook. Default: "/webhook/cloud". */
@@ -29,6 +30,8 @@ export interface WebhookServerOptions {
   onError?: (err: unknown) => void;
   /** Optional WhatsApp Cloud API webhook (GET verify + HMAC POST). Additive; Evolution stays as-is. */
   cloud?: CloudWebhookOptions;
+  /** Per-phone serialization of onInbound (shared by both providers). Default: a new queue. */
+  queue?: PerKeyQueue;
 }
 
 function defaultLogStatus(s: CloudStatus): void {
@@ -50,6 +53,9 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const recent = opts.recent ?? new RecentIds();
   const onError =
     opts.onError ?? ((err: unknown) => console.error("[webhook] inbound processing failed", err));
+
+  // Messages from the same phone are processed one at a time (T240); different phones overlap.
+  const queue = opts.queue ?? new PerKeyQueue();
 
   const cloud = opts.cloud;
   const cloudBase = cloud?.basePath ?? "/webhook/cloud";
@@ -95,8 +101,8 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
             console.log(
               `[webhook][cloud][inbound] from=***${m.phone.slice(-4)} id=${m.providerMessageId}`,
             );
-            void cloud
-              .onInbound(m) // messages → orchestrator
+            void queue
+              .run(m.phone, () => cloud.onInbound(m)) // messages → orchestrator
               .then((r) => {
                 const status = (r as { status?: string } | null)?.status ?? "done";
                 console.log(`[webhook][cloud][handled] id=${m.providerMessageId} status=${status}`);
@@ -130,7 +136,8 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
         seen: recent,
       });
       res.writeHead(result.status).end();
-      if (result.msg) void opts.onInbound(result.msg).catch(onError);
+      const msg = result.msg;
+      if (msg) void queue.run(msg.phone, () => opts.onInbound(msg)).catch(onError);
     });
   });
 }

@@ -43,6 +43,23 @@ export class NotConfigured extends Error {
   }
 }
 
+/**
+ * Another turn persisted this phone's conversation state first (optimistic concurrency,
+ * T240). The caller must NOT retry the LLM turn: tool writes already committed are
+ * idempotent, and re-running could duplicate side-effects. Phone is masked in the message.
+ */
+export class ConversationConflictError extends Error {
+  constructor(
+    public readonly phone: string,
+    public readonly expectedVersion: number,
+  ) {
+    super(
+      `Conversation state for ***${phone.slice(-4)} changed concurrently (expected version ${expectedVersion}).`,
+    );
+    this.name = "ConversationConflictError";
+  }
+}
+
 /** The LLM tool-use loop hit its safety cap without finishing. */
 export class MaxIterationsExceeded extends Error {
   constructor(message = "Limite de iterações da conversa excedido.") {

@@ -116,6 +116,45 @@ describe("webhook server (node:http)", () => {
     expect(captured).toBe(sentinel);
   });
 
+  it("serializes inbound processing PER PHONE but overlaps across phones [T240]", async () => {
+    const upsertFrom = (jid: string, id: string) =>
+      JSON.stringify({
+        event: "messages.upsert",
+        data: {
+          key: { remoteJid: `${jid}@s.whatsapp.net`, fromMe: false, id },
+          message: { conversation: "oi" },
+        },
+      });
+    let active = 0;
+    let maxActive = 0;
+    const perPhoneMax = new Map<string, number>();
+    const perPhoneActive = new Map<string, number>();
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async (m) => {
+        active++;
+        maxActive = Math.max(maxActive, active);
+        const a = (perPhoneActive.get(m.phone) ?? 0) + 1;
+        perPhoneActive.set(m.phone, a);
+        perPhoneMax.set(m.phone, Math.max(perPhoneMax.get(m.phone) ?? 0, a));
+        await new Promise((r) => setTimeout(r, 40));
+        perPhoneActive.set(m.phone, a - 1);
+        active--;
+      },
+    });
+    server = s.server;
+    const url = `http://127.0.0.1:${s.port}${BASE}/${SECRET}`;
+    const headers = { "content-type": "application/json", authorization: SECRET };
+    await Promise.all([
+      fetch(url, { method: "POST", headers, body: upsertFrom("5531999990001", "P1-a") }),
+      fetch(url, { method: "POST", headers, body: upsertFrom("5531999990001", "P1-b") }),
+      fetch(url, { method: "POST", headers, body: upsertFrom("5531999990002", "P2-a") }),
+    ]);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(perPhoneMax.get("+5531999990001")).toBe(1); // same phone: never concurrent
+    expect(maxActive).toBeGreaterThanOrEqual(2); // different phones: overlapped
+  });
+
   it("returns 404 for non-POST methods and never calls onInbound", async () => {
     let calls = 0;
     const s = await startSrv({
