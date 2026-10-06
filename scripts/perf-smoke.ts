@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import { FakeCalendar } from "../src/adapters/fakes/fake-calendar";
 import { FakeMessaging } from "../src/adapters/fakes/fake-messaging";
 import { recordConsent } from "../src/agent/consent";
@@ -43,7 +44,7 @@ const SECRET = "perf-smoke-secret";
 // carries an index so different patients prefer different slots (spreads the race while
 // still colliding on popular ones).
 // ---------------------------------------------------------------------------
-class BookingScriptLLM implements LLMPort {
+export class BookingScriptLLM implements LLMPort {
   async turn(input: LlmTurnInput): Promise<LlmTurnResult> {
     const first = input.messages[0]?.content.find((c) => c.type === "text");
     const idx = first && first.type === "text" ? Number(/#(\d+)/.exec(first.text)?.[1] ?? 0) : 0;
@@ -118,7 +119,8 @@ class BookingScriptLLM implements LLMPort {
   }
 }
 
-function percentile(sorted: number[], p: number): number {
+/** Nearest-rank percentile over an ascending array (p in 0..100). Empty → 0. */
+export function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const i = Math.min(sorted.length - 1, Math.ceil((p / 100) * sorted.length) - 1);
   return sorted[Math.max(0, i)];
@@ -138,8 +140,33 @@ interface RunResult {
   overbookedSlots: number;
 }
 
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * The smoke TRUNCATEs every mutable table. Refuse anything that does not look like a disposable
+ * database: a local host, a CI runner, or an explicit PERF_ALLOW_TRUNCATE=1.
+ */
+export function assertDisposableDatabase(
+  databaseUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (env.PERF_ALLOW_TRUNCATE === "1" || env.CI === "true") return;
+  let host = "";
+  try {
+    host = new URL(databaseUrl ?? "").hostname;
+  } catch {
+    host = "";
+  }
+  if (!LOCAL_HOSTS.has(host)) {
+    throw new Error(
+      `refusing to TRUNCATE tables on non-local database host "${host || "?"}" — the perf smoke wipes data; set PERF_ALLOW_TRUNCATE=1 only for a disposable database`,
+    );
+  }
+}
+
 async function runOnce(rep: number): Promise<RunResult> {
   loadEnv();
+  assertDisposableDatabase(process.env.DATABASE_URL);
   const pool = makePool();
   await migrate(pool);
   const client = await pool.connect();
@@ -300,11 +327,15 @@ async function main(): Promise<void> {
     "",
     `Conversations per run: ${CONVERSATIONS} · repetitions: ${REPETITIONS} · capacity per slot: ${CAPACITY}`,
     "",
-    "| run | turn p50 | turn p95 | ack p50 | ack p95 | wall | confirmed | overbooked slots | conflicts | errors |",
-    "|---|---|---|---|---|---|---|---|---|---|",
+    "| run | turn p50 | turn p95 | ack p50 | ack p95 | wall | confirmed | turn statuses | overbooked slots | conflicts | errors |",
+    "|---|---|---|---|---|---|---|---|---|---|---|",
     ...runs.map(
       (r, i) =>
-        `| ${i + 1} | ${r.turnP50Ms} ms | ${r.turnP95Ms} ms | ${r.ackP50Ms} ms | ${r.ackP95Ms} ms | ${r.wallMs} ms | ${r.confirmedBookings} | ${r.overbookedSlots} | ${r.conflicts} | ${r.errors} |`,
+        `| ${i + 1} | ${r.turnP50Ms} ms | ${r.turnP95Ms} ms | ${r.ackP50Ms} ms | ${r.ackP95Ms} ms | ${r.wallMs} ms | ${r.confirmedBookings} | ${
+          Object.entries(r.statuses)
+            .map(([k, v]) => `${k}:${v}`)
+            .join(" ") || "—"
+        } | ${r.overbookedSlots} | ${r.conflicts} | ${r.errors} |`,
     ),
     "",
     `Median turn p95: **${medianP95} ms** (budget ${P95_BUDGET_MS} ms, tolerance ×${TOLERANCE}) · overbooked slots: **${overbooked}** · errors: ${errors}`,
@@ -337,7 +368,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+const invokedDirectly =
+  process.argv[1] !== undefined && fileURLToPath(import.meta.url) === process.argv[1];
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
