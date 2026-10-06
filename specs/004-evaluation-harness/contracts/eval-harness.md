@@ -2,6 +2,8 @@
 
 Format: API + Guarantees + Required Tests (tests written BEFORE implementation, per constitution I).
 
+Terminology: the spec's *deterministic mode* is `--mode fake`, driven by the scripted `FakeLLM` stand-in bundled in each case (`llmScript`); *live mode* is `--mode live`, driven by `AnthropicLLM`.
+
 ## Case file (`evals/cases/<id>.json`)
 - **API**: shape in [data-model.md](../data-model.md). `llmScript[i]` is the stand-in's behaviour for inbound turn `i`: an array of moves, each `{ "text": "..." }` (final reply) or `{ "tool": "<name>", "input": {...} }`; several tool moves in a row mean one tool call per iteration; a move with `"tools": [...]` emits several `tool_use` blocks in one response. Placeholders inside `input` strings: `$offeredSlot[n]` (n-th start of the last availability result), `$lastHoldId`, `$otherConversationHoldId` (a real hold seeded for another phone), `$foreignPhone`.
 - **Guarantees**: the loader rejects unknown fields, duplicate ids, categories outside the enum, a script shorter than `turns`, and placeholders it cannot resolve; `injection` cases must have `labels.shouldEscalate` or `writes` all zero.
@@ -20,7 +22,7 @@ Format: API + Guarantees + Required Tests (tests written BEFORE implementation, 
 - **Tests**: hand-computed fixtures for every metric; zero-denominator cases; cost arithmetic.
 
 ## `pnpm evals:fake | evals:live | evals:readme [--check] | evals:judge` (CLI `evals/run.ts`)
-- **Guarantees**: `fake` needs only `DATABASE_URL`, is deterministic (same results on repeated runs) and exits non-zero on any failing execution; `live` requires `ANTHROPIC_API_KEY` (else exits 0 with an explicit "skipped" notice and no report), runs `--repetitions` (default 3), stops when the accumulated estimated cost would exceed `--cap-usd` (default 5) and marks the report partial, compares with `evals/baseline.json` when present and exits non-zero on regression; both modes write `evals/reports/latest.json` + `latest.md` with mode, model, prompt version, commit and date; `readme` regenerates the README block, `readme --check` exits non-zero on drift; `judge` is off unless requested.
+- **Guarantees**: `fake` needs only `DATABASE_URL`, is deterministic (same results on repeated runs) and exits non-zero on any failing execution; `live` requires `ANTHROPIC_API_KEY` (else exits 0 with an explicit "skipped" notice and no report), runs `--repetitions` (default 3), stops when the accumulated estimated cost would exceed `--cap-usd` (default 5) and marks the report partial, compares with `evals/baseline.json` when present and exits non-zero on regression (no baseline → warning, exit 0 when every case passed; `--write-baseline` writes the file from the run's metrics); both modes write `evals/reports/latest.json` + `latest.md` with mode, model, prompt version, commit, date and total duration; `readme` regenerates the README block, `readme --check` exits non-zero on drift; `judge` is off unless requested.
 - **Tests**: integration: fake run over the real golden set passes and is repeatable (two runs → identical per-case results); `readme --check` fails after a hand edit; live mode skip path without a key (unit, by injecting env).
 
 ## Prompt artifact (`prompts/system/vNNN.md`)
