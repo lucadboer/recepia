@@ -1,6 +1,8 @@
 import type { ConversationState } from "../../agent/types";
 import type { ConversationStorePort } from "../../ports/conversation-store-port";
-import type { Pool } from "../pool";
+import type { Pool, PoolClient } from "../pool";
+
+type Queryable = Pool | PoolClient;
 
 /** Postgres-backed ConversationStorePort. The in-memory fake stays the test default. */
 export class DbConversationStore implements ConversationStorePort {
@@ -16,8 +18,9 @@ export class DbConversationStore implements ConversationStorePort {
     return { ...parsed, updatedAt: new Date(parsed.updatedAt) };
   }
 
-  async save(state: ConversationState): Promise<void> {
-    await this.pool.query(
+  /** Upsert. Pass the client of a surrounding transaction to save atomically with other writes. */
+  async save(state: ConversationState, q: Queryable = this.pool): Promise<void> {
+    await q.query(
       `INSERT INTO conversation_state (phone, state, updated_at) VALUES ($1, $2, now())
        ON CONFLICT (phone) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`,
       [state.phone, JSON.stringify(state)],

@@ -2,6 +2,7 @@
 
 import {
   ACTIVE_HOLDS_MAX,
+  HANDOFF_NOTICE_INTERVAL_MS,
   HISTORY_MAX_MESSAGES,
   OFFERED_SLOTS_MAX,
   PROCESSED_IDS_MAX,
@@ -20,6 +21,8 @@ export function emptyState(phone: string, now: Date): ConversationState {
     processedInboundIds: [],
     patientName: null,
     awaitingConsent: false,
+    escalatedAt: null,
+    handoffNoticeAt: null,
     updatedAt: now,
   };
 }
@@ -63,7 +66,44 @@ export function recordConfirmed(
 }
 
 export function markEscalated(s: ConversationState, now: Date): ConversationState {
-  return { ...s, status: "escalated", updatedAt: now };
+  return { ...s, status: "escalated", escalatedAt: now.toISOString(), updatedAt: now };
+}
+
+// ---------------------------------------------------------------------------
+// Handed-off state (FR-211) and completed-reset (FR-212) — T237.
+// ---------------------------------------------------------------------------
+
+/** At most one "a recepção vai continuar" notice per interval while handed off. */
+export function shouldSendHandoffNotice(
+  s: ConversationState,
+  now: Date,
+  intervalMs = HANDOFF_NOTICE_INTERVAL_MS,
+): boolean {
+  if (!s.handoffNoticeAt) return true;
+  return now.getTime() - new Date(s.handoffNoticeAt).getTime() >= intervalMs;
+}
+
+export function markHandoffNoticed(s: ConversationState, now: Date): ConversationState {
+  return { ...s, handoffNoticeAt: now.toISOString(), updatedAt: now };
+}
+
+/** Optional safety valve: an escalated conversation whose TTL elapsed may resume autonomously. */
+export function isAutoReleaseDue(s: ConversationState, now: Date, ttlMs: number): boolean {
+  if (s.status !== "escalated" || !s.escalatedAt) return false;
+  return now.getTime() - new Date(s.escalatedAt).getTime() >= ttlMs;
+}
+
+/**
+ * Start a fresh conversation for the same patient. Keeps what must survive: the
+ * processed message ids (dedupe, FR-207), the known name and the last confirmed booking.
+ */
+export function resetConversation(s: ConversationState, now: Date): ConversationState {
+  return {
+    ...emptyState(s.phone, now),
+    processedInboundIds: s.processedInboundIds,
+    patientName: s.patientName,
+    lastConfirmedBookingId: s.lastConfirmedBookingId,
+  };
 }
 
 export function markProcessed(

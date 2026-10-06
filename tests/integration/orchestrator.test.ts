@@ -179,6 +179,10 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
 
     await handleInbound(h.deps, inbound("quero marcar uma limpeza", "m1"));
     const beforeReconfirm = h.messaging.sent.filter((m) => m.to === PHONE).length;
+    // A completed conversation resets on the next inbound (FR-212); keep it active here so
+    // turn 2 genuinely re-confirms the same hold (the scenario this test pins).
+    const afterTurn1 = await h.conversations.load(PHONE);
+    if (afterTurn1) await h.conversations.save({ ...afterTurn1, status: "active" });
 
     const r2 = await handleInbound(h.deps, inbound("obrigado, ficou tudo certo?", "m2"));
 

@@ -19,10 +19,12 @@ export interface ConversationState {
   processedInboundIds: string[];
   patientName: string | null;
   awaitingConsent: boolean; // set when confirm was blocked pending opt-in
+  escalatedAt: string | null; // ISO; when the conversation was handed to reception (FR-211)
+  handoffNoticeAt: string | null; // ISO; last "a recepção vai continuar" notice (FR-211)
   updatedAt: Date;
 }
 
 export interface LoopResult {
-  status: "replied" | "escalated" | "noop" | "max_iterations";
+  status: "replied" | "escalated" | "noop" | "max_iterations" | "handed_off";
   reply?: string;
 }

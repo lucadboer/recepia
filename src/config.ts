@@ -25,6 +25,10 @@ export const OFFERED_SLOTS_MAX = 60;
 export const ACTIVE_HOLDS_MAX = 10;
 export const PROCESSED_IDS_MAX = 200;
 
+// Handed-off conversations (FR-211, T237): the patient gets at most one "reception will
+// continue" notice per interval; nothing else until reception releases the conversation.
+export const HANDOFF_NOTICE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 // Background jobs (T245). The orchestrator also flushes the outbox within each turn; the
 // poller only catches retries and anything a crashed turn left behind.
 export const OUTBOX_POLL_MS = 15_000;

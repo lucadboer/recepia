@@ -16,6 +16,9 @@ export const reply = {
   textOnly: () =>
     "Por enquanto consigo ler apenas mensagens de texto. Pode escrever sua solicitação?",
   optedOut: () => "Pronto, não vou mais te enviar mensagens. Se mudar de ideia, é só chamar.",
+  // Sent at most once per HANDOFF_NOTICE_INTERVAL_MS while reception owns the conversation (FR-211).
+  handedOff: () =>
+    "Sua solicitação está com a nossa recepção, que vai continuar o atendimento por aqui. Obrigado pela paciência!",
   // TODO(legal): LGPD opt-in wording must be reviewed by counsel.
   askConsent: () =>
     "Para concluir, preciso da sua autorização para tratar seus dados (nome e telefone) com a finalidade de agendar sua consulta. Você autoriza? (responda SIM)",

@@ -9,7 +9,8 @@ export type AuditAction =
   | "escalated"
   | "consent_recorded"
   | "consent_revoked"
-  | "outbox_dead_letter";
+  | "outbox_dead_letter"
+  | "conversation_released";
 
 export interface AuditEntry {
   entity: string;

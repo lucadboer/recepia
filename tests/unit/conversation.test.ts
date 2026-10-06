@@ -3,15 +3,22 @@ import {
   appendUserText,
   emptyState,
   hasActiveHold,
+  isAutoReleaseDue,
   isOfferedSlot,
   isProcessed,
+  markEscalated,
+  markHandoffNoticed,
   markProcessed,
   recordConfirmed,
   recordHold,
   recordOfferedSlots,
+  resetConversation,
+  shouldSendHandoffNotice,
 } from "../../src/agent/conversation";
+import { HANDOFF_NOTICE_INTERVAL_MS } from "../../src/config";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
+const at = (ms: number) => new Date(NOW.getTime() + ms);
 
 describe("conversation reducers (pure)", () => {
   it("emptyState starts active and empty", () => {
@@ -52,6 +59,57 @@ describe("conversation reducers (pure)", () => {
     const s = recordConfirmed(emptyState("+55a", NOW), "booking-9", NOW);
     expect(s.status).toBe("completed");
     expect(s.lastConfirmedBookingId).toBe("booking-9");
+  });
+
+  it("markEscalated records when the hand-off happened (FR-211)", () => {
+    const s = markEscalated(emptyState("+55a", NOW), NOW);
+    expect(s.status).toBe("escalated");
+    expect(s.escalatedAt).toBe(NOW.toISOString());
+    expect(s.handoffNoticeAt).toBeNull();
+  });
+
+  it("shouldSendHandoffNotice: first time yes, inside the interval no, after it yes again", () => {
+    const s = markEscalated(emptyState("+55a", NOW), NOW);
+    expect(shouldSendHandoffNotice(s, NOW)).toBe(true);
+    const noticed = markHandoffNoticed(s, NOW);
+    expect(noticed.handoffNoticeAt).toBe(NOW.toISOString());
+    expect(shouldSendHandoffNotice(noticed, at(HANDOFF_NOTICE_INTERVAL_MS - 1))).toBe(false);
+    expect(shouldSendHandoffNotice(noticed, at(HANDOFF_NOTICE_INTERVAL_MS))).toBe(true);
+  });
+
+  it("isAutoReleaseDue only for an escalated conversation whose TTL elapsed", () => {
+    const active = emptyState("+55a", NOW);
+    expect(isAutoReleaseDue(active, at(1e9), 1000)).toBe(false);
+    const esc = markEscalated(active, NOW);
+    expect(isAutoReleaseDue(esc, at(999), 1000)).toBe(false);
+    expect(isAutoReleaseDue(esc, at(1000), 1000)).toBe(true);
+  });
+
+  it("resetConversation starts fresh but keeps dedupe ids, name and last booking (FR-212)", () => {
+    let s = emptyState("+55a", NOW);
+    s = appendUserText(s, "oi", NOW);
+    s = recordOfferedSlots(s, ["2026-06-15T14:00:00.000Z"], NOW);
+    s = recordHold(s, "h1", NOW);
+    s = markProcessed(s, "m1", NOW);
+    s = recordConfirmed(s, "b1", NOW);
+    s = { ...s, patientName: "João", awaitingConsent: true };
+    s = markEscalated(s, NOW);
+    s = markHandoffNoticed(s, NOW);
+
+    const r = resetConversation(s, at(5000));
+
+    expect(r.phone).toBe("+55a");
+    expect(r.status).toBe("active");
+    expect(r.history).toEqual([]);
+    expect(r.offeredSlots).toEqual([]);
+    expect(r.activeHoldIds).toEqual([]);
+    expect(r.awaitingConsent).toBe(false);
+    expect(r.escalatedAt).toBeNull();
+    expect(r.handoffNoticeAt).toBeNull();
+    expect(r.processedInboundIds).toEqual(["m1"]);
+    expect(r.patientName).toBe("João");
+    expect(r.lastConfirmedBookingId).toBe("b1");
+    expect(r.updatedAt).toEqual(at(5000));
   });
 
   it("markProcessed dedups inbound ids (idempotency)", () => {

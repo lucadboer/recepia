@@ -10,10 +10,14 @@ import {
   appendUserText,
   boundState,
   emptyState,
+  isAutoReleaseDue,
   isProcessed,
   markEscalated,
+  markHandoffNoticed,
   markProcessed,
+  resetConversation,
   setAwaitingConsent,
+  shouldSendHandoffNotice,
 } from "./conversation";
 import { classifyIntent, isAffirmative } from "./intent";
 import { reply } from "./reply";
@@ -28,6 +32,11 @@ import type { ConversationState, InboundMessage, LoopResult } from "./types";
 export interface AgentDeps extends Deps {
   llm: LLMPort;
   conversations: ConversationStorePort;
+  /**
+   * Optional safety valve (FR-211): a handed-off conversation resumes autonomously after
+   * this long if reception never released it. Unset = never (release is explicit).
+   */
+  handoffAutoReleaseMs?: number;
 }
 
 type ToolUseBlock = { type: "tool_use"; id: string; name: string; input: unknown };
@@ -57,6 +66,15 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     (await deps.conversations.load(msg.phone)) ?? emptyState(msg.phone, now),
     now,
   );
+  // FR-212: a completed conversation starts fresh on the next message (dedupe ids kept).
+  if (state.status === "completed") state = resetConversation(state, now);
+  // FR-211 safety valve: optional auto-release of a handed-off conversation after a TTL.
+  if (
+    deps.handoffAutoReleaseMs !== undefined &&
+    isAutoReleaseDue(state, now, deps.handoffAutoReleaseMs)
+  ) {
+    state = resetConversation(state, now);
+  }
   const persist = async (s: ConversationState): Promise<ConversationState> => {
     const bounded = boundState(s, now);
     await deps.conversations.save(bounded);
@@ -83,6 +101,20 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     state = await persist(state);
     await deps.messaging.sendMessage(msg.phone, reply.optedOut());
     return { status: "replied", reply: reply.optedOut() };
+  }
+
+  // 2a. Handed off (FR-211): reception owns this conversation. No LLM, no second reception
+  //     notification; at most one notice to the patient per interval. Only the opt-out
+  //     fast path above runs while handed off (LGPD). Reception releases via the CLI.
+  if (state.status === "escalated") {
+    if (shouldSendHandoffNotice(state, now)) {
+      state = markHandoffNoticed(state, now);
+      state = await persist(state);
+      await deps.messaging.sendMessage(msg.phone, reply.handedOff());
+      return { status: "handed_off", reply: reply.handedOff() };
+    }
+    state = await persist(state); // records the processed id; stays silent
+    return { status: "handed_off" };
   }
 
   // 2b. Capture opt-in when we were awaiting it.
