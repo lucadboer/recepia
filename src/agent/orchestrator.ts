@@ -62,6 +62,14 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     await deps.conversations.save(bounded);
     return bounded;
   };
+  // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
+  // our own patient-facing reply. Dispatcher errors never fail the turn — the scheduled
+  // dispatcher retries (FR-214). `via` lets the tool loop count patient sends (T227).
+  const flushOutbox = async (via: AgentDeps = deps): Promise<void> => {
+    await dispatchOutbox(via).catch((err) => {
+      console.error("[orchestrator] outbox dispatch failed", err);
+    });
+  };
 
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
@@ -94,6 +102,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     });
     state = markEscalated(state, now);
     state = await persist(state);
+    await flushOutbox();
     await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
@@ -158,9 +167,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // outbox) BEFORE our own closing reply, so the patient reads the confirmation first.
   // Through turnDeps, so a delivered confirmation is counted below. Dispatcher errors
   // never fail the turn — the scheduled dispatcher retries (FR-214).
-  await dispatchOutbox(turnDeps).catch((err) => {
-    console.error("[orchestrator] outbox dispatch failed", err);
-  });
+  await flushOutbox(turnDeps);
 
   // A confirmation counts as delivered only if a patient-facing message actually went
   // out during the tool loop (a fresh confirm_booking). Idempotent re-confirms send
@@ -177,6 +184,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     });
     state = markEscalated(state, now);
     state = await persist(state);
+    await flushOutbox();
     // Don't tell the patient "couldn't complete" if a confirmation already went out (T227).
     if (!confirmationDelivered) {
       await deps.messaging.sendMessage(msg.phone, reply.couldNotComplete());

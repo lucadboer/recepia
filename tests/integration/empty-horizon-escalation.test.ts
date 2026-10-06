@@ -4,6 +4,7 @@ import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
+import { dispatchOutbox } from "../../src/jobs/dispatch-outbox";
 import { offerAlternativesOrEscalate } from "../../src/tools/alternatives";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
 
@@ -44,6 +45,7 @@ describe("offerAlternativesOrEscalate (US2 — empty horizon escalates)", () => 
     );
 
     expect(slots).toHaveLength(0);
+    await dispatchOutbox(deps(messaging));
     expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1);
     expect(await countAudit(pool, "escalated")).toBe(1);
 

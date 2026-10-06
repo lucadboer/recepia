@@ -88,7 +88,7 @@ Anthropic key+model (see `claude-api` skill), Google Calendar creds, WhatsApp Ev
 - [ ] T240 Optimistic concurrency: `conversation_state.version` (migration 007) + `ConversationConflictError` on stale save; per-phone in-process serialization in the webhook, per plan "concurrency"
 - [x] T241 Transactional outbox: `outbox_message` table (migration 008) + repo + `dispatchOutbox` job (`FOR UPDATE SKIP LOCKED`, backoff, dead-letter audit + escalation), per FR-214
 - [x] T242 `confirm_booking` enqueues the patient confirmation inside the commit transaction; `confirmed` is assigned only after COMMIT resolves — closes T231, T232
-- [ ] T243 `escalate_to_human` writes the `escalated` audit row and the reception outbox row in one transaction — closes the send-before-audit ordering
+- [x] T243 `escalate_to_human` writes the `escalated` audit row and the reception outbox row in one transaction — closes the send-before-audit ordering
 - [ ] T244 `ToolDispatchResult.patientNotified` replaces the phone-based send counter (closes T235); an `escalated` tool result stops the loop deterministically
 - [ ] T245 `server.ts` schedules `dispatchOutbox` + `expireHolds`; the sweep audits the ids from `UPDATE … RETURNING` — closes T234
 - [ ] T246 Webhook: exact pathname routing (closes T229), 256 KiB body limit → 413, request/headers timeouts, graceful shutdown (SIGTERM/SIGINT drain), edge dedupe recorded only after `onInbound` succeeds (closes T230, at-least-once)

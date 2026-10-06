@@ -4,6 +4,7 @@ import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
+import { dispatchOutbox } from "../../src/jobs/dispatch-outbox";
 import { escalateToHuman } from "../../src/tools/escalate-to-human";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
 
@@ -33,22 +34,59 @@ function makeDeps(messaging: FakeMessaging): Deps {
   };
 }
 
+interface OutboxRow {
+  id: string;
+  kind: string;
+  to_phone: string;
+  body: string;
+  status: string;
+}
+async function outboxRows(): Promise<OutboxRow[]> {
+  const r = await pool.query("SELECT * FROM outbox_message ORDER BY created_at");
+  return r.rows as OutboxRow[];
+}
+
 describe("escalate_to_human", () => {
-  it("notifies reception, creates no booking, and writes an audit row", async () => {
+  it("enqueues the reception notice in the SAME transaction as the audit row; nothing is sent directly (T243, FR-214)", async () => {
     const messaging = new FakeMessaging();
-    await escalateToHuman(makeDeps(messaging), {
+    const d = makeDeps(messaging);
+    await escalateToHuman(d, {
       reason: "non_routine",
       phone: PATIENT,
       context: "Paciente pediu Invisalign",
     });
 
-    expect(messaging.sent).toHaveLength(1);
-    expect(messaging.sent[0].to).toBe(RECEPTION);
-    expect(messaging.sent[0].body).toContain("recepção");
+    expect(messaging.sent).toHaveLength(0); // no direct send
+    const rows = await outboxRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("escalation");
+    expect(rows[0].to_phone).toBe(RECEPTION);
+    expect(rows[0].status).toBe("pending");
+    expect(rows[0].body).toContain("recepção");
 
-    const { rows } = await pool.query("SELECT count(*)::int AS n FROM booking");
-    expect(rows[0].n).toBe(0);
-    expect(await countAudit(pool, "escalated")).toBe(1);
+    const audit = await pool.query("SELECT payload FROM audit_log WHERE action = 'escalated'");
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0].payload.outboxId).toBe(rows[0].id);
+
+    const { rows: b } = await pool.query("SELECT count(*)::int AS n FROM booking");
+    expect(b[0].n).toBe(0);
+
+    await dispatchOutbox(d);
+    expect(messaging.sent).toEqual([{ to: RECEPTION, body: rows[0].body }]);
+  });
+
+  it("is atomic: if the outbox insert fails, no escalated audit row is written and the call rejects", async () => {
+    const messaging = new FakeMessaging();
+    const sentinel = new Error("outbox insert boom");
+    const d: Deps = { ...makeDeps(messaging), pool: poolFailingOutboxInsert(pool, sentinel) };
+
+    await expect(
+      escalateToHuman(d, { reason: "urgency", phone: PATIENT, context: "dor" }),
+    ).rejects.toBe(sentinel);
+
+    expect(await countAudit(pool, "escalated")).toBe(0);
+    expect(await outboxRows()).toHaveLength(0);
+    expect(messaging.sent).toHaveLength(0);
   });
 
   it("audits reason, context, phone and summary in the payload", async () => {
@@ -84,6 +122,7 @@ describe("escalate_to_human", () => {
       ],
     });
 
+    await dispatchOutbox(makeDeps(messaging));
     const body = messaging.sent[0].body;
     expect(body).toContain(`Paciente: ${PATIENT}`);
     expect(body).toContain("Motivo: urgency");
@@ -102,6 +141,7 @@ describe("escalate_to_human", () => {
       context: "Sem horários disponíveis para cleaning no horizonte de agendamento.",
     });
 
+    await dispatchOutbox(makeDeps(messaging));
     const body = messaging.sent[0].body;
     expect(body).not.toContain("Paciente:");
     expect(body).not.toContain("Últimas mensagens");
@@ -111,3 +151,30 @@ describe("escalate_to_human", () => {
     expect(rows[0].payload.summary).toEqual([]);
   });
 });
+
+type AnyQuery = (...a: unknown[]) => unknown;
+
+/** Rejects the outbox INSERT on clients checked out through the wrapper; restores on release. */
+function poolFailingOutboxInsert(real: Pool, sentinel: Error): Pool {
+  return {
+    query: (...args: unknown[]) => (real as unknown as { query: AnyQuery }).query(...args),
+    async connect() {
+      const client = await real.connect();
+      const mutable = client as unknown as { query: AnyQuery; release: AnyQuery };
+      const origQuery = mutable.query.bind(client);
+      const origRelease = mutable.release.bind(client);
+      mutable.query = (...args: unknown[]) => {
+        const sql =
+          typeof args[0] === "string" ? args[0] : ((args[0] as { text?: string })?.text ?? "");
+        if (sql.includes("INSERT INTO outbox_message")) return Promise.reject(sentinel);
+        return origQuery(...args);
+      };
+      mutable.release = (...args: unknown[]) => {
+        mutable.query = origQuery;
+        mutable.release = origRelease;
+        return origRelease(...args);
+      };
+      return client;
+    },
+  } as unknown as Pool;
+}
