@@ -38,9 +38,33 @@ This project is built with the GitHub Spec Kit. Every feature starts from a spec
 ## Quality gates
 
 ```bash
-pnpm typecheck            # tsc --noEmit
-pnpm lint                 # biome check
-pnpm test                 # full Vitest suite (unit + integration + concurrency)
+pnpm typecheck            # tsc --noEmit (strict)
+pnpm lint                 # biome check (src, tests, scripts)
+pnpm test                 # full Vitest suite (unit + integration + concurrency) against real Postgres
+pnpm test:coverage        # same suite, v8 coverage with thresholds (fails below them)
+pnpm perf:smoke           # webhook load smoke with fakes: zero overbooking + p95 budget
+pnpm audit --audit-level=high
 ```
 
 The concurrency test (no overbooking under simultaneous holds) is a non-negotiable gate and must stay green.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request: `quality`
+(lint, typecheck, audit), `unit`, and `integration` (integration suite + the concurrency gate as a
+named step + coverage) against a `postgres:16` service. `perf.yml` runs the perf smoke on `main`,
+nightly, on demand and on PRs labelled `perf`; `codeql.yml` runs static analysis; Dependabot opens
+weekly grouped dependency PRs with a 3-day cooldown.
+
+**Coverage thresholds** live in `vitest.config.ts`. They were set from the measured baseline minus a
+small margin and are only ever ratcheted **up** — never lower them to make a PR pass; add tests.
+Live-only adapters, the process entrypoint and the seed CLI are excluded from the measurement
+because they cannot run without credentials or a real process.
+
+**Numbers are never hand-written.** Coverage comes from the reporter, perf numbers from
+`perf-report.json` / the job summary, and (from feature 004 on) eval metrics from the eval runner.
+
+### Scripts
+
+Operational scripts live in `scripts/` and run with `node --import tsx` (no `tsx` relay process, so
+signals reach the script). They are linted and type-checked like `src/`.

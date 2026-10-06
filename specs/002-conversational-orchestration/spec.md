@@ -6,7 +6,7 @@
 
 **Status**: Draft (product/legal/model decisions marked `[DEFERRED — NEEDS-USER]`)
 
-> Spec artifacts in English (author preference); patient-facing strings stay pt-BR. This slice adds the **language layer** on top of the already-built, fully-tested deterministic tools. It is built and tested entirely **behind ports with fakes — no secrets, no network**. Real adapters (Anthropic, Google Calendar, WhatsApp) are scaffolds behind a needs-creds boundary; live calls are deferred.
+> Spec artifacts in English (author preference); patient-facing strings stay pt-BR. This slice adds the **language layer** on top of the already-built, fully-tested deterministic tools. It is built and tested entirely **behind ports with fakes — no secrets, no network**. The real adapters (Anthropic, Google Calendar, WhatsApp Cloud API / Evolution) are implemented behind the same ports, fail fast with `NotConfigured` without credentials, and are exercised by the opt-in live suite (`tests/live`, `LIVE_*` flags).
 
 ## User Scenarios & Testing *(mandatory)*
 

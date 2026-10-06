@@ -3,10 +3,10 @@
 **Branch**: `main` (feature `002-conversational-orchestration`) | **Date**: 2026-06-19 | **Spec**: [spec.md](spec.md)
 
 ## Summary
-Add a Claude tool-use orchestrator on top of feature 001's deterministic tools. The LLM proposes; the deterministic tools (unchanged) remain the only writers. "LLM never writes" is enforced **structurally** by three gates; "escalate on doubt" by a deterministic triage layer that runs before the LLM; LGPD opt-in by a consent gate before `confirm_booking`. Everything is built behind ports with fakes; real adapters are needs-creds scaffolds.
+Add a Claude tool-use orchestrator on top of feature 001's deterministic tools. The LLM proposes; the deterministic tools (unchanged) remain the only writers. "LLM never writes" is enforced **structurally** by three gates; "escalate on doubt" by a deterministic triage layer that runs before the LLM; LGPD opt-in by a consent gate before `confirm_booking`. Everything is built behind ports with fakes; the real adapters (Anthropic, Google Calendar, WhatsApp Cloud API / Evolution) are full implementations that fail fast with `NotConfigured` without credentials and were validated live (T215–T219).
 
 ## Technical Context
-- TS 6 / Node 20+, pnpm, Vitest, `pg`. No `@anthropic-ai/sdk` in the autonomous path (only a hand-written `LLMPort` + `FakeLLM`).
+- TypeScript / Node 20+, pnpm, Vitest, `pg`. `@anthropic-ai/sdk` is used only inside `src/adapters/llm/anthropic-llm.ts`, behind `LLMPort`; nothing under `src/agent` imports it, and the whole conversation layer runs against `FakeLLM` in the default suite.
 - New ports: `LLMPort` (fake + Anthropic scaffold), `ConversationStorePort` (fake + DB scaffold). Consent is a repo (YAGNI — no second consumer).
 - Reuses 001: all `src/tools/*`, `Deps`, `domain/*`, `config`, `tests/helpers/db.ts`, fakes.
 - Only additive edit to a 001 file: extend `AuditAction` union (`consent_recorded`, `consent_revoked`).
