@@ -43,7 +43,11 @@ describe("orchestrator — triage escalates every category BEFORE the LLM", () =
     expect(r.status).toBe("escalated");
     expect(llm.callCount).toBe(0); // pre-LLM backstop
     expect(await countAudit(pool, "escalated")).toBe(1);
-    expect(h.messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1);
+    const toReception = h.messaging.sent.filter((m) => m.to === RECEPTION);
+    expect(toReception).toHaveLength(1);
+    // Reception must be able to call the patient back: phone + what they said (FR-204).
+    expect(toReception[0].body).toContain(`Paciente: ${PHONE}`);
+    expect(toReception[0].body).toContain(text);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM booking");
     expect(rows[0].n).toBe(0);
   });

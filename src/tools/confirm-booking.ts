@@ -76,11 +76,11 @@ export async function confirmBooking(
     } finally {
       client.release();
     }
-    await escalateToHuman(
-      deps,
-      "calendar_write_failed",
-      `Falha ao gravar o evento da reserva ${existing.id}.`,
-    );
+    await escalateToHuman(deps, {
+      reason: "calendar_write_failed",
+      phone: patient.phone,
+      context: `Falha ao gravar o evento da reserva ${existing.id}.`,
+    });
     throw new CalendarWriteError();
   }
 
@@ -143,10 +143,10 @@ export async function confirmBooking(
   } finally {
     orphanClient.release();
   }
-  await escalateToHuman(
-    deps,
-    "calendar_orphan",
-    `Evento da reserva ${existing.id} foi criado mas a confirmação falhou (${reason}); evento removido por compensação.`,
-  );
+  await escalateToHuman(deps, {
+    reason: "calendar_orphan",
+    phone: patient.phone,
+    context: `Evento da reserva ${existing.id} foi criado mas a confirmação falhou (${reason}); evento removido por compensação.`,
+  });
   throw commitError instanceof Error ? commitError : new HoldExpiredError();
 }

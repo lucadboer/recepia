@@ -16,6 +16,7 @@ import {
 } from "./conversation";
 import { classifyIntent, isAffirmative } from "./intent";
 import { reply } from "./reply";
+import { summarizeHistory } from "./summary";
 import { buildSystemPrompt } from "./system-prompt";
 import { dispatchTool, type ToolContext } from "./tool-registry";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas";
@@ -84,7 +85,12 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // 3. Deterministic escalation triage — BEFORE the LLM ("escalar na dúvida").
   const triaged = triage(msg.text);
   if (triaged.escalate) {
-    await escalateToHuman(deps, triaged.reason ?? "triage", msg.text);
+    await escalateToHuman(deps, {
+      reason: triaged.reason ?? "triage",
+      phone: msg.phone,
+      context: msg.text,
+      summary: summarizeHistory(state.history),
+    });
     state = markEscalated(state, now);
     state = await persist(state);
     await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
@@ -154,11 +160,12 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 
   // 5. Loop exhausted without a final reply → escalate + pt-BR fallback.
   if (finalText === null) {
-    await escalateToHuman(
-      deps,
-      "max_iterations",
-      `Conversa com ${msg.phone} excedeu ${AGENT_MAX_ITERATIONS} iterações.`,
-    );
+    await escalateToHuman(deps, {
+      reason: "max_iterations",
+      phone: msg.phone,
+      context: `Conversa excedeu ${AGENT_MAX_ITERATIONS} iterações sem resposta final.`,
+      summary: summarizeHistory(state.history),
+    });
     state = markEscalated(state, now);
     state = await persist(state);
     // Don't tell the patient "couldn't complete" if a confirmation already went out (T227).

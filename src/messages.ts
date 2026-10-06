@@ -23,6 +23,20 @@ export function confirmationMessagePt(type: AppointmentType, start: Date): strin
   return `Sua consulta de ${TYPE_LABELS_PT[type]} está confirmada para ${formatSlotPt(start)}. Até breve!`;
 }
 
-export function escalationMessagePt(reason: string, context: string): string {
-  return `Atendimento encaminhado à recepção. Motivo: ${reason}. Contexto: ${context}`;
+/** Reception hand-off notice: who to call back, why, what was said (FR-204). Multi-line pt-BR. */
+export function escalationMessagePt(e: {
+  reason: string;
+  phone: string | null;
+  context: string;
+  summary: string[];
+}): string {
+  const lines = ["Atendimento encaminhado à recepção."];
+  if (e.phone) lines.push(`Paciente: ${e.phone}`);
+  lines.push(`Motivo: ${e.reason}`);
+  lines.push(`Contexto: ${e.context}`);
+  if (e.summary.length > 0) {
+    lines.push("Últimas mensagens:");
+    for (const l of e.summary) lines.push(`- ${l}`);
+  }
+  return lines.join("\n");
 }

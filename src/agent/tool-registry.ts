@@ -18,6 +18,7 @@ import {
   recordOfferedSlots,
 } from "./conversation";
 import { errorReply } from "./reply";
+import { summarizeHistory } from "./summary";
 import { TOOL_NAMES } from "./tool-schemas";
 import type { ConversationState } from "./types";
 
@@ -133,7 +134,12 @@ export async function dispatchTool(
       case TOOL_NAMES.escalate: {
         const reason = asString(input.reason) ?? "unspecified";
         const context = asString(input.context) ?? "";
-        await escalateToHuman(deps, reason, context);
+        await escalateToHuman(deps, {
+          reason,
+          phone,
+          context,
+          summary: summarizeHistory(state.history),
+        });
         state = markEscalated(state, now);
         return result(state, JSON.stringify({ escalated: true }), false, true);
       }

@@ -274,6 +274,47 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(await bookingCount()).toBe(0);
   });
 
+  it("escalate_to_human tool carries the patient phone + conversation excerpt to reception [T236]", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.escalate, {
+          reason: "ambiguity",
+          context: "Paciente pediu algo fora do escopo de rotina",
+        }),
+      ),
+      finalTurn("Encaminhei para a recepção."),
+    ]);
+    const h = makeAgent(pool, llm);
+
+    await handleInbound(h.deps, inbound("quero fazer um procedimento diferente"));
+
+    const toReception = h.messaging.sent.filter((m) => m.to === RECEPTION);
+    expect(toReception).toHaveLength(1);
+    expect(toReception[0].body).toContain(`Paciente: ${PHONE}`);
+    expect(toReception[0].body).toContain("Motivo: ambiguity");
+    expect(toReception[0].body).toContain("- Paciente: quero fazer um procedimento diferente");
+    const { rows } = await pool.query("SELECT payload FROM audit_log WHERE action = 'escalated'");
+    expect(rows[0].payload.phone).toBe(PHONE);
+  });
+
+  it("max-iterations escalation carries the patient phone to reception [T236]", async () => {
+    const script = Array.from({ length: AGENT_MAX_ITERATIONS + 2 }, () =>
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+    );
+    const h = makeAgent(pool, new FakeLLM(script));
+    await handleInbound(h.deps, inbound("quero marcar"));
+    const toReception = h.messaging.sent.filter((m) => m.to === RECEPTION);
+    expect(toReception).toHaveLength(1);
+    expect(toReception[0].body).toContain(`Paciente: ${PHONE}`);
+    expect(toReception[0].body).toContain("Motivo: max_iterations");
+  });
+
   it("bounds the loop at MAX_ITERATIONS, then escalates", async () => {
     const script = Array.from({ length: AGENT_MAX_ITERATIONS + 2 }, () =>
       toolUseTurn(
