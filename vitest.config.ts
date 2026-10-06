@@ -15,12 +15,14 @@ export default defineConfig({
     hookTimeout: 20000,
     coverage: {
       provider: "v8",
-      include: ["src/**/*.ts"], // not the .sql migrations (the v8 remapper would try to parse them)
+      // Only src/ for now — not the .sql migrations (the v8 remapper would try to parse them). The
+      // evaluation harness (evals/lib) is unit-tested but kept out of the thresholds until feature 004
+      // lands completely (tasks T402/T453: measure, then add it and ratchet).
+      include: ["src/**/*.ts"],
       exclude: [
         "src/server.ts", // process entrypoint — smoke-tested via `pnpm start` + SIGTERM, not unit-testable
         "src/db/seed.ts", // dev-only CLI
         "src/adapters/calendar/google-calendar.ts", // live-only adapter (tests/live, needs credentials)
-        "src/adapters/llm/anthropic-llm.ts", // live-only adapter (tests/live, needs credentials)
       ],
       reporter: ["text-summary", "json-summary", "lcov"],
       // Thresholds are the measured baseline minus a small margin (see CONTRIBUTING.md); ratchet up,

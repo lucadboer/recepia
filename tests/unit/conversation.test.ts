@@ -130,3 +130,47 @@ describe("conversation reducers (pure)", () => {
     expect(isProcessed(s, "m1")).toBe(true);
   });
 });
+
+describe("stripThinking — provider thinking blocks never reach the persisted state (004 R1)", async () => {
+  const { stripThinking } = await import("../../src/agent/conversation");
+
+  it("removes thinking blocks from every message and drops assistant messages left empty", () => {
+    const s0 = emptyState("+55a", NOW);
+    const s1 = {
+      ...s0,
+      history: [
+        { role: "user" as const, content: [{ type: "text" as const, text: "oi" }] },
+        {
+          role: "assistant" as const,
+          content: [
+            { type: "thinking" as const, raw: { type: "thinking", thinking: "…", signature: "s" } },
+            { type: "tool_use" as const, id: "tu", name: "get_availability", input: {} },
+          ],
+        },
+        {
+          role: "user" as const,
+          content: [{ type: "tool_result" as const, toolUseId: "tu", content: "{}" }],
+        },
+        {
+          role: "assistant" as const,
+          content: [{ type: "thinking" as const, raw: { type: "redacted_thinking", data: "x" } }],
+        },
+      ],
+    };
+    const out = stripThinking(s1);
+    expect(out.history).toEqual([
+      { role: "user", content: [{ type: "text", text: "oi" }] },
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "tu", name: "get_availability", input: {} }],
+      },
+      { role: "user", content: [{ type: "tool_result", toolUseId: "tu", content: "{}" }] },
+    ]);
+    expect(s1.history).toHaveLength(4); // immutable
+  });
+
+  it("returns the same reference when there is nothing to strip", () => {
+    const s = appendUserText(emptyState("+55a", NOW), "oi", NOW);
+    expect(stripThinking(s)).toBe(s);
+  });
+});

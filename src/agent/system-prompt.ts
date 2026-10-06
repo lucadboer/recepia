@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ROUTINE_TYPES } from "../config";
 import { formatLocalPt, formatOffset, toLocalParts } from "../domain/time";
 import { toolDefs } from "./tool-schemas";
@@ -9,31 +13,76 @@ export interface PromptContext {
   timezone: string;
 }
 
-// Defense-in-depth instructions; the REAL guarantees are the structural gates in
-// tool-registry.ts + the orchestrator. Wording accepted as the pilot copy (T220, 2026-10-06);
-// tone/clarity is measured by the eval judge (feature 004).
+/** The versioned static block of the system prompt (FR-409). */
+export interface PromptArtifact {
+  /** File id, e.g. `v001`. */
+  id: string;
+  /** `vNNN+<sha256(file)[:7]>` — changes with any edit of the file. */
+  version: string;
+  /** Raw file content with `{{placeholders}}` unrendered. */
+  template: string;
+}
+
+export interface SystemPrompt {
+  text: string;
+  version: string;
+}
+
+const PROMPTS_ROOT = fileURLToPath(new URL("../../prompts/", import.meta.url));
+const DEFAULT_SYSTEM_DIR = join(PROMPTS_ROOT, "system");
+const DEFAULT_CHANGELOG = join(PROMPTS_ROOT, "CHANGELOG.md");
+const ARTIFACT_FILE = /^v(\d{3})\.md$/;
+
+/**
+ * Load the newest `prompts/system/vNNN.md`. Fails fast (at module load in production) when
+ * no artifact exists or `prompts/CHANGELOG.md` has no `## vNNN` entry for it — a prompt
+ * change without a changelog entry must not reach the model.
+ */
+export function loadPromptArtifact({
+  systemDir = DEFAULT_SYSTEM_DIR,
+  changelogPath = DEFAULT_CHANGELOG,
+}: {
+  systemDir?: string;
+  changelogPath?: string;
+} = {}): PromptArtifact {
+  const candidates = existsSync(systemDir)
+    ? readdirSync(systemDir)
+        .map((f) => ({ file: f, n: Number(ARTIFACT_FILE.exec(f)?.[1] ?? Number.NaN) }))
+        .filter((c) => Number.isFinite(c.n))
+        .sort((a, b) => a.n - b.n)
+    : [];
+  const newest = candidates.at(-1);
+  if (!newest) throw new Error(`No prompt artifact (vNNN.md) found in ${systemDir}`);
+  const id = `v${String(newest.n).padStart(3, "0")}`;
+  if (!existsSync(changelogPath)) {
+    throw new Error(`Prompt CHANGELOG missing at ${changelogPath} (needs an entry for ${id})`);
+  }
+  const changelog = readFileSync(changelogPath, "utf8");
+  if (!new RegExp(`^## ${id}\\b`, "m").test(changelog)) {
+    throw new Error(`Prompt CHANGELOG (${changelogPath}) has no entry "## ${id}"`);
+  }
+  const template = readFileSync(join(systemDir, newest.file), "utf8");
+  const digest = createHash("sha256").update(template).digest("hex").slice(0, 7);
+  return { id, version: `${id}+${digest}`, template };
+}
+
+/** Loaded once per process: the artifact in effect for every turn. */
+export const PROMPT_ARTIFACT: PromptArtifact = loadPromptArtifact();
+export const PROMPT_VERSION = PROMPT_ARTIFACT.version;
+
+// Defense-in-depth instructions live in prompts/system/vNNN.md; the REAL guarantees are the
+// structural gates in tool-registry.ts + the orchestrator. Tone/clarity is measured by the
+// eval judge (feature 004).
 //
-// Layout contract: the STATIC block comes first and the single DATED line comes LAST, so
-// a prompt-cache breakpoint can later sit after the static part without being invalidated
-// every minute (see plan.md "Hardening addendum").
-const STATIC_LINES = [
-  "Você é a secretária virtual de uma clínica odontológica. Responda em português, de forma clara e cordial.",
-  "",
-  "Regras invioláveis:",
-  "- Ofereça apenas horários retornados por get_availability; nunca invente horários.",
-  "- Você nunca grava nada diretamente: aja somente pelas ferramentas disponíveis.",
-  "- Só chame confirm_booking depois que o paciente confirmar explicitamente um horário oferecido.",
-  "- Na dúvida ou fora de rotina (dor/urgência, Invisalign, ortodontia, implante, cirurgia, tratamento em andamento, dentista específico, reclamação, preço/convênio), use escalate_to_human.",
-  `- Tipos de rotina atendidos: ${ROUTINE_TYPES.join(", ")}.`,
-  "",
-  "Estilo e exemplos de fala (adapte ao contexto; não recite literalmente):",
-  '- Saudação: "Oi! Aqui é a assistente virtual da clínica 🦷. Posso te ajudar a agendar uma consulta de rotina?"',
-  '- Oferta de horários: "Tenho estes horários livres: 1) ter, 24/06 às 14h · 2) qua, 25/06 às 09h30. Qual fica melhor pra você?"',
-  '- Pedido de confirmação: "Então fica limpeza na ter, 24/06 às 14h. Posso confirmar? (responda SIM)"',
-  "",
-  `Ferramentas disponíveis: ${toolDefs.map((t) => t.name).join(", ")}.`,
-  "",
-];
+// Layout contract: the STATIC block comes first and the single DATED line comes LAST, so a
+// prompt-cache breakpoint can later sit after the static part without being invalidated
+// every minute (see 002 plan "Hardening addendum").
+function renderStatic(template: string): string {
+  return template
+    .replaceAll("{{routine_types}}", ROUTINE_TYPES.join(", "))
+    .replaceAll("{{tool_names}}", toolDefs.map((t) => t.name).join(", "))
+    .trimEnd();
+}
 
 const weekdayFormatters = new Map<string, Intl.DateTimeFormat>();
 function weekdayPt(now: Date, timezone: string): string {
@@ -57,6 +106,12 @@ export function datedLine({ now, timezone }: PromptContext): string {
   );
 }
 
-export function buildSystemPrompt(ctx: PromptContext): string {
-  return [...STATIC_LINES, datedLine(ctx)].join("\n");
+export function buildSystemPrompt(
+  ctx: PromptContext,
+  artifact: PromptArtifact = PROMPT_ARTIFACT,
+): SystemPrompt {
+  return {
+    text: `${renderStatic(artifact.template)}\n\n${datedLine(ctx)}`,
+    version: artifact.version,
+  };
 }

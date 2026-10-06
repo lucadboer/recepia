@@ -5,11 +5,11 @@ import { CloudApiMessaging } from "../../src/adapters/messaging/cloud-api-messag
 import { EvolutionMessaging } from "../../src/adapters/messaging/evolution-messaging";
 import { NotConfigured } from "../../src/domain/errors";
 
-// Pass "" to force the not-configured branch regardless of ambient env (default
-// params only kick in for `undefined`).
+// Pass "" to force the not-configured branch regardless of ambient env (defaults only
+// kick in for `undefined`).
 describe("real adapter scaffolds — needs-creds boundary", () => {
   it("AnthropicLLM throws NotConfigured without an API key", () => {
-    expect(() => new AnthropicLLM("")).toThrow(NotConfigured);
+    expect(() => new AnthropicLLM({ apiKey: "" })).toThrow(NotConfigured);
   });
   it("EvolutionMessaging throws NotConfigured without creds", () => {
     expect(() => new EvolutionMessaging("", "", "")).toThrow(NotConfigured);

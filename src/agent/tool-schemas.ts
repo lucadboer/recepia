@@ -16,6 +16,7 @@ export const toolDefs: LlmToolDef[] = [
       "Lista os horários de rotina realmente livres em um período (no máximo 40, os mais próximos; se `truncated` for true, consulte um período menor). É a ÚNICA fonte de horários — nunca invente horários.",
     inputSchema: {
       type: "object",
+      additionalProperties: false, // required by strict tool schemas
       properties: {
         from: { type: "string", description: "Início do período (ISO 8601)" },
         to: { type: "string", description: "Fim do período (ISO 8601)" },
@@ -30,6 +31,7 @@ export const toolDefs: LlmToolDef[] = [
       "Reserva temporariamente um horário. O 'start' deve ser exatamente um horário retornado por get_availability.",
     inputSchema: {
       type: "object",
+      additionalProperties: false, // required by strict tool schemas
       properties: {
         start: {
           type: "string",
@@ -46,6 +48,7 @@ export const toolDefs: LlmToolDef[] = [
       "Confirma uma reserva criada NESTA conversa, somente após a confirmação explícita do paciente.",
     inputSchema: {
       type: "object",
+      additionalProperties: false, // required by strict tool schemas
       properties: {
         hold_id: { type: "string" },
         patient_name: { type: "string" },
@@ -58,6 +61,7 @@ export const toolDefs: LlmToolDef[] = [
     description: "Encaminha à recepção quando o pedido sai do escopo de rotina ou na dúvida.",
     inputSchema: {
       type: "object",
+      additionalProperties: false, // required by strict tool schemas
       properties: {
         reason: { type: "string" },
         context: { type: "string" },

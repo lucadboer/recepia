@@ -22,8 +22,8 @@ description: "Task list for 004-evaluation-harness"
 
 **Purpose**: directories, scripts and tooling scope for the harness.
 
-- [ ] T401 Create `evals/{cases,lib,judge,reports}/` and `prompts/system/`; add `evals/reports/.gitkeep`; add `package.json` scripts `evals:fake` (`node --import tsx evals/run.ts --mode fake`), `evals:live` (`--mode live`), `evals:readme` (`node --import tsx evals/run.ts readme`), `evals:judge` (`--mode live --judge`)
-- [ ] T402 [P] Include `evals/**` in `biome.json` `files.includes` and `tsconfig.json` `include`; keep `evals/**` out of coverage thresholds for now (document in `vitest.config.ts` comment); add `evals/reports/*.tmp` to `.gitignore`
+- [x] T401 Create `evals/{cases,lib,judge,reports}/` and `prompts/system/`; add `evals/reports/.gitkeep`; add `package.json` scripts `evals:fake` (`node --import tsx evals/run.ts --mode fake`), `evals:live` (`--mode live`), `evals:readme` (`node --import tsx evals/run.ts readme`), `evals:judge` (`--mode live --judge`)
+- [x] T402 [P] Include `evals/**` in `biome.json` `files.includes` and `tsconfig.json` `include`; keep `evals/**` out of coverage thresholds for now (document in `vitest.config.ts` comment); add `evals/reports/*.tmp` to `.gitignore`
 
 ---
 
@@ -35,17 +35,17 @@ description: "Task list for 004-evaluation-harness"
 
 ### Model migration to `claude-sonnet-5-5` (research R1)
 
-- [ ] T403 [P] Unit test `tests/unit/anthropic-llm.test.ts`: with a stubbed SDK client, `AnthropicLLM.turn` sends `model: claude-sonnet-5-5` (default), `thinking: { type: "between_tools" }`, `output_config: { effort: "low" }`, `strict: true` tools, carries `promptVersion` into the request metadata it records, maps `response.usage` → `usage`, maps `stop_reason: "refusal"` → `stopReason: "refusal"`, and round-trips `thinking` blocks unchanged within a turn — write first, must FAIL
-- [ ] T404 [P] Integration test in `tests/integration/orchestrator.test.ts`: a `FakeLLM` turn with `stopReason: "refusal"` → escalation with reason `model_refusal`, patient gets `reply.escalatedToReception()`, conversation handed off, no empty message — write first, must FAIL
-- [ ] T405 Extend `src/ports/llm-port.ts`: `LlmTurnResult.usage?: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }`, `stopReason` adds `"refusal"`, `LlmContent` adds `{ type: "thinking"; raw: unknown }` (opaque), `LlmTurnInput.promptVersion?: string`
-- [ ] T406 Update `src/adapters/llm/anthropic-llm.ts` per research R1 (model default, `between_tools`, `effort: low`, strict tools with `additionalProperties: false` in `src/agent/tool-schemas.ts`, usage mapping, refusal mapping, thinking blocks passed through) — make T403 pass
-- [ ] T407 Update `src/agent/orchestrator.ts`: handle `stopReason === "refusal"` (escalate `model_refusal`, deterministic hand-off reply); strip `thinking` blocks from history before `persist` (keep them within the in-turn loop) — make T404 pass; `src/adapters/fakes/fake-llm.ts` returns `usage` zeros
-- [ ] T408 Live validation `pnpm test:live` with `LIVE_LLM=1 LIVE_E2E=1` on `claude-sonnet-5-5` (owner's key, local only); record the outcome in `specs/004-evaluation-harness/research.md` R1 (works / needed `drop_block` fallback)
+- [x] T403 [P] Unit test `tests/unit/anthropic-llm.test.ts`: with a stubbed SDK client, `AnthropicLLM.turn` sends `model: claude-sonnet-5-5` (default), `thinking: { type: "between_tools" }`, `output_config: { effort: "low" }`, `strict: true` tools, carries `promptVersion` into the request metadata it records, maps `response.usage` → `usage`, maps `stop_reason: "refusal"` → `stopReason: "refusal"`, and round-trips `thinking` blocks unchanged within a turn — write first, must FAIL
+- [x] T404 [P] Integration test in `tests/integration/orchestrator.test.ts`: a `FakeLLM` turn with `stopReason: "refusal"` → escalation with reason `model_refusal`, patient gets `reply.escalatedToReception()`, conversation handed off, no empty message — write first, must FAIL
+- [x] T405 Extend `src/ports/llm-port.ts`: `LlmTurnResult.usage?: { inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens }`, `stopReason` adds `"refusal"`, `LlmContent` adds `{ type: "thinking"; raw: unknown }` (opaque), `LlmTurnInput.promptVersion?: string`
+- [x] T406 Update `src/adapters/llm/anthropic-llm.ts` per research R1 (model default, `between_tools`, `effort: low`, strict tools with `additionalProperties: false` in `src/agent/tool-schemas.ts`, usage mapping, refusal mapping, thinking blocks passed through) — make T403 pass
+- [x] T407 Update `src/agent/orchestrator.ts`: handle `stopReason === "refusal"` (escalate `model_refusal`, deterministic hand-off reply); strip `thinking` blocks from history before `persist` (keep them within the in-turn loop) — make T404 pass; `src/adapters/fakes/fake-llm.ts` returns `usage` zeros
+- [ ] T408 Live validation `pnpm test:live` with `LIVE_LLM=1 LIVE_E2E=1` on `claude-sonnet-5-5` (owner's key, local only); record the outcome in `specs/004-evaluation-harness/research.md` R1 (works / needed `drop_block` fallback) — **blocked 2026-10-06**: local key rejected (401); live test extended and ready, owner must refresh the key and run it
 
 ### Prompt artifact + loader (research R6)
 
-- [ ] T409 [P] Unit test `tests/unit/prompt-loader.test.ts`: `buildSystemPrompt(ctx)` returns `{ text, version }`, `version` = `vNNN+<sha256[:7]>` and changes when the file content changes; static part byte-identical across calls; loader fails fast when `prompts/system/` has no `vNNN.md` or `prompts/CHANGELOG.md` lacks the newest version — write first, must FAIL
-- [ ] T410 Create `prompts/system/v001.md` (the current static block moved verbatim) and `prompts/CHANGELOG.md` (v001 entry); rewrite `src/agent/system-prompt.ts` to load the newest `vNNN.md` once at module load, compute the version id, and return `{ text, version }`; update `tests/unit/system-prompt.test.ts` and the orchestrator call site — make T409 pass
+- [x] T409 [P] Unit test `tests/unit/prompt-loader.test.ts`: `buildSystemPrompt(ctx)` returns `{ text, version }`, `version` = `vNNN+<sha256[:7]>` and changes when the file content changes; static part byte-identical across calls; loader fails fast when `prompts/system/` has no `vNNN.md` or `prompts/CHANGELOG.md` lacks the newest version — write first, must FAIL
+- [x] T410 Create `prompts/system/v001.md` (the current static block moved verbatim) and `prompts/CHANGELOG.md` (v001 entry); rewrite `src/agent/system-prompt.ts` to load the newest `vNNN.md` once at module load, compute the version id, and return `{ text, version }`; update `tests/unit/system-prompt.test.ts` and the orchestrator call site — make T409 pass
 
 ### Case format + single-case runner (research R2–R4, contract)
 

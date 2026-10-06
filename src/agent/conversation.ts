@@ -123,6 +123,23 @@ export function markProcessed(
   return { ...s, processedInboundIds: [...s.processedInboundIds, inboundId], updatedAt: now };
 }
 
+/**
+ * Drop provider reasoning blocks before persisting (004 R1): the history is edited between
+ * inbound turns (dated prompt line, trimming), which would invalidate a replayed block's
+ * signature. An assistant message left empty (reasoning only) is dropped too — the API
+ * rejects empty assistant content. Same reference when nothing changes.
+ */
+export function stripThinking(s: ConversationState): ConversationState {
+  if (!s.history.some((m) => m.content.some((c) => c.type === "thinking"))) return s;
+  const history: LlmMessage[] = [];
+  for (const m of s.history) {
+    const content = m.content.filter((c) => c.type !== "thinking");
+    if (content.length === 0) continue;
+    history.push(content.length === m.content.length ? m : { ...m, content });
+  }
+  return { ...s, history };
+}
+
 export function isProcessed(s: ConversationState, inboundId: string): boolean {
   return s.processedInboundIds.includes(inboundId);
 }
