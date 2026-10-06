@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
-import { emptyState } from "../../src/agent/conversation";
+import { boundState, emptyState } from "../../src/agent/conversation";
 import { dispatchTool, type ToolContext } from "../../src/agent/tool-registry";
 import { TOOL_NAMES, toolDefs } from "../../src/agent/tool-schemas";
 import { ROUTINE_TYPES } from "../../src/config";
@@ -176,5 +176,29 @@ describe("tool schemas + input validation", () => {
     expect(await bookingCount()).toBe(0);
     expect(await countAll("audit_log")).toBe(0);
     expect(await countAll("patient_consent")).toBe(0);
+  });
+});
+
+describe("tool-registry × state bounds (T239)", () => {
+  it("rejects holding a slot that was offered earlier but is now in the past (gate 2 after boundState)", async () => {
+    const c = ctx();
+    // Offered at 09:00, slot at 11:00 local — then the clock moves past the slot start.
+    const offered = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const stale = offered.state.offeredSlots[0]; // 2026-06-15T14:00:00.000Z
+    const later = new Date("2026-06-15T14:30:00Z"); // 30 min after that slot started
+    const bounded = boundState(offered.state, later);
+    expect(bounded.offeredSlots).not.toContain(stale);
+
+    const r = await dispatchTool({ ...c, state: bounded, now: later }, TOOL_NAMES.hold, {
+      start: stale,
+      type: "cleaning",
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content).toMatch(/não foi oferecido/);
+    expect(await bookingCount()).toBe(0);
   });
 });

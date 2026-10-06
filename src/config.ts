@@ -18,6 +18,13 @@ export const CALENDAR_RETRY_BASE_MS = 25;
 // Safety cap on the LLM tool-use loop. TODO(product): tune final value (NEEDS-USER).
 export const AGENT_MAX_ITERATIONS = 8;
 
+// Bounds on per-phone ConversationState (T239). One inbound message produces at most
+// 1 + 2*AGENT_MAX_ITERATIONS history messages, so 40 keeps >= 2 full turns of context.
+export const HISTORY_MAX_MESSAGES = 40;
+export const OFFERED_SLOTS_MAX = 60;
+export const ACTIVE_HOLDS_MAX = 10;
+export const PROCESSED_IDS_MAX = 200;
+
 export const ROUTINE_TYPES = ["evaluation", "cleaning", "follow_up", "consultation"] as const;
 export type AppointmentType = (typeof ROUTINE_TYPES)[number];
 

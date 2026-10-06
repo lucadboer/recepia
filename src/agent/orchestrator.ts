@@ -7,6 +7,7 @@ import { hasConsent, recordConsent, recordOptOut } from "./consent";
 import {
   appendMessage,
   appendUserText,
+  boundState,
   emptyState,
   isProcessed,
   markEscalated,
@@ -19,7 +20,7 @@ import { buildSystemPrompt } from "./system-prompt";
 import { dispatchTool, type ToolContext } from "./tool-registry";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas";
 import { triage } from "./triage";
-import type { InboundMessage, LoopResult } from "./types";
+import type { ConversationState, InboundMessage, LoopResult } from "./types";
 
 /** Dependencies for the conversational layer: the deterministic Deps + the LLM and conversation store. */
 export interface AgentDeps extends Deps {
@@ -48,7 +49,17 @@ function textOf(content: LlmContent[]): string {
  */
 export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promise<LoopResult> {
   const now = deps.clock.now();
-  let state = (await deps.conversations.load(msg.phone)) ?? emptyState(msg.phone, now);
+  // Bound the state on the way in (stale offered slots, oversized history) and on the
+  // way out, so neither the LLM context nor the JSONB row grows without limit (T239).
+  let state = boundState(
+    (await deps.conversations.load(msg.phone)) ?? emptyState(msg.phone, now),
+    now,
+  );
+  const persist = async (s: ConversationState): Promise<ConversationState> => {
+    const bounded = boundState(s, now);
+    await deps.conversations.save(bounded);
+    return bounded;
+  };
 
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
@@ -59,7 +70,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   if (classifyIntent(msg.text) === "opt_out") {
     await recordOptOut(deps, msg.phone);
     state = setAwaitingConsent(state, false, now);
-    await deps.conversations.save(state);
+    state = await persist(state);
     await deps.messaging.sendMessage(msg.phone, reply.optedOut());
     return { status: "replied", reply: reply.optedOut() };
   }
@@ -75,7 +86,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   if (triaged.escalate) {
     await escalateToHuman(deps, triaged.reason ?? "triage", msg.text);
     state = markEscalated(state, now);
-    await deps.conversations.save(state);
+    state = await persist(state);
     await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
@@ -149,7 +160,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
       `Conversa com ${msg.phone} excedeu ${AGENT_MAX_ITERATIONS} iterações.`,
     );
     state = markEscalated(state, now);
-    await deps.conversations.save(state);
+    state = await persist(state);
     // Don't tell the patient "couldn't complete" if a confirmation already went out (T227).
     if (!confirmationDelivered) {
       await deps.messaging.sendMessage(msg.phone, reply.couldNotComplete());
@@ -158,7 +169,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   }
 
   const replyText = finalText.trim().length > 0 ? finalText : reply.couldNotComplete();
-  await deps.conversations.save(state);
+  state = await persist(state);
   // Suppress the closing send only when a confirmation was actually delivered: a
   // successful booking yields exactly one patient message (not two), and a re-confirm
   // that sent nothing still gets a reply (not zero) — T227.
