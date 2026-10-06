@@ -7,6 +7,14 @@ export class SlotUnavailableError extends Error {
   }
 }
 
+/** The requested start is outside [now + lead, now + horizon] or off the 30-min grid. */
+export class SlotOutOfWindowError extends Error {
+  constructor(message = "O horário está fora da janela de agendamento.") {
+    super(message);
+    this.name = "SlotOutOfWindowError";
+  }
+}
+
 export class HoldExpiredError extends Error {
   constructor(message = "A reserva expirou.") {
     super(message);
@@ -41,6 +49,45 @@ export class NotConfigured extends Error {
     super(message);
     this.name = "NotConfigured";
   }
+}
+
+/**
+ * Another turn persisted this phone's conversation state first (optimistic concurrency,
+ * T240). The caller must NOT retry the LLM turn: tool writes already committed are
+ * idempotent, and re-running could duplicate side-effects. Phone is masked in the message.
+ */
+export class ConversationConflictError extends Error {
+  constructor(
+    public readonly phone: string,
+    public readonly expectedVersion: number,
+  ) {
+    super(
+      `Conversation state for ***${phone.slice(-4)} changed concurrently (expected version ${expectedVersion}).`,
+    );
+    this.name = "ConversationConflictError";
+  }
+}
+
+const ESCALATED_FLAG = Symbol.for("recepia.escalated");
+
+/**
+ * Mark an error as "reception was already notified before this was thrown" (confirm_booking
+ * escalates internally on persistent calendar failure / orphan compensation). The tool
+ * registry turns a flagged error into a hand-off instead of letting the model carry on.
+ */
+export function flagEscalated<E>(err: E): E {
+  if (err !== null && typeof err === "object") {
+    (err as unknown as Record<symbol, unknown>)[ESCALATED_FLAG] = true;
+  }
+  return err;
+}
+
+export function hasEscalatedFlag(err: unknown): boolean {
+  return (
+    err !== null &&
+    typeof err === "object" &&
+    (err as unknown as Record<symbol, unknown>)[ESCALATED_FLAG] === true
+  );
 }
 
 /** The LLM tool-use loop hit its safety cap without finishing. */

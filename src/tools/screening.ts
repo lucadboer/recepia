@@ -16,6 +16,6 @@ export async function screenRoutineType(
   context: string,
 ): Promise<boolean> {
   if (isRoutineType(type)) return true;
-  await escalateToHuman(deps, `non_routine:${type}`, context);
+  await escalateToHuman(deps, { reason: `non_routine:${type}`, phone: null, context });
   return false;
 }

@@ -5,6 +5,7 @@ import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
 import { OutOfScopeError } from "../../src/domain/errors";
+import { dispatchOutbox } from "../../src/jobs/dispatch-outbox";
 import { getAvailability } from "../../src/tools/get-availability";
 import { holdSlot } from "../../src/tools/hold-slot";
 import { screenRoutineType } from "../../src/tools/screening";
@@ -44,6 +45,7 @@ describe("US3 — escalate non-routine requests", () => {
     const ok = await screenRoutineType(deps(messaging), "invisalign", "Paciente pediu Invisalign");
 
     expect(ok).toBe(false);
+    await dispatchOutbox(deps(messaging));
     expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1);
     expect(await countAudit(pool, "escalated")).toBe(1);
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM booking");
@@ -67,6 +69,7 @@ describe("US3 — escalate non-routine requests", () => {
     const messaging = new FakeMessaging();
     const ok = await screenRoutineType(deps(messaging), "cleaning", "Paciente quer limpeza");
     expect(ok).toBe(true);
+    await dispatchOutbox(deps(messaging));
     expect(messaging.sent).toHaveLength(0);
     expect(await countAudit(pool, "escalated")).toBe(0);
   });

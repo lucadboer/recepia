@@ -5,7 +5,7 @@ Validate the full conversational layer with **no LLM, no Calendar, no WhatsApp, 
 ## Setup
 ```bash
 corepack enable && pnpm install
-pnpm db:up && pnpm migrate   # applies 005_patient_consent, 006_conversation_state
+pnpm db:up && pnpm migrate   # applies 005_patient_consent … 008_outbox_message
 pnpm test                    # unit + integration + concurrency
 ```
 

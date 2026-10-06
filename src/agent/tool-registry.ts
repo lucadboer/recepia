@@ -4,7 +4,9 @@
 // created in this conversation. The patient phone is injected from context — never
 // taken from LLM args.
 
+import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
+import { hasEscalatedFlag } from "../domain/errors";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { getAvailability } from "../tools/get-availability";
@@ -18,6 +20,7 @@ import {
   recordOfferedSlots,
 } from "./conversation";
 import { errorReply } from "./reply";
+import { summarizeHistory } from "./summary";
 import { TOOL_NAMES } from "./tool-schemas";
 import type { ConversationState } from "./types";
 
@@ -32,16 +35,29 @@ export interface ToolDispatchResult {
   content: string; // tool_result content fed back to the LLM
   isError: boolean;
   state: ConversationState;
+  /** The tool handed the conversation to reception — the orchestrator must stop the loop. */
   escalated: boolean;
+  /**
+   * The tool committed a patient-facing message (a fresh confirm_booking enqueued the
+   * confirmation). Role-based, not phone-based (T235): the orchestrator suppresses its own
+   * closing reply so the patient gets exactly one message (T227).
+   */
+  patientNotified: boolean;
 }
 
 function result(
   state: ConversationState,
   content: string,
   isError: boolean,
-  escalated = false,
+  flags: Partial<Pick<ToolDispatchResult, "escalated" | "patientNotified">> = {},
 ): ToolDispatchResult {
-  return { content, isError, state, escalated };
+  return {
+    content,
+    isError,
+    state,
+    escalated: flags.escalated ?? false,
+    patientNotified: flags.patientNotified ?? false,
+  };
 }
 
 function asString(v: unknown): string | null {
@@ -66,7 +82,11 @@ export async function dispatchTool(
         if (!from || !to || !type) {
           return result(state, "Argumentos inválidos para get_availability.", true);
         }
-        const slots = await getAvailability(deps, { from: new Date(from), to: new Date(to) }, type);
+        const all = await getAvailability(deps, { from: new Date(from), to: new Date(to) }, type);
+        // Expose at most AVAILABILITY_MAX_SLOTS (the earliest). What the model sees is EXACTLY
+        // what is recorded as offered, so gate 2 never rejects a slot the model could quote.
+        const truncated = all.length > AVAILABILITY_MAX_SLOTS;
+        const slots = truncated ? all.slice(0, AVAILABILITY_MAX_SLOTS) : all;
         const iso = slots.map((s) => s.start.toISOString());
         state = recordOfferedSlots(state, iso, now);
         return result(
@@ -77,6 +97,7 @@ export async function dispatchTool(
               end: s.end.toISOString(),
               type: s.type,
             })),
+            truncated,
           }),
           false,
         );
@@ -117,7 +138,10 @@ export async function dispatchTool(
         if (!hasActiveHold(state, holdId)) {
           return result(state, "Reserva não reconhecida nesta conversa.", true);
         }
-        const booking = await confirmBooking(deps, holdId, { phone, name: patientName });
+        const { booking, outcome } = await confirmBooking(deps, holdId, {
+          phone,
+          name: patientName,
+        });
         state = recordConfirmed(state, booking.id, now);
         return result(
           state,
@@ -127,15 +151,21 @@ export async function dispatchTool(
             start: booking.start.toISOString(),
           }),
           false,
+          { patientNotified: outcome === "confirmed" },
         );
       }
 
       case TOOL_NAMES.escalate: {
         const reason = asString(input.reason) ?? "unspecified";
         const context = asString(input.context) ?? "";
-        await escalateToHuman(deps, reason, context);
+        await escalateToHuman(deps, {
+          reason,
+          phone,
+          context,
+          summary: summarizeHistory(state.history),
+        });
         state = markEscalated(state, now);
-        return result(state, JSON.stringify({ escalated: true }), false, true);
+        return result(state, JSON.stringify({ escalated: true }), false, { escalated: true });
       }
 
       default:
@@ -143,6 +173,11 @@ export async function dispatchTool(
         return result(state, `Ferramenta desconhecida: ${name}`, true);
     }
   } catch (e) {
-    return result(state, errorReply(e), true);
+    // A tool may have escalated internally BEFORE failing (confirm_booking on persistent
+    // calendar failure / orphan compensation). Surface it so the orchestrator hands the
+    // conversation off instead of letting the model carry on — reception is not notified twice.
+    const escalated = hasEscalatedFlag(e);
+    if (escalated) state = markEscalated(state, now);
+    return result(state, errorReply(e), true, { escalated });
   }
 }

@@ -187,6 +187,25 @@ describe("webhook server — Cloud API path", () => {
     expect(cap.inbound).toHaveLength(0);
   });
 
+  it("returns 404 for a path that merely shares the Cloud prefix (/webhook/cloud-x) [T229]", async () => {
+    const cap = { inbound: [] as InboundMessage[], statuses: [] as CloudStatus[] };
+    const s = await start({}, cap);
+    server = s.server;
+    const body = cloudInbound("wamid.PFX");
+    const post = await fetch(`http://127.0.0.1:${s.port}${CLOUD}-x`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-hub-signature-256": sign(body) },
+      body,
+    });
+    expect(post.status).toBe(404);
+    const get = await fetch(
+      `http://127.0.0.1:${s.port}${CLOUD}y?hub.mode=subscribe&hub.verify_token=${VT}&hub.challenge=C`,
+    );
+    expect(get.status).toBe(404);
+    await settle();
+    expect(cap.inbound).toHaveLength(0);
+  });
+
   it("coexists: the Evolution path still works with cloud configured", async () => {
     const cap = { inbound: [] as InboundMessage[], statuses: [] as CloudStatus[] };
     const evo: InboundMessage[] = [];

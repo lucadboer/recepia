@@ -1,7 +1,10 @@
 import { handleInbound } from "./agent/orchestrator";
 import type { InboundMessage } from "./agent/types";
-import { buildAgentDeps } from "./composition";
+import { buildAgentDeps, closeAgentDeps } from "./composition";
+import { startJobs } from "./jobs/scheduler";
+import { PerKeyQueue } from "./webhook/per-key-queue";
 import { type CloudWebhookOptions, createWebhookServer } from "./webhook/server";
+import { createShutdown } from "./webhook/shutdown";
 
 /**
  * Production entrypoint: wire the real AgentDeps into the webhook server. The HTTP
@@ -28,9 +31,32 @@ const cloud: CloudWebhookOptions | undefined =
       }
     : undefined;
 
-const server = createWebhookServer({ secret, onInbound: (msg) => handleInbound(deps, msg), cloud });
+const queue = new PerKeyQueue();
+const server = createWebhookServer({
+  secret,
+  onInbound: (msg) => handleInbound(deps, msg),
+  cloud,
+  queue,
+});
+// Background jobs: outbox delivery (retries) + hold-expiry sweep (T245).
+const jobs = startJobs(deps);
+// Graceful shutdown (T246): stop jobs, stop accepting, drain in-flight turns, close the pool.
+const shutdown = createShutdown({ server, jobs, queue, close: () => closeAgentDeps(deps) });
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    console.log(`[recepia] ${signal} received`);
+    shutdown().then(
+      (clean) => process.exit(clean ? 0 : 1),
+      (err) => {
+        console.error("[recepia] shutdown failed", err);
+        process.exit(1);
+      },
+    );
+  });
+}
 server.listen(port, () => {
   console.log(`[recepia] webhook listening on :${port}`);
+  console.log(`  jobs:      ${jobs.map((j) => j.name).join(", ")}`);
   console.log("  evolution: POST /webhook/evolution/<token>");
   console.log(
     cloud

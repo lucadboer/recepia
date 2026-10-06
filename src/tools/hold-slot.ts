@@ -10,8 +10,8 @@ import { loadOverrides, loadRules } from "../db/repositories/capacity-repo";
 import type { Deps } from "../deps";
 import { toHold } from "../domain/booking";
 import { capacityFor } from "../domain/capacity";
-import { OutOfScopeError, SlotUnavailableError } from "../domain/errors";
-import { addMinutes, toLocalParts } from "../domain/time";
+import { OutOfScopeError, SlotOutOfWindowError, SlotUnavailableError } from "../domain/errors";
+import { addMinutes, alignUpToSlot, bookingWindow, toLocalParts } from "../domain/time";
 import type { Hold, PatientRef } from "../domain/types";
 
 export interface SlotRequest {
@@ -42,6 +42,19 @@ export async function holdSlot(deps: Deps, slot: SlotRequest, patient: PatientRe
   const now = deps.clock.now();
   const start = slot.start;
   const end = addMinutes(start, SLOT_MINUTES);
+
+  // The deterministic tool is the guard, not the caller: a start outside the bookable
+  // window (minimum lead / horizon) or off the clinic-local 30-min grid is never held,
+  // even if it was offered earlier and the lead time has since run out.
+  const window = bookingWindow(now);
+  if (
+    Number.isNaN(start.getTime()) ||
+    start.getTime() < window.from.getTime() ||
+    start.getTime() > window.to.getTime() ||
+    alignUpToSlot(start).getTime() !== start.getTime()
+  ) {
+    throw new SlotOutOfWindowError();
+  }
 
   const client = await deps.pool.connect();
   try {

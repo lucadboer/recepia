@@ -1,5 +1,12 @@
 // Pure reducers over ConversationState. No I/O — fully unit-testable.
 
+import {
+  ACTIVE_HOLDS_MAX,
+  HANDOFF_NOTICE_INTERVAL_MS,
+  HISTORY_MAX_MESSAGES,
+  OFFERED_SLOTS_MAX,
+  PROCESSED_IDS_MAX,
+} from "../config";
 import type { LlmMessage } from "../ports/llm-port";
 import type { ConversationState } from "./types";
 
@@ -14,6 +21,9 @@ export function emptyState(phone: string, now: Date): ConversationState {
     processedInboundIds: [],
     patientName: null,
     awaitingConsent: false,
+    escalatedAt: null,
+    handoffNoticeAt: null,
+    version: 0,
     updatedAt: now,
   };
 }
@@ -34,13 +44,19 @@ export function appendUserText(s: ConversationState, text: string, now: Date): C
   return appendMessage(s, { role: "user", content: [{ type: "text", text }] }, now);
 }
 
+/**
+ * Record what get_availability just showed the model. Re-offered slots move to the TAIL:
+ * "most recently offered" is what the cap in pruneOfferedSlots must preserve.
+ */
 export function recordOfferedSlots(
   s: ConversationState,
   isoStarts: string[],
   now: Date,
 ): ConversationState {
-  const merged = new Set([...s.offeredSlots, ...isoStarts]);
-  return { ...s, offeredSlots: [...merged], updatedAt: now };
+  const fresh = [...new Set(isoStarts)];
+  const freshSet = new Set(fresh);
+  const kept = s.offeredSlots.filter((iso) => !freshSet.has(iso));
+  return { ...s, offeredSlots: [...kept, ...fresh], updatedAt: now };
 }
 
 export function recordHold(s: ConversationState, holdId: string, now: Date): ConversationState {
@@ -57,7 +73,45 @@ export function recordConfirmed(
 }
 
 export function markEscalated(s: ConversationState, now: Date): ConversationState {
-  return { ...s, status: "escalated", updatedAt: now };
+  return { ...s, status: "escalated", escalatedAt: now.toISOString(), updatedAt: now };
+}
+
+// ---------------------------------------------------------------------------
+// Handed-off state (FR-211) and completed-reset (FR-212) — T237.
+// ---------------------------------------------------------------------------
+
+/** At most one "a recepção vai continuar" notice per interval while handed off. */
+export function shouldSendHandoffNotice(
+  s: ConversationState,
+  now: Date,
+  intervalMs = HANDOFF_NOTICE_INTERVAL_MS,
+): boolean {
+  if (!s.handoffNoticeAt) return true;
+  return now.getTime() - new Date(s.handoffNoticeAt).getTime() >= intervalMs;
+}
+
+export function markHandoffNoticed(s: ConversationState, now: Date): ConversationState {
+  return { ...s, handoffNoticeAt: now.toISOString(), updatedAt: now };
+}
+
+/** Optional safety valve: an escalated conversation whose TTL elapsed may resume autonomously. */
+export function isAutoReleaseDue(s: ConversationState, now: Date, ttlMs: number): boolean {
+  if (s.status !== "escalated" || !s.escalatedAt) return false;
+  return now.getTime() - new Date(s.escalatedAt).getTime() >= ttlMs;
+}
+
+/**
+ * Start a fresh conversation for the same patient. Keeps what must survive: the
+ * processed message ids (dedupe, FR-207), the known name and the last confirmed booking.
+ */
+export function resetConversation(s: ConversationState, now: Date): ConversationState {
+  return {
+    ...emptyState(s.phone, now),
+    processedInboundIds: s.processedInboundIds,
+    patientName: s.patientName,
+    lastConfirmedBookingId: s.lastConfirmedBookingId,
+    version: s.version, // the row still exists — keep the CAS chain intact
+  };
 }
 
 export function markProcessed(
@@ -79,4 +133,56 @@ export function isOfferedSlot(s: ConversationState, iso: string): boolean {
 
 export function hasActiveHold(s: ConversationState, holdId: string): boolean {
   return s.activeHoldIds.includes(holdId);
+}
+
+// ---------------------------------------------------------------------------
+// Bounds (T239). State must not grow without limit: the whole history is sent to
+// the LLM every turn and the JSONB row is loaded/saved on every message.
+// ---------------------------------------------------------------------------
+
+function isUserText(m: LlmMessage): boolean {
+  return m.role === "user" && !m.content.some((c) => c.type === "tool_result");
+}
+
+/**
+ * Keep at most `max` messages, cutting only at a user TEXT message so that an
+ * assistant `tool_use` is never separated from the `tool_result` that must follow
+ * it (Anthropic rejects such histories). If no safe boundary exists inside the
+ * trimmable window the history is left unchanged.
+ */
+export function trimHistory(s: ConversationState, max = HISTORY_MAX_MESSAGES): ConversationState {
+  if (s.history.length <= max) return s;
+  const minStart = s.history.length - max;
+  for (let i = minStart; i < s.history.length; i++) {
+    if (isUserText(s.history[i])) return { ...s, history: s.history.slice(i) };
+  }
+  return s;
+}
+
+/** Drop offered slots that already started (unbookable) and cap to the most recent `max`. */
+export function pruneOfferedSlots(
+  s: ConversationState,
+  now: Date,
+  max = OFFERED_SLOTS_MAX,
+): ConversationState {
+  const future = s.offeredSlots.filter((iso) => new Date(iso).getTime() > now.getTime());
+  const kept = future.length > max ? future.slice(future.length - max) : future;
+  if (kept.length === s.offeredSlots.length) return s;
+  return { ...s, offeredSlots: kept };
+}
+
+function capTail<T>(xs: T[], max: number): T[] {
+  return xs.length > max ? xs.slice(xs.length - max) : xs;
+}
+
+/** Apply every bound. Returns the same reference when nothing had to change. */
+export function boundState(s: ConversationState, now: Date): ConversationState {
+  let out = trimHistory(s);
+  out = pruneOfferedSlots(out, now);
+  const holds = capTail(out.activeHoldIds, ACTIVE_HOLDS_MAX);
+  const processed = capTail(out.processedInboundIds, PROCESSED_IDS_MAX);
+  if (holds !== out.activeHoldIds || processed !== out.processedInboundIds) {
+    out = { ...out, activeHoldIds: holds, processedInboundIds: processed };
+  }
+  return out;
 }

@@ -6,7 +6,8 @@ import type { InboundMessage } from "../agent/types";
  * Bounded FIFO set of recently-seen provider message ids for EDGE dedupe. This is
  * an optimization to avoid redundant LLM work on webhook re-delivery; it is in-memory
  * and does NOT survive a restart. The real idempotency guarantee is the orchestrator's
- * DB-backed dedupe by providerMessageId (FR-207).
+ * DB-backed dedupe by providerMessageId (FR-207). Ids are recorded by the server only
+ * AFTER onInbound succeeded (T230): a redelivery after a failed turn is re-processed.
  */
 export class RecentIds {
   private readonly ids = new Set<string>();
@@ -85,8 +86,8 @@ export function parseAndAccept(input: DispatchInput): DispatchResult {
   if (!msg) return { status: 200 };
 
   // 4. Edge dedupe by providerMessageId (optimization; DB idempotency is the guarantee).
+  //    Consult only — the server records the id after onInbound succeeds (T230).
   if (input.seen.has(msg.providerMessageId)) return { status: 200 };
-  input.seen.add(msg.providerMessageId);
   return { status: 200, msg };
 }
 

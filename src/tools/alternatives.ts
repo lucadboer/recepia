@@ -34,11 +34,11 @@ export async function offerAlternativesOrEscalate(
 ): Promise<Slot[]> {
   const slots = await findNextSlots(deps, requested, type, limit);
   if (slots.length === 0) {
-    await escalateToHuman(
-      deps,
-      "no_availability",
-      `Sem horários disponíveis para ${type} no horizonte de agendamento.`,
-    );
+    await escalateToHuman(deps, {
+      reason: "no_availability",
+      phone: null,
+      context: `Sem horários disponíveis para ${type} no horizonte de agendamento.`,
+    });
   }
   return slots;
 }

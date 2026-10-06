@@ -158,11 +158,15 @@ export async function releaseHeld(q: Queryable, id: string): Promise<void> {
   );
 }
 
-/** Sweep: expire all holds past their TTL. Returns the number expired. */
-export async function expireDueHolds(q: Queryable, now: Date): Promise<number> {
-  const { rowCount } = await q.query(
-    "UPDATE booking SET status = 'expired', expires_at = NULL, updated_at = now() WHERE status = 'held' AND expires_at <= $1",
+/**
+ * Sweep: expire all holds past their TTL. Returns the ids actually flipped by THIS
+ * statement (RETURNING), so the caller audits exactly those — never a hold that a
+ * concurrent lazy reclaim already expired and audited (T234).
+ */
+export async function expireDueHolds(q: Queryable, now: Date): Promise<string[]> {
+  const { rows } = await q.query(
+    "UPDATE booking SET status = 'expired', expires_at = NULL, updated_at = now() WHERE status = 'held' AND expires_at <= $1 RETURNING id",
     [now],
   );
-  return rowCount ?? 0;
+  return rows.map((r) => r.id as string);
 }

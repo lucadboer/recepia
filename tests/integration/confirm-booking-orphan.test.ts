@@ -5,10 +5,12 @@ import type { Pool } from "../../src/db/pool";
 import { getById } from "../../src/db/repositories/booking-repo";
 import type { Deps } from "../../src/deps";
 import { HoldExpiredError } from "../../src/domain/errors";
+import { dispatchOutbox } from "../../src/jobs/dispatch-outbox";
 import type { CalendarPort } from "../../src/ports/calendar-port";
 import { confirmBooking } from "../../src/tools/confirm-booking";
 import { holdSlot } from "../../src/tools/hold-slot";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { interceptingPool } from "../helpers/pool";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
 const SLOT = new Date("2026-06-15T14:00:00Z");
@@ -42,29 +44,25 @@ function depsWith(calendar: CalendarPort, messaging: FakeMessaging): Deps {
   return { pool, clock: new FakeClock(NOW), calendar, messaging, receptionPhone: RECEPTION };
 }
 
-/**
- * Wraps the real pool so the confirmation transaction's UPDATE…SET status='confirmed'
- * fails, exercising the `commit_failed` orphan branch. All other queries pass through,
- * so getById and the orphan-compensation audit still work.
- */
+/** The confirmation UPDATE (…SET status='confirmed') fails → `commit_failed` orphan branch. */
 function poolFailingConfirmTx(real: Pool, sentinel: Error): Pool {
-  return {
-    query: (...args: unknown[]) =>
-      (real as unknown as { query: (...a: unknown[]) => unknown }).query(...args),
-    async connect() {
-      const client = await real.connect();
-      const orig = client.query.bind(client);
-      (client as unknown as { query: (...a: unknown[]) => unknown }).query = (
-        ...args: unknown[]
-      ) => {
-        const sql =
-          typeof args[0] === "string" ? args[0] : ((args[0] as { text?: string })?.text ?? "");
-        if (sql.includes("status = 'confirmed'")) return Promise.reject(sentinel);
-        return (orig as (...a: unknown[]) => unknown)(...args);
-      };
-      return client;
+  return interceptingPool(real, {
+    reject: (sql) => (sql.includes("status = 'confirmed'") ? sentinel : null),
+  });
+}
+
+/** The FIRST `COMMIT` issued through the wrapper fails (the confirmation transaction). */
+function poolFailingFirstCommit(real: Pool, sentinel: Error): Pool {
+  let failed = false;
+  return interceptingPool(real, {
+    reject: (sql) => {
+      if (!failed && sql.trim().toUpperCase() === "COMMIT") {
+        failed = true;
+        return sentinel;
+      }
+      return null;
     },
-  } as unknown as Pool;
+  });
 }
 
 describe("confirm_booking — orphan-event compensation", () => {
@@ -96,8 +94,10 @@ describe("confirm_booking — orphan-event compensation", () => {
     ).rejects.toBeInstanceOf(HoldExpiredError);
 
     expect(deleted).toContain(hold.id); // orphan event compensated
+    await dispatchOutbox(depsWith(racingCalendar, messaging));
     expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1); // escalated
     expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0); // no patient confirmation
+    expect(await countOutbox("booking_confirmation")).toBe(0);
 
     const booking = await getById(pool, hold.id);
     expect(booking?.status).toBe("expired");
@@ -132,10 +132,12 @@ describe("confirm_booking — orphan-event compensation", () => {
 
     const result = await confirmBooking(depsWith(racingCalendar, messaging), hold.id, PATIENT);
 
-    expect(result.status).toBe("confirmed");
-    expect(result.googleEventId).toBe(WINNER_EVENT);
+    expect(result.outcome).toBe("already_confirmed");
+    expect(result.booking.status).toBe("confirmed");
+    expect(result.booking.googleEventId).toBe(WINNER_EVENT);
     expect(deleted).toHaveLength(0); // must NOT delete the winner's event
-    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0); // winner already messaged
+    expect(await countOutbox("booking_confirmation")).toBe(0); // winner owns the confirmation
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0);
   });
 
   it("compensates with reason 'commit_failed' when the confirmation transaction throws", async () => {
@@ -167,8 +169,10 @@ describe("confirm_booking — orphan-event compensation", () => {
     await expect(confirmBooking(deps, hold.id, PATIENT)).rejects.toBe(sentinel);
 
     expect(deleted).toContain(hold.id); // orphan event compensated
+    await dispatchOutbox({ ...deps, pool });
     expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1); // escalated
     expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0); // no patient confirmation
+    expect(await countOutbox("booking_confirmation")).toBe(0);
 
     const booking = await getById(pool, hold.id);
     expect(booking?.googleEventId).toBeNull();
@@ -180,4 +184,106 @@ describe("confirm_booking — orphan-event compensation", () => {
     expect(audit.rows[0].payload.reason).toBe("commit_failed");
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);
   });
+
+  it("a COMMIT that LANDED but whose acknowledgment was lost keeps the event, returns the booking and lets the outbox own the reply", async () => {
+    const messaging = new FakeMessaging();
+    const hold = await holdSlot(
+      depsWith(inertCalendar, messaging),
+      { start: SLOT, type: "cleaning" },
+      PATIENT,
+    );
+    const deleted: string[] = [];
+    const calendar: CalendarPort = {
+      async createEvent() {
+        return { eventId: "evt_ack_lost" };
+      },
+      async deleteEvent(key) {
+        deleted.push(key);
+      },
+    };
+    let lost = false;
+    const deps: Deps = {
+      pool: interceptingPool(pool, {
+        after: (sql) => {
+          if (!lost && sql.trim().toUpperCase() === "COMMIT") {
+            lost = true;
+            throw new Error("connection reset after COMMIT"); // the DB committed, we never heard back
+          }
+        },
+      }),
+      clock: new FakeClock(NOW),
+      calendar,
+      messaging,
+      receptionPhone: RECEPTION,
+    };
+
+    const result = await confirmBooking(deps, hold.id, PATIENT);
+
+    expect(lost).toBe(true);
+    expect(result.outcome).toBe("confirmed"); // the outbox row exists → it owns the patient message
+    expect(result.booking.status).toBe("confirmed");
+    expect(result.booking.googleEventId).toBe("evt_ack_lost");
+    expect(deleted).toHaveLength(0); // the committed event is NOT compensated away
+    expect(await countOutbox("booking_confirmation")).toBe(1);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    expect(await countAudit(pool, "calendar_orphan_compensated")).toBe(0);
+    expect(await countAudit(pool, "escalated")).toBe(0);
+    await dispatchOutbox({ ...deps, pool });
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(1);
+  });
+
+  it("a COMMIT that fails AFTER the confirm UPDATE never yields a confirmed result nor a patient message [T232]", async () => {
+    const messaging = new FakeMessaging();
+    const hold = await holdSlot(
+      depsWith(inertCalendar, messaging),
+      { start: SLOT, type: "cleaning" },
+      PATIENT,
+    );
+
+    const deleted: string[] = [];
+    const calendar: CalendarPort = {
+      async createEvent() {
+        return { eventId: "evt_commit_boom" };
+      },
+      async deleteEvent(key) {
+        deleted.push(key);
+      },
+    };
+    const sentinel = new Error("COMMIT boom");
+    const deps: Deps = {
+      pool: poolFailingFirstCommit(pool, sentinel),
+      clock: new FakeClock(NOW),
+      calendar,
+      messaging,
+      receptionPhone: RECEPTION,
+    };
+
+    await expect(confirmBooking(deps, hold.id, PATIENT)).rejects.toBe(sentinel);
+
+    // Rolled back: still held, no event id, no confirmation enqueued, nothing sent to the patient.
+    const booking = await getById(pool, hold.id);
+    expect(booking?.status).toBe("held");
+    expect(booking?.googleEventId).toBeNull();
+    expect(await countOutbox("booking_confirmation")).toBe(0);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(0);
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(0);
+
+    // Compensated + escalated with the right reason.
+    expect(deleted).toContain(hold.id);
+    const audit = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = 'calendar_orphan_compensated'",
+    );
+    expect(audit.rows).toHaveLength(1);
+    expect(audit.rows[0].payload.reason).toBe("commit_failed");
+    await dispatchOutbox({ ...deps, pool });
+    expect(messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1);
+  });
 });
+
+async function countOutbox(kind: string): Promise<number> {
+  const { rows } = await pool.query(
+    "SELECT count(*)::int AS n FROM outbox_message WHERE kind = $1",
+    [kind],
+  );
+  return rows[0].n;
+}

@@ -41,7 +41,17 @@ export function buildAgentDeps(): AgentDeps {
     receptionPhone,
     llm: new AnthropicLLM(),
     conversations: new DbConversationStore(pool),
+    handoffAutoReleaseMs: handoffAutoReleaseMs(),
   };
+}
+
+/** HANDOFF_AUTO_RELEASE_HOURS (optional): unset/invalid/<= 0 → never auto-release (FR-211). */
+export function handoffAutoReleaseMs(
+  raw = process.env.HANDOFF_AUTO_RELEASE_HOURS,
+): number | undefined {
+  const hours = Number(raw);
+  if (!raw || !Number.isFinite(hours) || hours <= 0) return undefined;
+  return hours * 60 * 60 * 1000;
 }
 
 export async function closeAgentDeps(deps: AgentDeps): Promise<void> {

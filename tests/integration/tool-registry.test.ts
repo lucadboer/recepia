@@ -2,10 +2,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
-import { emptyState } from "../../src/agent/conversation";
+import { boundState, emptyState } from "../../src/agent/conversation";
 import { dispatchTool, type ToolContext } from "../../src/agent/tool-registry";
 import { TOOL_NAMES, toolDefs } from "../../src/agent/tool-schemas";
-import { ROUTINE_TYPES } from "../../src/config";
+import { AVAILABILITY_MAX_SLOTS, OFFERED_SLOTS_MAX, ROUTINE_TYPES } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
 import { ensureSchema, resetDb, seedHeld, seedRule, testPool } from "../helpers/db";
@@ -176,5 +176,100 @@ describe("tool schemas + input validation", () => {
     expect(await bookingCount()).toBe(0);
     expect(await countAll("audit_log")).toBe(0);
     expect(await countAll("patient_consent")).toBe(0);
+  });
+});
+
+describe("tool-registry × internal escalation (Codex P2)", () => {
+  it("a confirm whose calendar write fails persistently returns escalated: true with the state handed off", async () => {
+    const c = ctx();
+    (c.deps.calendar as FakeCalendar).failAlways = true;
+    const avail = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const held = await dispatchTool({ ...c, state: avail.state }, TOOL_NAMES.hold, {
+      start: avail.state.offeredSlots[0],
+      type: "cleaning",
+    });
+    const r = await dispatchTool({ ...c, state: held.state }, TOOL_NAMES.confirm, {
+      hold_id: held.state.activeHoldIds[0],
+      patient_name: "Maria",
+    });
+    expect(r.isError).toBe(true);
+    expect(r.escalated).toBe(true); // reception was notified inside the tool → hand-off
+    expect(r.state.status).toBe("escalated");
+    expect(await countAll("audit_log")).toBeGreaterThan(0);
+    const esc = await pool.query(
+      "SELECT count(*)::int AS n FROM audit_log WHERE action = 'escalated'",
+    );
+    expect(esc.rows[0].n).toBe(1); // exactly once
+    const out = await pool.query(
+      "SELECT count(*)::int AS n FROM outbox_message WHERE kind = 'escalation'",
+    );
+    expect(out.rows[0].n).toBe(1);
+  });
+});
+
+describe("tool-registry × state bounds (T239)", () => {
+  it("caps a wide get_availability to AVAILABILITY_MAX_SLOTS, flags truncation, and records EXACTLY what the model saw", async () => {
+    for (let wd = 2; wd <= 5; wd++) {
+      await seedRule(pool, { weekday: wd, startTime: "09:00", endTime: "18:00", capacity: 2 });
+    }
+    const c = ctx();
+    const r = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-20T00:00:00Z", // the whole business week: 5 × 18 = 90 free slots
+      type: "cleaning",
+    });
+    const payload = JSON.parse(r.content) as { slots: { start: string }[]; truncated: boolean };
+    expect(payload.truncated).toBe(true);
+    expect(payload.slots).toHaveLength(AVAILABILITY_MAX_SLOTS);
+    expect(payload.slots[0].start).toBe("2026-06-15T14:00:00.000Z"); // the EARLIEST are kept
+    expect(r.state.offeredSlots).toEqual(payload.slots.map((s) => s.start));
+    // Every slot the model can quote survives the state bound (the cap is below OFFERED_SLOTS_MAX).
+    expect(AVAILABILITY_MAX_SLOTS).toBeLessThanOrEqual(OFFERED_SLOTS_MAX);
+    const bounded = boundState(r.state, NOW);
+    expect(bounded.offeredSlots).toEqual(r.state.offeredSlots);
+    // And the last exposed slot is holdable.
+    const last = payload.slots.at(-1)?.start as string;
+    const hold = await dispatchTool({ ...c, state: bounded }, TOOL_NAMES.hold, {
+      start: last,
+      type: "cleaning",
+    });
+    expect(hold.isError).toBe(false);
+  });
+
+  it("a narrow get_availability is not truncated", async () => {
+    const r = await dispatchTool(ctx(), TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const payload = JSON.parse(r.content) as { slots: unknown[]; truncated: boolean };
+    expect(payload.truncated).toBe(false);
+    expect(payload.slots.length).toBeLessThanOrEqual(AVAILABILITY_MAX_SLOTS);
+  });
+
+  it("rejects holding a slot that was offered earlier but is now in the past (gate 2 after boundState)", async () => {
+    const c = ctx();
+    // Offered at 09:00, slot at 11:00 local — then the clock moves past the slot start.
+    const offered = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const stale = offered.state.offeredSlots[0]; // 2026-06-15T14:00:00.000Z
+    const later = new Date("2026-06-15T14:30:00Z"); // 30 min after that slot started
+    const bounded = boundState(offered.state, later);
+    expect(bounded.offeredSlots).not.toContain(stale);
+
+    const r = await dispatchTool({ ...c, state: bounded, now: later }, TOOL_NAMES.hold, {
+      start: stale,
+      type: "cleaning",
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content).toMatch(/não foi oferecido/);
+    expect(await bookingCount()).toBe(0);
   });
 });

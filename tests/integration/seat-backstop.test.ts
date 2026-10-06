@@ -17,7 +17,7 @@ import {
 } from "../helpers/db";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
-const SLOT = new Date("2026-06-15T14:00:00Z"); // Monday 11:00 local
+const SLOT = new Date("2026-06-15T15:00:00Z"); // Monday 12:00 local (lead 3h)
 const END = new Date("2026-06-15T14:30:00Z");
 
 let pool: Pool;

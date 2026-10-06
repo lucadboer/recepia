@@ -1,6 +1,9 @@
 import type { ConversationState } from "../../agent/types";
+import { ConversationConflictError } from "../../domain/errors";
 import type { ConversationStorePort } from "../../ports/conversation-store-port";
-import type { Pool } from "../pool";
+import type { Pool, PoolClient } from "../pool";
+
+type Queryable = Pool | PoolClient;
 
 /** Postgres-backed ConversationStorePort. The in-memory fake stays the test default. */
 export class DbConversationStore implements ConversationStorePort {
@@ -8,19 +11,31 @@ export class DbConversationStore implements ConversationStorePort {
 
   async load(phone: string): Promise<ConversationState | null> {
     const { rows } = await this.pool.query(
-      "SELECT state FROM conversation_state WHERE phone = $1",
+      "SELECT state, version FROM conversation_state WHERE phone = $1",
       [phone],
     );
     if (!rows[0]) return null;
     const parsed = rows[0].state as ConversationState;
-    return { ...parsed, updatedAt: new Date(parsed.updatedAt) };
+    // The column is authoritative for the version; the JSON copy is informational.
+    return { ...parsed, version: rows[0].version as number, updatedAt: new Date(parsed.updatedAt) };
   }
 
-  async save(state: ConversationState): Promise<void> {
-    await this.pool.query(
-      `INSERT INTO conversation_state (phone, state, updated_at) VALUES ($1, $2, now())
-       ON CONFLICT (phone) DO UPDATE SET state = EXCLUDED.state, updated_at = now()`,
-      [state.phone, JSON.stringify(state)],
+  /**
+   * Compare-and-swap upsert (T240): a fresh state (version 0) inserts version 1; an
+   * existing row is updated only if its version still equals the one we loaded. Zero
+   * rows affected means someone else saved first → ConversationConflictError.
+   * Pass the client of a surrounding transaction to save atomically with other writes.
+   */
+  async save(state: ConversationState, q: Queryable = this.pool): Promise<ConversationState> {
+    const { rows } = await q.query(
+      `INSERT INTO conversation_state (phone, state, version, updated_at) VALUES ($1, $2, 1, now())
+       ON CONFLICT (phone) DO UPDATE
+         SET state = EXCLUDED.state, version = conversation_state.version + 1, updated_at = now()
+         WHERE conversation_state.version = $3
+       RETURNING version`,
+      [state.phone, JSON.stringify(state), state.version],
     );
+    if (!rows[0]) throw new ConversationConflictError(state.phone, state.version);
+    return { ...state, version: rows[0].version as number };
   }
 }

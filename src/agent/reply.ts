@@ -5,6 +5,7 @@ import {
   CalendarWriteError,
   HoldExpiredError,
   OutOfScopeError,
+  SlotOutOfWindowError,
   SlotUnavailableError,
 } from "../domain/errors";
 
@@ -16,6 +17,11 @@ export const reply = {
   textOnly: () =>
     "Por enquanto consigo ler apenas mensagens de texto. Pode escrever sua solicitação?",
   optedOut: () => "Pronto, não vou mais te enviar mensagens. Se mudar de ideia, é só chamar.",
+  // Sent at most once per HANDOFF_NOTICE_INTERVAL_MS while reception owns the conversation (FR-211).
+  handedOff: () =>
+    "Sua solicitação está com a nossa recepção, que vai continuar o atendimento por aqui. Obrigado pela paciência!",
+  // tool_result for tools the model requested AFTER escalate_to_human in the same response.
+  toolCancelledAfterHandoff: () => "Conversa encaminhada à recepção; esta ação não foi executada.",
   // TODO(legal): LGPD opt-in wording must be reviewed by counsel.
   askConsent: () =>
     "Para concluir, preciso da sua autorização para tratar seus dados (nome e telefone) com a finalidade de agendar sua consulta. Você autoriza? (responda SIM)",
@@ -25,6 +31,8 @@ export const reply = {
 export function errorReply(err: unknown): string {
   if (err instanceof SlotUnavailableError)
     return "Esse horário acabou de ser preenchido. Quer que eu busque outros horários livres?";
+  if (err instanceof SlotOutOfWindowError)
+    return "Esse horário não está mais disponível para agendamento. Quer que eu busque outros horários livres?";
   if (err instanceof HoldExpiredError)
     return "A reserva expirou antes da confirmação. Posso oferecer novos horários?";
   if (err instanceof OutOfScopeError)
