@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { assertDisposableDatabase, BookingScriptLLM, percentile } from "../../scripts/perf-smoke";
+import {
+  assertDisposableDatabase,
+  BookingScriptLLM,
+  evaluateVerdict,
+  percentile,
+} from "../../scripts/perf-smoke";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { LlmContent, LlmMessage, LlmTurnInput } from "../../src/ports/llm-port";
 
@@ -10,6 +15,62 @@ describe("perf smoke — percentile (nearest rank)", () => {
     expect(percentile([10, 20, 30, 40], 100)).toBe(40);
     expect(percentile([7], 95)).toBe(7);
     expect(percentile([], 95)).toBe(0);
+  });
+});
+
+describe("perf smoke — verdict (the gate itself)", () => {
+  const run = (over: Partial<Parameters<typeof evaluateVerdict>[0][number]> = {}) => ({
+    conversations: 40,
+    turnP50Ms: 300,
+    turnP95Ms: 700,
+    ackP50Ms: 30,
+    ackP95Ms: 100,
+    wallMs: 2000,
+    statuses: { replied: 30, max_iterations: 10 },
+    errors: 0,
+    conflicts: 0,
+    confirmedBookings: 30,
+    overbookedSlots: 0,
+    ...over,
+  });
+  const opts = { p95BudgetMs: 1500, tolerance: 1.1, minConfirmedRatio: 0.5 };
+
+  it("passes a healthy run", () => {
+    expect(evaluateVerdict([run(), run()], opts).verdict.pass).toBe(true);
+  });
+
+  it("FAILS when nothing was booked even if latency and overbooking look fine [Codex P2]", () => {
+    const v = evaluateVerdict(
+      [run({ confirmedBookings: 0, statuses: { max_iterations: 40 } })],
+      opts,
+    ).verdict;
+    expect(v.enoughBookings).toBe(false);
+    expect(v.pass).toBe(false);
+  });
+
+  it("FAILS when a conversation vanished without a terminal status", () => {
+    const v = evaluateVerdict([run({ statuses: { replied: 30 } })], opts).verdict;
+    expect(v.allTurnsAccounted).toBe(false);
+    expect(v.pass).toBe(false);
+  });
+
+  it("FAILS on any overbooked slot, on errors, and above budget + tolerance", () => {
+    expect(evaluateVerdict([run({ overbookedSlots: 1 })], opts).verdict.pass).toBe(false);
+    expect(evaluateVerdict([run({ errors: 1 })], opts).verdict.pass).toBe(false);
+    expect(evaluateVerdict([run({ turnP95Ms: 1651 })], opts).verdict.withinBudget).toBe(false);
+    expect(evaluateVerdict([run({ turnP95Ms: 1650 })], opts).verdict.withinBudget).toBe(true);
+  });
+
+  it("uses the MEDIAN p95 across repetitions", () => {
+    const r = evaluateVerdict(
+      [run({ turnP95Ms: 100 }), run({ turnP95Ms: 5000 }), run({ turnP95Ms: 200 })],
+      opts,
+    );
+    expect(r.medianP95).toBe(200);
+  });
+
+  it("fails with no runs at all", () => {
+    expect(evaluateVerdict([], opts).verdict.pass).toBe(false);
   });
 });
 

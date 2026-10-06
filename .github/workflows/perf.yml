@@ -43,6 +43,7 @@ jobs:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
       PERF_CONVERSATIONS: "40"
       PERF_P95_BUDGET_MS: "1500"
+      PERF_MIN_CONFIRMED_RATIO: "0.5"
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -6,7 +6,7 @@
   "description": "Autonomous routine dental appointment booking over WhatsApp — deterministic booking tools (001) + Claude tool-use orchestrator with structural guardrails (002)",
   "packageManager": "pnpm@11.8.0",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "scripts": {
     "db:up": "docker compose up -d --wait",

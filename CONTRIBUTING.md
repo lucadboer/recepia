@@ -3,7 +3,7 @@
 ## Toolchain
 
 - **Package manager: pnpm** (pinned via Corepack — see the `packageManager` field in `package.json`). Enable once with `corepack enable`.
-- **Node 20+**. TypeScript scripts run via **tsx**; tests via **Vitest**.
+- **Node 22.12+** (`engines`), **24 recommended** (`.node-version`, CI). TypeScript scripts run via **tsx**; tests via **Vitest**.
 - **Postgres** for local dev/tests: `pnpm db:up` (Docker Compose, `recepia-pg` on host port **5434** — 5432/5433 are used by other local projects).
 
 ## Dependency policy (READ BEFORE ADDING DEPS)

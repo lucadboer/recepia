@@ -34,6 +34,9 @@ const WARMUP = Number(process.env.PERF_WARMUP ?? 5);
 const REPETITIONS = Number(process.env.PERF_REPETITIONS ?? 2);
 const P95_BUDGET_MS = Number(process.env.PERF_P95_BUDGET_MS ?? 1500);
 const TOLERANCE = 1.1; // fail only when > 10 % over budget (runner jitter)
+// Progress gate: latency and no-overbooking mean nothing if every booking attempt failed with a
+// handled tool error (the orchestrator would just escalate). Require real bookings.
+const MIN_CONFIRMED_RATIO = Number(process.env.PERF_MIN_CONFIRMED_RATIO ?? 0.5);
 const CAPACITY = 2;
 const SECRET = "perf-smoke-secret";
 
@@ -296,36 +299,83 @@ async function runOnce(rep: number): Promise<RunResult> {
   };
 }
 
+export interface Verdict {
+  noOverbooking: boolean;
+  withinBudget: boolean;
+  noErrors: boolean;
+  /** Every measured conversation reached a terminal status (none vanished). */
+  allTurnsAccounted: boolean;
+  /** At least `minConfirmedRatio` of the measured conversations really booked. */
+  enoughBookings: boolean;
+  pass: boolean;
+}
+
+/** Pure verdict over the collected runs — unit-tested; the gate is only as good as this. */
+export function evaluateVerdict(
+  runs: RunResult[],
+  opts: { p95BudgetMs: number; tolerance: number; minConfirmedRatio: number },
+): { medianP95: number; overbooked: number; errors: number; verdict: Verdict } {
+  const sortedP95 = [...runs.map((r) => r.turnP95Ms)].sort((a, b) => a - b);
+  const medianP95 = runs.length === 0 ? 0 : sortedP95[Math.floor(runs.length / 2)];
+  const overbooked = runs.reduce((n, r) => n + r.overbookedSlots, 0);
+  const errors = runs.reduce((n, r) => n + r.errors, 0);
+  const allTurnsAccounted =
+    runs.length > 0 &&
+    runs.every((r) => Object.values(r.statuses).reduce((a, b) => a + b, 0) === r.conversations);
+  const enoughBookings =
+    runs.length > 0 &&
+    runs.every((r) => r.confirmedBookings >= Math.ceil(r.conversations * opts.minConfirmedRatio));
+  const verdict: Verdict = {
+    noOverbooking: overbooked === 0,
+    withinBudget: medianP95 <= opts.p95BudgetMs * opts.tolerance,
+    noErrors: errors === 0,
+    allTurnsAccounted,
+    enoughBookings,
+    pass: false,
+  };
+  verdict.pass =
+    verdict.noOverbooking &&
+    verdict.withinBudget &&
+    verdict.noErrors &&
+    verdict.allTurnsAccounted &&
+    verdict.enoughBookings;
+  return { medianP95, overbooked, errors, verdict };
+}
+
 async function main(): Promise<void> {
   const runs: RunResult[] = [];
   for (let rep = 0; rep < REPETITIONS; rep++) runs.push(await runOnce(rep));
-  const medianP95 = [...runs.map((r) => r.turnP95Ms)].sort((a, b) => a - b)[
-    Math.floor(runs.length / 2)
-  ];
-  const overbooked = runs.reduce((n, r) => n + r.overbookedSlots, 0);
-  const errors = runs.reduce((n, r) => n + r.errors, 0);
+  const { medianP95, overbooked, errors, verdict } = evaluateVerdict(runs, {
+    p95BudgetMs: P95_BUDGET_MS,
+    tolerance: TOLERANCE,
+    minConfirmedRatio: MIN_CONFIRMED_RATIO,
+  });
   const report = {
     generatedAt: new Date().toISOString(),
     node: process.version,
     conversationsPerRun: CONVERSATIONS,
     repetitions: REPETITIONS,
     capacityPerSlot: CAPACITY,
-    budget: { turnP95Ms: P95_BUDGET_MS, toleranceFactor: TOLERANCE },
+    budget: {
+      turnP95Ms: P95_BUDGET_MS,
+      toleranceFactor: TOLERANCE,
+      minConfirmedRatio: MIN_CONFIRMED_RATIO,
+    },
     medianTurnP95Ms: medianP95,
     overbookedSlots: overbooked,
     errors,
     runs,
-    verdict: {
-      noOverbooking: overbooked === 0,
-      withinBudget: medianP95 <= P95_BUDGET_MS * TOLERANCE,
-      noErrors: errors === 0,
-    },
+    verdict,
   };
   writeFileSync(
     process.env.PERF_REPORT_PATH ?? "perf-report.json",
     `${JSON.stringify(report, null, 2)}\n`,
   );
 
+  const statusesOf = (r: RunResult) =>
+    Object.entries(r.statuses)
+      .map(([k, v]) => `${k}:${v}`)
+      .join(" ") || "—";
   const md = [
     "## Perf smoke (fakes for LLM/Calendar/WhatsApp, real Postgres)",
     "",
@@ -335,16 +385,12 @@ async function main(): Promise<void> {
     "|---|---|---|---|---|---|---|---|---|---|---|",
     ...runs.map(
       (r, i) =>
-        `| ${i + 1} | ${r.turnP50Ms} ms | ${r.turnP95Ms} ms | ${r.ackP50Ms} ms | ${r.ackP95Ms} ms | ${r.wallMs} ms | ${r.confirmedBookings} | ${
-          Object.entries(r.statuses)
-            .map(([k, v]) => `${k}:${v}`)
-            .join(" ") || "—"
-        } | ${r.overbookedSlots} | ${r.conflicts} | ${r.errors} |`,
+        `| ${i + 1} | ${r.turnP50Ms} ms | ${r.turnP95Ms} ms | ${r.ackP50Ms} ms | ${r.ackP95Ms} ms | ${r.wallMs} ms | ${r.confirmedBookings}/${r.conversations} | ${statusesOf(r)} | ${r.overbookedSlots} | ${r.conflicts} | ${r.errors} |`,
     ),
     "",
-    `Median turn p95: **${medianP95} ms** (budget ${P95_BUDGET_MS} ms, tolerance ×${TOLERANCE}) · overbooked slots: **${overbooked}** · errors: ${errors}`,
+    `Median turn p95: **${medianP95} ms** (budget ${P95_BUDGET_MS} ms, tolerance ×${TOLERANCE}) · overbooked slots: **${overbooked}** · errors: ${errors} · min confirmed ratio: ${MIN_CONFIRMED_RATIO}`,
     "",
-    `Verdict: ${report.verdict.noOverbooking && report.verdict.withinBudget && report.verdict.noErrors ? "PASS" : "FAIL"}`,
+    `Verdict: **${verdict.pass ? "PASS" : "FAIL"}** — no overbooking: ${verdict.noOverbooking} · within budget: ${verdict.withinBudget} · no errors: ${verdict.noErrors} · all turns accounted: ${verdict.allTurnsAccounted} · enough bookings: ${verdict.enoughBookings}`,
   ].join("\n");
   console.log(md);
   if (process.env.GITHUB_STEP_SUMMARY) {
@@ -358,18 +404,22 @@ async function main(): Promise<void> {
     writeFileSync(process.env.GITHUB_STEP_SUMMARY, `${prev}${md}\n`);
   }
 
-  if (!report.verdict.noOverbooking) {
+  if (!verdict.noOverbooking) {
     console.error(`FAIL: ${overbooked} slot(s) over capacity — no-overbooking guarantee broken`);
-    process.exit(1);
   }
-  if (!report.verdict.noErrors) {
-    console.error(`FAIL: ${errors} error(s) during the run`);
-    process.exit(1);
+  if (!verdict.noErrors) console.error(`FAIL: ${errors} error(s) during the run`);
+  if (!verdict.allTurnsAccounted) {
+    console.error("FAIL: some measured conversations never reached a terminal status");
   }
-  if (!report.verdict.withinBudget) {
+  if (!verdict.enoughBookings) {
+    console.error(
+      `FAIL: fewer than ${MIN_CONFIRMED_RATIO * 100}% of the measured conversations booked — the workload did not exercise the booking path`,
+    );
+  }
+  if (!verdict.withinBudget) {
     console.error(`FAIL: median turn p95 ${medianP95} ms > ${P95_BUDGET_MS} ms × ${TOLERANCE}`);
-    process.exit(1);
   }
+  if (!verdict.pass) process.exit(1);
 }
 
 const invokedDirectly =
