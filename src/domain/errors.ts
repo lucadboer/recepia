@@ -68,6 +68,28 @@ export class ConversationConflictError extends Error {
   }
 }
 
+const ESCALATED_FLAG = Symbol.for("recepia.escalated");
+
+/**
+ * Mark an error as "reception was already notified before this was thrown" (confirm_booking
+ * escalates internally on persistent calendar failure / orphan compensation). The tool
+ * registry turns a flagged error into a hand-off instead of letting the model carry on.
+ */
+export function flagEscalated<E>(err: E): E {
+  if (err !== null && typeof err === "object") {
+    (err as unknown as Record<symbol, unknown>)[ESCALATED_FLAG] = true;
+  }
+  return err;
+}
+
+export function hasEscalatedFlag(err: unknown): boolean {
+  return (
+    err !== null &&
+    typeof err === "object" &&
+    (err as unknown as Record<symbol, unknown>)[ESCALATED_FLAG] === true
+  );
+}
+
 /** The LLM tool-use loop hit its safety cap without finishing. */
 export class MaxIterationsExceeded extends Error {
   constructor(message = "Limite de iterações da conversa excedido.") {

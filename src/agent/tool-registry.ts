@@ -6,6 +6,7 @@
 
 import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
+import { hasEscalatedFlag } from "../domain/errors";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { getAvailability } from "../tools/get-availability";
@@ -172,6 +173,11 @@ export async function dispatchTool(
         return result(state, `Ferramenta desconhecida: ${name}`, true);
     }
   } catch (e) {
-    return result(state, errorReply(e), true);
+    // A tool may have escalated internally BEFORE failing (confirm_booking on persistent
+    // calendar failure / orphan compensation). Surface it so the orchestrator hands the
+    // conversation off instead of letting the model carry on — reception is not notified twice.
+    const escalated = hasEscalatedFlag(e);
+    if (escalated) state = markEscalated(state, now);
+    return result(state, errorReply(e), true, { escalated });
   }
 }

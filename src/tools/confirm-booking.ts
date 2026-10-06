@@ -4,7 +4,7 @@ import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-re
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { isExpired } from "../domain/booking";
-import { CalendarWriteError, HoldExpiredError } from "../domain/errors";
+import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
 import type { Booking, Patient } from "../domain/types";
 import { confirmationMessagePt } from "../messages";
 import { escalateToHuman } from "./escalate-to-human";
@@ -104,7 +104,7 @@ export async function confirmBooking(
       phone: patient.phone,
       context: `Falha ao gravar o evento da reserva ${existing.id}.`,
     });
-    throw new CalendarWriteError();
+    throw flagEscalated(new CalendarWriteError()); // reception already notified above
   }
 
   // Event written. Persist the confirmation + its outbox message atomically; compensate
@@ -119,6 +119,7 @@ export async function confirmBooking(
       const outboxId = await enqueueOutbox(client, {
         kind: "booking_confirmation",
         toPhone: patient.phone,
+        conversationPhone: patient.phone,
         body: confirmationMessagePt(flipped.appointmentType, flipped.start),
         dedupeKey: `booking_confirmation:${flipped.id}`,
         now,
@@ -151,7 +152,8 @@ export async function confirmBooking(
   const current = await getById(deps.pool, existing.id);
   if (current && CONFIRMED_STATUSES.has(current.status) && current.googleEventId === eventId) {
     const queued = await confirmationStatus(deps.pool, existing.id);
-    return { booking: current, outcome: queued ? "confirmed" : "already_confirmed" };
+    const owned = queued !== null && queued !== "cancelled";
+    return { booking: current, outcome: owned ? "confirmed" : "already_confirmed" };
   }
 
   // True orphan: an event exists with no booking. Delete it, audit, escalate.
@@ -178,5 +180,5 @@ export async function confirmBooking(
     phone: patient.phone,
     context: `Evento da reserva ${existing.id} foi criado mas a confirmação falhou (${reason}); evento removido por compensação.`,
   });
-  throw commitError instanceof Error ? commitError : new HoldExpiredError();
+  throw flagEscalated(commitError instanceof Error ? commitError : new HoldExpiredError());
 }

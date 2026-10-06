@@ -179,6 +179,38 @@ describe("tool schemas + input validation", () => {
   });
 });
 
+describe("tool-registry × internal escalation (Codex P2)", () => {
+  it("a confirm whose calendar write fails persistently returns escalated: true with the state handed off", async () => {
+    const c = ctx();
+    (c.deps.calendar as FakeCalendar).failAlways = true;
+    const avail = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const held = await dispatchTool({ ...c, state: avail.state }, TOOL_NAMES.hold, {
+      start: avail.state.offeredSlots[0],
+      type: "cleaning",
+    });
+    const r = await dispatchTool({ ...c, state: held.state }, TOOL_NAMES.confirm, {
+      hold_id: held.state.activeHoldIds[0],
+      patient_name: "Maria",
+    });
+    expect(r.isError).toBe(true);
+    expect(r.escalated).toBe(true); // reception was notified inside the tool → hand-off
+    expect(r.state.status).toBe("escalated");
+    expect(await countAll("audit_log")).toBeGreaterThan(0);
+    const esc = await pool.query(
+      "SELECT count(*)::int AS n FROM audit_log WHERE action = 'escalated'",
+    );
+    expect(esc.rows[0].n).toBe(1); // exactly once
+    const out = await pool.query(
+      "SELECT count(*)::int AS n FROM outbox_message WHERE kind = 'escalation'",
+    );
+    expect(out.rows[0].n).toBe(1);
+  });
+});
+
 describe("tool-registry × state bounds (T239)", () => {
   it("caps a wide get_availability to AVAILABILITY_MAX_SLOTS, flags truncation, and records EXACTLY what the model saw", async () => {
     for (let wd = 2; wd <= 5; wd++) {

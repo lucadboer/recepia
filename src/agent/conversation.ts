@@ -44,13 +44,19 @@ export function appendUserText(s: ConversationState, text: string, now: Date): C
   return appendMessage(s, { role: "user", content: [{ type: "text", text }] }, now);
 }
 
+/**
+ * Record what get_availability just showed the model. Re-offered slots move to the TAIL:
+ * "most recently offered" is what the cap in pruneOfferedSlots must preserve.
+ */
 export function recordOfferedSlots(
   s: ConversationState,
   isoStarts: string[],
   now: Date,
 ): ConversationState {
-  const merged = new Set([...s.offeredSlots, ...isoStarts]);
-  return { ...s, offeredSlots: [...merged], updatedAt: now };
+  const fresh = [...new Set(isoStarts)];
+  const freshSet = new Set(fresh);
+  const kept = s.offeredSlots.filter((iso) => !freshSet.has(iso));
+  return { ...s, offeredSlots: [...kept, ...fresh], updatedAt: now };
 }
 
 export function recordHold(s: ConversationState, holdId: string, now: Date): ConversationState {

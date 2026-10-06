@@ -129,6 +129,20 @@ describe("pruneOfferedSlots — past slots gone, cap on the rest (T239)", () => 
     const s = recordOfferedSlots(emptyState("+55a", NOW), ["2026-06-15T14:00:00.000Z"], NOW);
     expect(pruneOfferedSlots(s, NOW)).toBe(s);
   });
+
+  it("a range re-offered after many others is kept by the cap (recency wins over first-seen order) [Codex P2]", () => {
+    const range = (k: number) =>
+      Array.from({ length: 40 }, (_, i) =>
+        new Date(NOW.getTime() + (k * 100 + i + 1) * 30 * 60_000).toISOString(),
+      );
+    let s = emptyState("+55a", NOW);
+    for (let k = 0; k < 4; k++) s = recordOfferedSlots(s, range(k), NOW); // 160 > cap
+    s = recordOfferedSlots(s, range(0), NOW); // the model re-fetched the FIRST range
+    const b = boundState(s, NOW);
+    expect(b.offeredSlots.length).toBeLessThanOrEqual(OFFERED_SLOTS_MAX);
+    for (const iso of range(0)) expect(b.offeredSlots).toContain(iso); // just offered → still selectable
+    for (const iso of range(1)) expect(b.offeredSlots).not.toContain(iso); // the oldest range went
+  });
 });
 
 describe("boundState — composes every bound; identity when idle (T239)", () => {

@@ -3,7 +3,7 @@ import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import type { Pool } from "../../src/db/pool";
-import { enqueueOutbox } from "../../src/db/repositories/outbox-repo";
+import { cancelPendingForRecipient, enqueueOutbox } from "../../src/db/repositories/outbox-repo";
 import type { Deps } from "../../src/deps";
 import {
   dispatchOutbox,
@@ -37,6 +37,7 @@ interface OutboxRow {
   id: string;
   kind: string;
   to_phone: string;
+  body: string;
   status: string;
   attempts: number;
   next_attempt_at: Date;
@@ -242,32 +243,58 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     expect((await rows()).every((r) => r.status === "sent")).toBe(true);
   });
 
-  it("a recipients filter delivers only matching rows and leaves the others pending", async () => {
+  it("a conversationPhone filter delivers only that conversation's rows (its confirmation AND its reception notice)", async () => {
     const clock = new FakeClock(NOW);
     const messaging = new FakeMessaging();
+    const A = PATIENT;
+    const B = "+55other";
+    const row = (
+      kind: "escalation" | "booking_confirmation",
+      to: string,
+      conv: string,
+      body: string,
+    ) => enqueueOutbox(pool, { kind, toPhone: to, conversationPhone: conv, body, now: NOW });
+    await row("escalation", RECEPTION, B, "sobre B");
+    await row("booking_confirmation", B, B, "para B");
+    await row("escalation", RECEPTION, A, "sobre A");
+    await row("booking_confirmation", A, A, "para A");
+
+    const r = await dispatchOutbox(makeDeps(clock, messaging), { conversationPhone: A });
+
+    expect(r.sent).toBe(2);
+    expect(messaging.sent.map((m) => m.body).sort()).toEqual(["para A", "sobre A"]);
+    const pending = (await rows()).filter((x) => x.status === "pending");
+    expect(pending.map((x) => x.body).sort()).toEqual(["para B", "sobre B"]);
+  });
+
+  it("cancelPendingForRecipient cancels only that recipient's pending rows; the dispatcher skips them", async () => {
+    const clock = new FakeClock(NOW);
+    const messaging = new FakeMessaging();
+    await enqueueOutbox(pool, {
+      kind: "booking_confirmation",
+      toPhone: PATIENT,
+      body: "a",
+      now: NOW,
+    });
     await enqueueOutbox(pool, { kind: "escalation", toPhone: RECEPTION, body: "r", now: NOW });
     await enqueueOutbox(pool, {
       kind: "booking_confirmation",
       toPhone: PATIENT,
-      body: "p",
-      now: NOW,
-    });
-    await enqueueOutbox(pool, {
-      kind: "booking_confirmation",
-      toPhone: "+55other",
-      body: "o",
+      body: "b",
       now: NOW,
     });
 
-    const r = await dispatchOutbox(makeDeps(clock, messaging), {
-      recipients: [PATIENT, RECEPTION],
-    });
+    const cancelled = await cancelPendingForRecipient(pool, PATIENT);
+    expect(cancelled).toHaveLength(2);
 
-    expect(r.sent).toBe(2);
-    expect(messaging.sent.map((m) => m.to).sort()).toEqual([PATIENT, RECEPTION].sort());
-    const pending = (await rows()).filter((x) => x.status === "pending");
-    expect(pending).toHaveLength(1);
-    expect(pending[0].to_phone).toBe("+55other");
+    const r = await dispatchOutbox(makeDeps(clock, messaging));
+    expect(r.sent).toBe(1);
+    expect(messaging.sent).toEqual([{ to: RECEPTION, body: "r" }]);
+    const all = await rows();
+    expect(all.filter((x) => x.status === "cancelled")).toHaveLength(2);
+    expect(
+      all.filter((x) => x.status === "cancelled").every((x) => x.last_error?.includes("opt_out")),
+    ).toBe(true);
   });
 
   it("times out a hanging send and schedules a retry instead of blocking forever", async () => {

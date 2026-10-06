@@ -46,6 +46,15 @@ describe("conversation reducers (pure)", () => {
     expect(isOfferedSlot(s, "2026-06-15T15:00:00.000Z")).toBe(false);
   });
 
+  it("recordOfferedSlots moves re-offered slots to the TAIL (most recently offered last)", () => {
+    let s = emptyState("+55a", NOW);
+    s = recordOfferedSlots(s, ["A", "B"], NOW);
+    s = recordOfferedSlots(s, ["B", "C"], NOW);
+    expect(s.offeredSlots).toEqual(["A", "B", "C"]);
+    s = recordOfferedSlots(s, ["A"], NOW);
+    expect(s.offeredSlots).toEqual(["B", "C", "A"]);
+  });
+
   it("recordHold dedups and is queryable", () => {
     let s = emptyState("+55a", NOW);
     s = recordHold(s, "hold-1", NOW);

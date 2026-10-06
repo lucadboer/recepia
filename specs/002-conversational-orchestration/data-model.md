@@ -29,9 +29,10 @@ Retention/purge `[DEFERRED — NEEDS-USER]` (LGPD finalidade/retention).
 | `id` | uuid PK | |
 | `kind` | text NOT NULL | `booking_confirmation` \| `escalation` |
 | `to_phone` | text NOT NULL | recipient |
+| `conversation_phone` | text | the patient this message is about (recipient may be reception); the in-turn flush filters on it (migration 009) |
 | `body` | text NOT NULL | pt-BR message, rendered at enqueue time |
 | `dedupe_key` | text UNIQUE NULL | e.g. `booking_confirmation:<bookingId>`; dedupes enqueue, not delivery |
-| `status` | text NOT NULL | `pending` \| `sent` \| `failed` |
+| `status` | text NOT NULL | `pending` \| `sent` \| `failed` \| `cancelled` (opt-out, migration 009) |
 | `attempts` | integer NOT NULL DEFAULT 0 | |
 | `next_attempt_at` | timestamptz NOT NULL | backoff schedule |
 | `last_error` | text | |
@@ -98,4 +99,4 @@ Exact keyword set is tuned in `triage.ts` with a unit test per category; final w
 10. History trimming never splits a `tool_use` from its `tool_result`; the trimmed history always starts with a user text message.
 
 ## Audit actions (extended)
-`hold_created`, `hold_expired`, `hold_released`, `booking_confirmed`, `calendar_orphan_compensated`, `escalated`, `consent_recorded`, `consent_revoked`, **`outbox_dead_letter`** (actor `system`), **`conversation_released`** (actor `human`).
+`hold_created`, `hold_expired`, `hold_released`, `booking_confirmed`, `calendar_orphan_compensated`, `escalated`, `consent_recorded`, `consent_revoked`, **`outbox_dead_letter`** (actor `system`), **`outbox_cancelled`** (actor `ai`, on opt-out), **`conversation_released`** (actor `human`).

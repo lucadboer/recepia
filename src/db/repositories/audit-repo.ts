@@ -10,6 +10,7 @@ export type AuditAction =
   | "consent_recorded"
   | "consent_revoked"
   | "outbox_dead_letter"
+  | "outbox_cancelled"
   | "conversation_released";
 
 export interface AuditEntry {

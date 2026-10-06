@@ -20,6 +20,8 @@ export const reply = {
   // Sent at most once per HANDOFF_NOTICE_INTERVAL_MS while reception owns the conversation (FR-211).
   handedOff: () =>
     "Sua solicitação está com a nossa recepção, que vai continuar o atendimento por aqui. Obrigado pela paciência!",
+  // tool_result for tools the model requested AFTER escalate_to_human in the same response.
+  toolCancelledAfterHandoff: () => "Conversa encaminhada à recepção; esta ação não foi executada.",
   // TODO(legal): LGPD opt-in wording must be reviewed by counsel.
   askConsent: () =>
     "Para concluir, preciso da sua autorização para tratar seus dados (nome e telefone) com a finalidade de agendar sua consulta. Você autoriza? (responda SIM)",

@@ -91,4 +91,5 @@ Anthropic key+model (see `claude-api` skill), Google Calendar creds, WhatsApp Ev
 - [x] T243 `escalate_to_human` writes the `escalated` audit row and the reception outbox row in one transaction — closes the send-before-audit ordering
 - [x] T244 `ToolDispatchResult.patientNotified` replaces the phone-based send counter (closes T235); an `escalated` tool result stops the loop deterministically
 - [x] T245 `server.ts` schedules `dispatchOutbox` + `expireHolds`; the sweep audits the ids from `UPDATE … RETURNING` — closes T234
+- [ ] T247 [product, NEEDS-USER] After an opt-out the agent still answers later messages (consent gate only blocks `confirm_booking`; queued notifications are now cancelled). Decide whether opt-out should also silence the agent (reply once, then ignore) or only stop proactive messages, per FR-205 / LGPD "opt-out fácil". Found in the Codex review of Phase 11.
 - [x] T246 Webhook: exact pathname routing (closes T229), 256 KiB body limit → 413, request/headers timeouts, graceful shutdown (SIGTERM/SIGINT drain), edge dedupe recorded only after `onInbound` succeeds (closes T230, at-least-once)

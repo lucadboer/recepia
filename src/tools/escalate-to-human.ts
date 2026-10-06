@@ -31,6 +31,7 @@ export async function escalateToHuman(deps: Deps, escalation: Escalation): Promi
     const outboxId = await enqueueOutbox(client, {
       kind: "escalation",
       toPhone: deps.receptionPhone,
+      conversationPhone: escalation.phone,
       body: escalationMessagePt({ ...escalation, summary }),
       now,
     });

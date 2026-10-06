@@ -81,6 +81,20 @@ describe("createShutdown — graceful stop (T246)", () => {
     expect(order).toEqual(["late-turn.done", "deps.close"]);
   });
 
+  it("a hanging deps.close() (e.g. pool.end on a stalled client) is bounded by the budget too [Codex P2]", async () => {
+    const shutdown = createShutdown({
+      server: fakeServer(),
+      jobs: [],
+      queue: new PerKeyQueue(),
+      close: () => new Promise<void>(() => {}), // never resolves
+      timeoutMs: 40,
+      log: () => {},
+    });
+    const t0 = Date.now();
+    expect(await shutdown()).toBe(false); // caller exits non-zero instead of hanging forever
+    expect(Date.now() - t0).toBeLessThan(200);
+  });
+
   it("spends at most ONE budget even when both the queue and the server hang", async () => {
     const queue = new PerKeyQueue();
     void queue.run("p", () => new Promise<void>(() => {})); // never settles

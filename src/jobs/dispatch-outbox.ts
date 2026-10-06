@@ -23,11 +23,12 @@ export interface DispatchOutboxOptions {
   batchSize?: number;
   sendTimeoutMs?: number;
   /**
-   * Only deliver rows addressed to these phones. The orchestrator uses it to flush just the
-   * current patient's confirmation and the reception notice inside a turn, so one slow
-   * provider never makes a patient wait on other conversations' retries.
+   * Only deliver rows that belong to this conversation (the patient's own confirmation AND the
+   * reception notice about them). The orchestrator uses it inside a turn, so one slow provider
+   * never makes a patient wait on other conversations' retries — not even other patients'
+   * escalations that share the reception phone.
    */
-  recipients?: string[];
+  conversationPhone?: string;
 }
 
 export interface DispatchOutboxResult {
@@ -88,7 +89,7 @@ export async function dispatchOutbox(
   const timeoutMs = opts.sendTimeoutMs ?? OUTBOX_SEND_TIMEOUT_MS;
   const result: DispatchOutboxResult = { sent: 0, retried: 0, failed: 0 };
   for (let i = 0; i < batchSize; i++) {
-    const outcome = await dispatchOne(deps, timeoutMs, opts.recipients);
+    const outcome = await dispatchOne(deps, timeoutMs, opts.conversationPhone);
     if (outcome === null) break;
     result[outcome]++;
   }
@@ -98,13 +99,13 @@ export async function dispatchOutbox(
 async function dispatchOne(
   deps: Deps,
   timeoutMs: number,
-  recipients?: string[],
+  conversationPhone?: string,
 ): Promise<Outcome | null> {
   const now = deps.clock.now();
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
-    const row = await claimDue(client, now, recipients);
+    const row = await claimDue(client, now, conversationPhone);
     if (!row) {
       await client.query("COMMIT");
       return null;
@@ -158,6 +159,7 @@ async function deadLetter(
   const escalationId = await enqueueOutbox(client, {
     kind: "escalation",
     toPhone: deps.receptionPhone,
+    conversationPhone: row.conversationPhone,
     body: escalationMessagePt({
       reason: "delivery_failed",
       phone: row.toPhone,

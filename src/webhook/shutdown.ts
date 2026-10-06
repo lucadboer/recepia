@@ -36,10 +36,19 @@ export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
     await Promise.race([closed, sleep(remaining())]);
     // 2. Only now drain the per-phone queue — nothing new can be enqueued anymore.
     const drained = await opts.queue.drain(remaining());
-    // 3. Release shared resources last.
-    await opts.close();
-    log(drained ? "[shutdown] clean" : "[shutdown] timed out with turns still in flight");
-    return drained;
+    // 3. Release shared resources last — bounded too: pool.end() waits for checked-out
+    //    clients, and a stalled DB operation would otherwise hold the process forever.
+    const closedDeps = await Promise.race([
+      opts.close().then(() => true),
+      sleep(remaining()).then(() => false),
+    ]);
+    const clean = drained && closedDeps;
+    log(
+      clean
+        ? "[shutdown] clean"
+        : `[shutdown] timed out (${drained ? "" : "turns in flight"}${!drained && !closedDeps ? ", " : ""}${closedDeps ? "" : "resources not released"})`,
+    );
+    return clean;
   }
 
   return () => {

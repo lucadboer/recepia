@@ -81,11 +81,12 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   const persist = (s: ConversationState): Promise<ConversationState> =>
     deps.conversations.save(boundState(s, now));
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
-  // our own patient-facing reply — only THIS conversation's recipients, so a slow provider
-  // never makes this patient wait on other conversations' retries (those belong to the
-  // scheduled dispatcher). Dispatcher errors never fail the turn (FR-214).
+  // our own patient-facing reply — only THIS conversation's rows (its confirmation and the
+  // reception notice about it), so a slow provider never makes this patient wait on other
+  // conversations' retries (those belong to the scheduled dispatcher). Always called AFTER a
+  // successful compare-and-swap: a turn that lost the race delivers nothing (FR-214).
   const flushOutbox = async (): Promise<void> => {
-    await dispatchOutbox(deps, { recipients: [msg.phone, deps.receptionPhone] }).catch((err) => {
+    await dispatchOutbox(deps, { conversationPhone: msg.phone }).catch((err) => {
       console.error("[orchestrator] outbox dispatch failed", err);
     });
   };
@@ -163,6 +164,17 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     const toolResults: LlmContent[] = [];
     let escalatedThisTurn = false;
     for (const tu of toolUses) {
+      // Once a tool handed the conversation off, nothing else in this response may run: a
+      // confirm_booking after escalate_to_human would flip the status back to completed.
+      if (escalatedThisTurn) {
+        toolResults.push({
+          type: "tool_result",
+          toolUseId: tu.id,
+          content: reply.toolCancelledAfterHandoff(),
+          isError: true,
+        });
+        continue;
+      }
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
       if (tu.name === TOOL_NAMES.confirm && !(await hasConsent(deps, msg.phone))) {
@@ -201,9 +213,6 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     }
   }
 
-  // Deliver what the tools committed this turn (the confirmation row in the outbox)
-  // BEFORE our own closing reply, so the patient reads the confirmation first.
-  await flushOutbox();
   const confirmationDelivered = confirmationEnqueued;
 
   // 5. Loop exhausted without a final reply → escalate + pt-BR fallback.
@@ -226,6 +235,9 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 
   const replyText = finalText.trim().length > 0 ? finalText : reply.couldNotComplete();
   state = await persist(state);
+  // Only after the compare-and-swap succeeded: deliver this turn's committed confirmation
+  // BEFORE our own closing reply, so the patient reads the confirmation first.
+  await flushOutbox();
   // Suppress the closing send only when a confirmation was actually delivered: a
   // successful booking yields exactly one patient message (not two), and a re-confirm
   // that sent nothing still gets a reply (not zero) — T227.
