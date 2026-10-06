@@ -17,7 +17,12 @@ export class DbConversationStore implements ConversationStorePort {
     if (!rows[0]) return null;
     const parsed = rows[0].state as ConversationState;
     // The column is authoritative for the version; the JSON copy is informational.
-    return { ...parsed, version: rows[0].version as number, updatedAt: new Date(parsed.updatedAt) };
+    return {
+      ...parsed,
+      promptVersion: parsed.promptVersion ?? null, // rows written before FR-409 lack the field
+      version: rows[0].version as number,
+      updatedAt: new Date(parsed.updatedAt),
+    };
   }
 
   /**

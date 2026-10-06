@@ -123,13 +123,13 @@ description: "Task list for 004-evaluation-harness"
 
 ### Tests for User Story 3 ⚠️ (write FIRST, ensure they FAIL)
 
-- [ ] T440 [P] [US3] Integration test (extend `tests/integration/orchestrator.test.ts`): after a scripted booking, `audit_log` rows `hold_created`, `booking_confirmed` and (in an escalation case) `escalated` carry `payload.promptVersion`; the saved conversation state has `promptVersion`; `llm.receivedInputs[0].promptVersion` equals it
-- [ ] T441 [P] [US3] Unit test (extend `tests/unit/evals-report.test.ts`): the report's `promptVersion` equals the loader's current version
+- [x] T440 [P] [US3] Integration test (extend `tests/integration/orchestrator.test.ts`): after a scripted booking, `audit_log` rows `hold_created`, `booking_confirmed` and (in an escalation case) `escalated` carry `payload.promptVersion`; the saved conversation state has `promptVersion`; `llm.receivedInputs[0].promptVersion` equals it
+- [x] T441 [P] [US3] Unit test (extend `tests/unit/evals-report.test.ts`): the report's `promptVersion` equals the loader's current version
 
 ### Implementation for User Story 3
 
-- [ ] T442 [US3] Add `Deps.promptVersion?: string` (`src/deps.ts`), `ConversationState.promptVersion: string | null` (`src/agent/types.ts`, reducers in `src/agent/conversation.ts`); orchestrator sets both per turn and passes `promptVersion` in `LlmTurnInput`; `src/tools/hold-slot.ts`, `src/tools/confirm-booking.ts`, `src/tools/escalate-to-human.ts` include it in audit payloads when present — make T440 pass
-- [ ] T443 [US3] Report and README block carry the prompt version from the loader — make T441 pass; update `specs/002-conversational-orchestration/data-model.md` audit payload notes
+- [x] T442 [US3] Add `Deps.promptVersion?: string` (`src/deps.ts`), `ConversationState.promptVersion: string | null` (`src/agent/types.ts`, reducers in `src/agent/conversation.ts`); orchestrator sets both per turn and passes `promptVersion` in `LlmTurnInput`; `src/tools/hold-slot.ts`, `src/tools/confirm-booking.ts`, `src/tools/escalate-to-human.ts` include it in audit payloads when present — make T440 pass
+- [x] T443 [US3] Report and README block carry the prompt version from the loader — make T441 pass; update `specs/002-conversational-orchestration/data-model.md` audit payload notes
 
 **Checkpoint**: every model-initiated write and every report is traceable to a prompt version.
 

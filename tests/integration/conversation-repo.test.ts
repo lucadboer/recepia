@@ -89,3 +89,24 @@ describe("DbConversationStore", () => {
     );
   });
 });
+
+describe("DbConversationStore — promptVersion (004 US3)", async () => {
+  const { DbConversationStore } = await import("../../src/db/repositories/conversation-repo");
+  const { emptyState } = await import("../../src/agent/conversation");
+
+  it("round-trips promptVersion and reads legacy rows (no field) as null", async () => {
+    const store = new DbConversationStore(pool);
+    const now = new Date("2026-06-15T12:00:00Z");
+    const saved = await store.save({ ...emptyState("+55pv", now), promptVersion: "v001+abcdef0" });
+    expect((await store.load("+55pv"))?.promptVersion).toBe("v001+abcdef0");
+    // A row written before the field existed.
+    const legacy = { ...emptyState("+55legacy", now) } as Record<string, unknown>;
+    delete legacy.promptVersion;
+    await pool.query(
+      "INSERT INTO conversation_state (phone, state, version, updated_at) VALUES ($1, $2, 1, now())",
+      ["+55legacy", JSON.stringify(legacy)],
+    );
+    expect((await store.load("+55legacy"))?.promptVersion).toBeNull();
+    expect(saved.version).toBe(1);
+  });
+});

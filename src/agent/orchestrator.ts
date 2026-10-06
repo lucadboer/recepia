@@ -17,6 +17,7 @@ import {
   markProcessed,
   resetConversation,
   setAwaitingConsent,
+  setPromptVersion,
   shouldSendHandoffNotice,
   stripThinking,
 } from "./conversation";
@@ -147,8 +148,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // 4. Bounded LLM tool-use loop. The prompt version in effect is recorded on every call
   //    (FR-409) and, through the tools' audit payloads, on every model-initiated write.
   const prompt = buildSystemPrompt({ now, timezone: CLINIC_TIMEZONE });
+  // Every write the model initiates from here on is audited with this prompt version.
+  const turnDeps: AgentDeps = { ...deps, promptVersion: prompt.version };
+  state = setPromptVersion(state, prompt.version, now);
   const handOffModelTurn = async (reason: string, context: string): Promise<LoopResult> => {
-    await escalateToHuman(deps, {
+    await escalateToHuman(turnDeps, {
       reason,
       phone: msg.phone,
       context,
@@ -225,7 +229,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
         });
         continue;
       }
-      const ctx: ToolContext = { deps, phone: msg.phone, state, now };
+      const ctx: ToolContext = { deps: turnDeps, phone: msg.phone, state, now };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
       confirmationEnqueued ||= dispatched.patientNotified;
@@ -255,7 +259,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 
   // 5. Loop exhausted without a final reply → escalate + pt-BR fallback.
   if (finalText === null) {
-    await escalateToHuman(deps, {
+    await escalateToHuman(turnDeps, {
       reason: "max_iterations",
       phone: msg.phone,
       context: `Conversa excedeu ${AGENT_MAX_ITERATIONS} iterações sem resposta final.`,

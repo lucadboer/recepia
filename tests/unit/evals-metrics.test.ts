@@ -272,9 +272,13 @@ describe("compareWithBaseline", () => {
     expect(compareWithBaseline(current({ happy: 0.96 }), baseline).pass).toBe(true);
     const r = compareWithBaseline(current({ happy: 0.9 }), baseline);
     expect(r.pass).toBe(false);
-    expect(r.regressions).toEqual([
-      { metric: "taskSuccess.byCategory.happy_path", baseline: 1, current: 0.9, delta: -0.1 },
-    ]);
+    expect(r.regressions).toHaveLength(1);
+    expect(r.regressions[0]).toMatchObject({
+      metric: "taskSuccess.byCategory.happy_path",
+      baseline: 1,
+      current: 0.9,
+    });
+    expect(r.regressions[0].delta).toBeCloseTo(-0.1);
     expect(r.baselineDate).toBe(baseline.date);
     expect(r.baselineModel).toBe("claude-sonnet-5-5");
     expect(r.baselinePromptVersion).toBe("v001+0000000");

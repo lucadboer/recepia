@@ -720,3 +720,69 @@ describe("orchestrator — production model migration (004 R1): refusal, truncat
     });
   });
 });
+
+describe("orchestrator — prompt version traceability (004 US3, FR-409 / SC-407)", () => {
+  async function payloadsOf(action: string): Promise<Record<string, unknown>[]> {
+    const { rows } = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = $1 ORDER BY created_at",
+      [action],
+    );
+    return rows.map((r) => r.payload as Record<string, unknown>);
+  }
+
+  it("hold_created and booking_confirmed carry the prompt version the model was given; the state records it", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Confirmado!"),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+
+    await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    const version = llm.receivedInputs[0].promptVersion;
+    expect(version).toMatch(/^v\d{3}\+[0-9a-f]{7}$/);
+    expect((await payloadsOf("hold_created"))[0].promptVersion).toBe(version);
+    expect((await payloadsOf("booking_confirmed"))[0].promptVersion).toBe(version);
+    expect((await h.conversations.load(PHONE))?.promptVersion).toBe(version);
+  });
+
+  it("an escalation the MODEL initiated carries the prompt version; a triage escalation does not (no model involved)", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.escalate, { reason: "model_decided", context: "x" })),
+    ]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("quero remarcar"));
+    const [modelEscalation] = await payloadsOf("escalated");
+    expect(modelEscalation.reason).toBe("model_decided");
+    expect(modelEscalation.promptVersion).toBe(llm.receivedInputs[0].promptVersion);
+
+    await resetDb(pool);
+    const h2 = makeAgent(pool, new FakeLLM([]));
+    await handleInbound(h2.deps, inbound("estou com muita dor", "m2"));
+    const [triaged] = await payloadsOf("escalated");
+    expect(triaged.reason).toBe("urgency");
+    expect(triaged.promptVersion).toBeUndefined();
+    expect((await h2.conversations.load(PHONE))?.promptVersion).toBeNull();
+  });
+
+  it("a refusal / max-iterations hand-off records the prompt version in effect", async () => {
+    const llm = new FakeLLM([{ stopReason: "refusal", content: [] }]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("quero marcar"));
+    const [refusal] = await payloadsOf("escalated");
+    expect(refusal.reason).toBe("model_refusal");
+    expect(refusal.promptVersion).toBe(llm.receivedInputs[0].promptVersion);
+  });
+});

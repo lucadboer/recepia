@@ -23,9 +23,20 @@ export function emptyState(phone: string, now: Date): ConversationState {
     awaitingConsent: false,
     escalatedAt: null,
     handoffNoticeAt: null,
+    promptVersion: null,
     version: 0,
     updatedAt: now,
   };
+}
+
+/** Record which prompt artifact the model is being driven with this turn (FR-409). */
+export function setPromptVersion(
+  s: ConversationState,
+  version: string,
+  now: Date,
+): ConversationState {
+  if (s.promptVersion === version) return s;
+  return { ...s, promptVersion: version, updatedAt: now };
 }
 
 export function setAwaitingConsent(

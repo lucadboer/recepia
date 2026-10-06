@@ -100,3 +100,7 @@ Exact keyword set is tuned in `triage.ts` with a unit test per category; final w
 
 ## Audit actions (extended)
 `hold_created`, `hold_expired`, `hold_released`, `booking_confirmed`, `calendar_orphan_compensated`, `escalated`, `consent_recorded`, `consent_revoked`, **`outbox_dead_letter`** (actor `system`), **`outbox_cancelled`** (actor `ai`, on opt-out), **`conversation_released`** (actor `human`).
+
+### Amendment 2026-10-06 (feature 004, FR-409)
+- `ConversationState.promptVersion: string | null` — the id of the system prompt artifact (`vNNN+<sha256[:7]>`, see `prompts/CHANGELOG.md`) last given to the model; `null` until the model is first called (rows written before this field read as `null`).
+- Audit payloads of writes the model initiated — `hold_created`, `booking_confirmed`, `escalated` (reasons chosen by the model, `model_refusal`, `model_truncated`, `max_iterations`) — carry `promptVersion`. Deterministic escalations (triage, calendar failures, jobs) carry none: no model was involved.
