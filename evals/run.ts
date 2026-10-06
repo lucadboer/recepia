@@ -17,6 +17,7 @@ import { makePool } from "../src/db/pool";
 import type { LLMPort } from "../src/ports/llm-port";
 import { type Assertion, score } from "./lib/assertions";
 import { type EvalCase, loadCases } from "./lib/case-schema";
+import { type JudgeResult, judgeModelFor, judgeTranscript, loadRubric } from "./lib/judge";
 import {
   type Baseline,
   compareWithBaseline,
@@ -25,6 +26,7 @@ import {
   type ScoredExecution,
 } from "./lib/metrics";
 import { costUsd, loadPricing } from "./lib/pricing";
+import { applyBlock, checkBlock, readLatestLiveReport, renderBlock } from "./lib/readme-block";
 import { type CaseReport, HONESTY_LINE, type RunReport, writeReports } from "./lib/report";
 import {
   type CaseContext,
@@ -40,6 +42,8 @@ export const CASES_DIR = fileURLToPath(new URL("./cases/", import.meta.url));
 export const REPORTS_DIR = fileURLToPath(new URL("./reports/", import.meta.url));
 export const FAKE_REPORTS_DIR = fileURLToPath(new URL("./reports/fake/", import.meta.url));
 export const BASELINE_PATH = fileURLToPath(new URL("./baseline.json", import.meta.url));
+export const README_PATH = fileURLToPath(new URL("../README.md", import.meta.url));
+export const LATEST_LIVE_REPORT = fileURLToPath(new URL("./reports/latest.json", import.meta.url));
 export const DEFAULT_CAP_USD = 5;
 export const DEFAULT_LIVE_REPETITIONS = 3;
 
@@ -182,10 +186,64 @@ export function capGuard(capUsd: number, cost: (ex: Execution) => number | null)
     shouldStop(): boolean {
       return spent > capUsd;
     },
+    /** Spend outside the per-execution accounting (e.g. the judge). */
+    add(usd: number): void {
+      spent += usd;
+    },
     spentUsd(): number {
       return spent;
     },
   };
+}
+
+/** Sums the judge's token usage so its cost shows in the run's estimated spend. */
+class MeasuringJudge implements LLMPort {
+  usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+  constructor(private readonly inner: LLMPort) {}
+  async turn(input: Parameters<LLMPort["turn"]>[0]): ReturnType<LLMPort["turn"]> {
+    const res = await this.inner.turn(input);
+    if (res.usage) {
+      this.usage = {
+        inputTokens: this.usage.inputTokens + res.usage.inputTokens,
+        outputTokens: this.usage.outputTokens + res.usage.outputTokens,
+        cacheReadTokens: this.usage.cacheReadTokens + res.usage.cacheReadTokens,
+        cacheWriteTokens: this.usage.cacheWriteTokens + res.usage.cacheWriteTokens,
+      };
+    }
+    return res;
+  }
+}
+
+/** `readme [--check]`: regenerate the README block from the latest LIVE report, or verify it. */
+export function readmeCommand(
+  args: Args,
+  io: Io,
+  paths = { readme: README_PATH, report: LATEST_LIVE_REPORT },
+): number {
+  const report = readLatestLiveReport(paths.report);
+  const block = renderBlock(report);
+  const readme = readFileSync(paths.readme, "utf8");
+  if (args.check) {
+    const res = checkBlock(readme, block);
+    if (res.ok) {
+      io.log(
+        `README block is up to date (${report ? `live report ${report.date.slice(0, 10)}` : "no live report yet"})`,
+      );
+      return 0;
+    }
+    io.error(`README check failed: ${res.reason}`);
+    return 1;
+  }
+  const next = applyBlock(readme, block);
+  if (next === readme) {
+    io.log("README block already up to date");
+    return 0;
+  }
+  writeFileSync(paths.readme, next);
+  io.log(
+    `README block regenerated from ${report ? `live report ${report.date.slice(0, 10)}` : "no live report (placeholder)"}`,
+  );
+  return 0;
 }
 
 export function exitCodeFor(outcome: {
@@ -251,6 +309,8 @@ export function buildReport(input: {
   partial?: boolean;
   spentUsd?: number | null;
   judge: RunReport["judge"];
+  /** Judge verdicts keyed by `${caseId}#${rep}` (only when the judge ran). */
+  judgeResults?: Map<string, JudgeResult>;
   cases: EvalCase[];
   scored: ScoredExecution[];
   metrics: Metrics;
@@ -280,6 +340,9 @@ export function buildReport(input: {
         usage: s.execution.llm.usage,
         costUsd: s.costUsd,
         toolCalls: s.execution.observations.toolCalls.map((t) => `${t.name}${t.ok ? "" : "!"}`),
+        ...(input.judgeResults?.has(`${s.execution.caseId}#${s.execution.rep}`)
+          ? { judge: input.judgeResults.get(`${s.execution.caseId}#${s.execution.rep}`) }
+          : {}),
       })),
     }));
   const passed = input.scored.filter((s) => s.pass).length;
@@ -391,14 +454,14 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
     io.log(`evals · live mode skipped: ${skip}`);
     return 0;
   }
-  if (args.judge) {
-    io.error("--judge arrives with feature 004 US5 (T449)");
-    return 2;
-  }
   assertDisposableDatabase(io.env.DATABASE_URL, io.env, "EVALS_ALLOW_TRUNCATE", "the eval harness");
   const pricing = loadPricing();
   const model = args.model ?? (io.env.ANTHROPIC_MODEL || DEFAULT_MODEL);
   const llm = new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model });
+  const judgeModel = args.judge
+    ? judgeModelFor(model, io.env.EVALS_JUDGE_MODEL || undefined)
+    : null;
+  const rubric = args.judge ? loadRubric() : null;
   const all = loadCases(CASES_DIR);
   const cases = args.caseId ? all.filter((c) => c.id === args.caseId) : all;
   if (cases.length === 0) {
@@ -427,6 +490,21 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
     const baseline = readBaseline();
     const comparison = baseline ? compareWithBaseline(metrics, baseline) : null;
     const commit = currentCommit(io.env);
+    // Judge (off by default): a separate model scores tone/clarity of the agent replies. Its
+    // spend counts toward the cap report but never toward the agent's cost metrics.
+    const judgeResults = new Map<string, JudgeResult>();
+    if (judgeModel && rubric) {
+      io.log(`judge · model=${judgeModel} · rubric ${rubric.version}`);
+      const judgeLlm = new MeasuringJudge(
+        new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model: judgeModel }),
+      );
+      for (const s of scored) {
+        const verdict = await judgeTranscript(judgeLlm, rubric, s.execution.transcript);
+        judgeResults.set(`${s.execution.caseId}#${s.execution.rep}`, verdict);
+      }
+      const judgeCost = costUsd(pricing, judgeModel, judgeLlm.usage, io.error);
+      if (judgeCost !== null) guard.add(judgeCost);
+    }
     const report = buildReport({
       mode: "live",
       model,
@@ -438,7 +516,11 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
       capUsd: args.capUsd,
       partial: stopped,
       spentUsd: metrics.cost.totalUsd === null ? null : guard.spentUsd(),
-      judge: { enabled: false },
+      judge:
+        judgeModel && rubric
+          ? { enabled: true, model: judgeModel, rubricVersion: rubric.version }
+          : { enabled: false },
+      judgeResults,
       cases,
       scored,
       metrics,
@@ -502,8 +584,12 @@ export async function main(
     return 2;
   }
   if (args.command === "readme") {
-    io.error("readme subcommand arrives with feature 004 US4 (T445)");
-    return 2;
+    try {
+      return readmeCommand(args, io);
+    } catch (e) {
+      io.error(`evals readme: ${(e as Error).message}`);
+      return 2;
+    }
   }
   return runCommand(args, io);
 }

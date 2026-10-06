@@ -143,12 +143,12 @@ description: "Task list for 004-evaluation-harness"
 
 ### Tests for User Story 4 ⚠️ (write FIRST, ensure they FAIL)
 
-- [ ] T444 [P] [US4] Unit test `tests/unit/evals-readme-block.test.ts`: `renderBlock(report)` includes date, model, prompt version, commit, headline metrics and the honesty line; `applyBlock(readme, block)` replaces exactly the text between the markers; `checkBlock(readme, report)` detects a hand edit and a missing marker pair
+- [x] T444 [P] [US4] Unit test `tests/unit/evals-readme-block.test.ts`: `renderBlock(report)` includes date, model, prompt version, commit, headline metrics and the honesty line; `applyBlock(readme, block)` replaces exactly the text between the markers; `checkBlock(readme, report)` detects a hand edit and a missing marker pair
 
 ### Implementation for User Story 4
 
-- [ ] T445 [US4] Implement `evals/lib/readme-block.ts` and the `readme [--check]` subcommand in `evals/run.ts`; add the markers and an initial generated block to `README.md` (Evaluation section) — make T444 pass
-- [ ] T446 [US4] Add the `pnpm evals:readme --check` step to the `fake` job in `.github/workflows/evals.yml`; document in `CONTRIBUTING.md` ("Numbers are never hand-written")
+- [x] T445 [US4] Implement `evals/lib/readme-block.ts` and the `readme [--check]` subcommand in `evals/run.ts`; add the markers and an initial generated block to `README.md` (Evaluation section) — make T444 pass
+- [x] T446 [US4] Add the `pnpm evals:readme --check` step to the `fake` job in `.github/workflows/evals.yml`; document in `CONTRIBUTING.md` ("Numbers are never hand-written")
 
 **Checkpoint**: README numbers are generated and drift-checked.
 
@@ -162,12 +162,12 @@ description: "Task list for 004-evaluation-harness"
 
 ### Tests for User Story 5 ⚠️ (write FIRST, ensure they FAIL)
 
-- [ ] T447 [P] [US5] Unit test `tests/unit/evals-judge.test.ts`: builds the judge prompt from `evals/judge/rubric.v1.md` + transcript; parses a valid JSON verdict; an unparsable answer → `invalid` for that case without failing the run; judge model defaults to `claude-opus-5-5` and must differ from the model under test
+- [x] T447 [P] [US5] Unit test `tests/unit/evals-judge.test.ts`: builds the judge prompt from `evals/judge/rubric.v1.md` + transcript; parses a valid JSON verdict; an unparsable answer → `invalid` for that case without failing the run; judge model defaults to `claude-opus-5-5` and must differ from the model under test
 
 ### Implementation for User Story 5
 
-- [ ] T448 [P] [US5] Write `evals/judge/rubric.v1.md` (tone 1–5, clarity 1–5, one-line justification; pt-BR patient-facing replies)
-- [ ] T449 [US5] Implement `evals/lib/judge.ts` (SDK call via the existing adapter pattern, defensive JSON parse) and the `--judge` flag in `evals/run.ts`; report section `judge` with rubric version — make T447 pass
+- [x] T448 [P] [US5] Write `evals/judge/rubric.v1.md` (tone 1–5, clarity 1–5, one-line justification; pt-BR patient-facing replies)
+- [x] T449 [US5] Implement `evals/lib/judge.ts` (SDK call via the existing adapter pattern, defensive JSON parse) and the `--judge` flag in `evals/run.ts`; report section `judge` with rubric version — make T447 pass
 
 **Checkpoint**: judge available on demand, off by default, never a gate.
 
@@ -175,10 +175,10 @@ description: "Task list for 004-evaluation-harness"
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T450 [P] Update `README.md` (Evaluation section: what is measured, how to run, link to latest report) and `CONTRIBUTING.md` (evals commands, how to add a golden case, baseline update policy)
-- [ ] T451 [P] Add `ANTHROPIC_MODEL=claude-sonnet-5-5` and the eval knobs (`EVALS_CAP_USD`, `EVALS_REPETITIONS`) to `.env.example`
-- [ ] T452 Run `specs/004-evaluation-harness/quickstart.md` end to end (fake, readme, live with the owner's key) and fix gaps
-- [ ] T453 Measure `evals/lib/**` coverage and add it to `vitest.config.ts` `coverage.include` (ratchet the thresholds only upwards; drop the T402 exclusion comment)
+- [x] T450 [P] Update `README.md` (Evaluation section: what is measured, how to run, link to latest report) and `CONTRIBUTING.md` (evals commands, how to add a golden case, baseline update policy)
+- [x] T451 [P] Add `ANTHROPIC_MODEL=claude-sonnet-5-5` and the eval knobs (`EVALS_CAP_USD`, `EVALS_REPETITIONS`) to `.env.example`
+- [x] T452 Run `specs/004-evaluation-harness/quickstart.md` end to end (fake, readme, live with the owner's key) and fix gaps — fake + readme done 2026-10-06; live blocked by the rejected key (see T408/T439)
+- [x] T453 Measure `evals/lib/**` coverage and add it to `vitest.config.ts` `coverage.include` (ratchet the thresholds only upwards; drop the T402 exclusion comment)
 - [ ] T454 Self-review + Codex review of the PR; fix findings; update `specs/004-evaluation-harness/tasks.md` checkboxes
 
 ---

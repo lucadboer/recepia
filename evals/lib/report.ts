@@ -6,6 +6,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Assertion } from "./assertions";
 import type { Category } from "./case-schema";
+import type { JudgeResult } from "./judge";
 import type { BaselineComparison, Metrics } from "./metrics";
 
 export type { BaselineComparison } from "./metrics";
@@ -32,6 +33,8 @@ export interface ExecutionReport {
   costUsd: number | null;
   /** Tool names in order; `!` marks a call that got an error result. */
   toolCalls: string[];
+  /** Present only when the judge ran (FR-410); never affects pass/fail. */
+  judge?: JudgeResult;
 }
 
 export interface CaseReport {
@@ -193,8 +196,11 @@ export function renderMarkdown(run: RunReport): string {
   }
   lines.push("## Cases");
   lines.push("");
-  lines.push("| Case | Category | Passed | Failed assertions | Errors | Cost |");
-  lines.push("|---|---|---|---|---|---|");
+  const judged = run.judge.enabled;
+  lines.push(
+    `| Case | Category | Passed | Failed assertions | Errors | Cost |${judged ? " Judge tone / clarity |" : ""}`,
+  );
+  lines.push(`|---|---|---|---|---|---|${judged ? "---|" : ""}`);
   for (const c of run.cases) {
     const passed = c.executions.filter((e) => e.pass).length;
     const failed = [...new Set(c.executions.flatMap((e) => e.failedAssertions))].join(", ");
@@ -202,8 +208,17 @@ export function renderMarkdown(run: RunReport): string {
     const cost = c.executions.some((e) => e.costUsd === null)
       ? "n/a"
       : usd(c.executions.reduce((n, e) => n + (e.costUsd ?? 0), 0));
+    const judge = judged
+      ? ` ${c.executions
+          .map((e) =>
+            e.judge?.status === "scored"
+              ? `${e.judge.tone}/${e.judge.clarity}`
+              : (e.judge?.status ?? "—"),
+          )
+          .join(", ")} |`
+      : "";
     lines.push(
-      `| ${c.id} | ${c.category}${c.limitation ? " ⚠︎" : ""} | ${passed}/${c.executions.length} | ${failed || "—"} | ${errors} | ${cost} |`,
+      `| ${c.id} | ${c.category}${c.limitation ? " ⚠︎" : ""} | ${passed}/${c.executions.length} | ${failed || "—"} | ${errors} | ${cost} |${judge}`,
     );
   }
   lines.push("");

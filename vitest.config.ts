@@ -15,10 +15,9 @@ export default defineConfig({
     hookTimeout: 20000,
     coverage: {
       provider: "v8",
-      // Only src/ for now — not the .sql migrations (the v8 remapper would try to parse them). The
-      // evaluation harness (evals/lib) is unit-tested but kept out of the thresholds until feature 004
-      // lands completely (tasks T402/T453: measure, then add it and ratchet).
-      include: ["src/**/*.ts"],
+      // src/ and the evaluation harness library — not the .sql migrations (the v8 remapper would try
+      // to parse them) and not the CLI entrypoint (exercised by `pnpm evals:fake` in CI).
+      include: ["src/**/*.ts", "evals/lib/**/*.ts"],
       exclude: [
         "src/server.ts", // process entrypoint — smoke-tested via `pnpm start` + SIGTERM, not unit-testable
         "src/db/seed.ts", // dev-only CLI
