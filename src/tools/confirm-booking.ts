@@ -1,7 +1,7 @@
 import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config";
 import { appendAudit } from "../db/repositories/audit-repo";
 import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo";
-import { enqueueOutbox } from "../db/repositories/outbox-repo";
+import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { isExpired } from "../domain/booking";
 import { CalendarWriteError, HoldExpiredError } from "../domain/errors";
@@ -15,7 +15,12 @@ export type ConfirmOutcome = "confirmed" | "already_confirmed";
 
 export interface ConfirmResult {
   booking: Booking;
-  /** `confirmed` = this call flipped the hold and enqueued the patient confirmation. */
+  /**
+   * `confirmed` = the patient's confirmation is owned by the outbox as a result of this call:
+   * this call enqueued it, or it is still pending delivery, or this call's COMMIT landed but its
+   * acknowledgment was lost (the row exists). The orchestrator then sends no closing text.
+   * `already_confirmed` = the booking was confirmed earlier and its confirmation already left.
+   */
   outcome: ConfirmOutcome;
 }
 
@@ -47,7 +52,10 @@ export async function confirmBooking(
   const existing = await getById(deps.pool, holdId);
   if (!existing) throw new HoldExpiredError("Reserva não encontrada.");
   if (CONFIRMED_STATUSES.has(existing.status)) {
-    return { booking: existing, outcome: "already_confirmed" }; // idempotent
+    // Idempotent re-confirm. If the confirmation from the earlier call is still queued, the
+    // outbox still owns the patient message (it goes out with this turn's flush).
+    const queued = await confirmationStatus(deps.pool, existing.id);
+    return { booking: existing, outcome: queued === "pending" ? "confirmed" : "already_confirmed" };
   }
   if (existing.status !== "held" || isExpired(existing.expiresAt, now)) {
     throw new HoldExpiredError();
@@ -136,10 +144,14 @@ export async function confirmBooking(
 
   if (confirmed) return { booking: confirmed, outcome: "confirmed" };
 
-  // A concurrent confirm may already have won — its event must be kept.
+  // Either a concurrent confirm won, or OUR commit landed but its acknowledgment was lost
+  // (commitError set, row confirmed with our event). In both cases the event must be kept,
+  // and if a confirmation row exists the outbox owns the patient message — never let the
+  // caller add a second one (T227).
   const current = await getById(deps.pool, existing.id);
   if (current && CONFIRMED_STATUSES.has(current.status) && current.googleEventId === eventId) {
-    return { booking: current, outcome: "already_confirmed" };
+    const queued = await confirmationStatus(deps.pool, existing.id);
+    return { booking: current, outcome: queued ? "confirmed" : "already_confirmed" };
   }
 
   // True orphan: an event exists with no booking. Delete it, audit, escalate.

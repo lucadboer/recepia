@@ -24,15 +24,19 @@ export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
   let inProgress: Promise<boolean> | null = null;
 
   async function run(): Promise<boolean> {
-    const deadline = Date.now() + timeoutMs; // ONE budget for draining + closing, not two
+    const deadline = Date.now() + timeoutMs; // ONE budget for the whole sequence
+    const remaining = () => Math.max(0, deadline - Date.now());
     log("[shutdown] stopping background jobs and the HTTP listener");
     stopJobs(opts.jobs);
+    // 1. Stop accepting and wait for requests already in flight to finish: a webhook body
+    //    still uploading can enqueue a turn AFTER an early drain would have returned.
     const closed = new Promise<void>((resolve) => {
       opts.server.close(() => resolve());
     });
-    const drained = await opts.queue.drain(timeoutMs);
-    // Don't hang on lingering keep-alive sockets beyond what is left of the budget.
-    await Promise.race([closed, sleep(Math.max(0, deadline - Date.now()))]);
+    await Promise.race([closed, sleep(remaining())]);
+    // 2. Only now drain the per-phone queue — nothing new can be enqueued anymore.
+    const drained = await opts.queue.drain(remaining());
+    // 3. Release shared resources last.
     await opts.close();
     log(drained ? "[shutdown] clean" : "[shutdown] timed out with turns still in flight");
     return drained;

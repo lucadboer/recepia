@@ -52,6 +52,35 @@ describe("createShutdown — graceful stop (T246)", () => {
     expect(server.close).toHaveBeenCalledTimes(1);
   });
 
+  it("drains work enqueued by a request that finishes WHILE the listener is closing (no lost ack)", async () => {
+    const order: string[] = [];
+    const queue = new PerKeyQueue();
+    // The server's close callback fires only after an in-flight request completed and
+    // handed its message to the queue — exactly the SIGTERM-during-upload race.
+    const server = {
+      close: vi.fn((cb?: (err?: Error) => void) => {
+        void queue.run("late", async () => {
+          await new Promise((r) => setTimeout(r, 10));
+          order.push("late-turn.done");
+        });
+        cb?.();
+      }),
+    };
+    const close = vi.fn(async () => {
+      order.push("deps.close");
+    });
+    const shutdown = createShutdown({
+      server,
+      jobs: [],
+      queue,
+      close,
+      timeoutMs: 1000,
+      log: () => {},
+    });
+    expect(await shutdown()).toBe(true);
+    expect(order).toEqual(["late-turn.done", "deps.close"]);
+  });
+
   it("spends at most ONE budget even when both the queue and the server hang", async () => {
     const queue = new PerKeyQueue();
     void queue.run("p", () => new Promise<void>(() => {})); // never settles

@@ -21,7 +21,11 @@ export const AGENT_MAX_ITERATIONS = 8;
 // Bounds on per-phone ConversationState (T239). One inbound message produces at most
 // 1 + 2*AGENT_MAX_ITERATIONS history messages, so 40 keeps >= 2 full turns of context.
 export const HISTORY_MAX_MESSAGES = 40;
-export const OFFERED_SLOTS_MAX = 60;
+// get_availability hands the model at most this many (earliest) slots per call and flags
+// `truncated` so it narrows the range. OFFERED_SLOTS_MAX must hold at least the last few
+// responses so a slot the model just offered is never pruned before the patient picks it.
+export const AVAILABILITY_MAX_SLOTS = 40;
+export const OFFERED_SLOTS_MAX = 3 * AVAILABILITY_MAX_SLOTS;
 export const ACTIVE_HOLDS_MAX = 10;
 export const PROCESSED_IDS_MAX = 200;
 

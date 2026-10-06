@@ -5,7 +5,7 @@ import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import { boundState, emptyState } from "../../src/agent/conversation";
 import { dispatchTool, type ToolContext } from "../../src/agent/tool-registry";
 import { TOOL_NAMES, toolDefs } from "../../src/agent/tool-schemas";
-import { ROUTINE_TYPES } from "../../src/config";
+import { AVAILABILITY_MAX_SLOTS, OFFERED_SLOTS_MAX, ROUTINE_TYPES } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
 import { ensureSchema, resetDb, seedHeld, seedRule, testPool } from "../helpers/db";
@@ -180,6 +180,45 @@ describe("tool schemas + input validation", () => {
 });
 
 describe("tool-registry × state bounds (T239)", () => {
+  it("caps a wide get_availability to AVAILABILITY_MAX_SLOTS, flags truncation, and records EXACTLY what the model saw", async () => {
+    for (let wd = 2; wd <= 5; wd++) {
+      await seedRule(pool, { weekday: wd, startTime: "09:00", endTime: "18:00", capacity: 2 });
+    }
+    const c = ctx();
+    const r = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-20T00:00:00Z", // the whole business week: 5 × 18 = 90 free slots
+      type: "cleaning",
+    });
+    const payload = JSON.parse(r.content) as { slots: { start: string }[]; truncated: boolean };
+    expect(payload.truncated).toBe(true);
+    expect(payload.slots).toHaveLength(AVAILABILITY_MAX_SLOTS);
+    expect(payload.slots[0].start).toBe("2026-06-15T14:00:00.000Z"); // the EARLIEST are kept
+    expect(r.state.offeredSlots).toEqual(payload.slots.map((s) => s.start));
+    // Every slot the model can quote survives the state bound (the cap is below OFFERED_SLOTS_MAX).
+    expect(AVAILABILITY_MAX_SLOTS).toBeLessThanOrEqual(OFFERED_SLOTS_MAX);
+    const bounded = boundState(r.state, NOW);
+    expect(bounded.offeredSlots).toEqual(r.state.offeredSlots);
+    // And the last exposed slot is holdable.
+    const last = payload.slots.at(-1)?.start as string;
+    const hold = await dispatchTool({ ...c, state: bounded }, TOOL_NAMES.hold, {
+      start: last,
+      type: "cleaning",
+    });
+    expect(hold.isError).toBe(false);
+  });
+
+  it("a narrow get_availability is not truncated", async () => {
+    const r = await dispatchTool(ctx(), TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const payload = JSON.parse(r.content) as { slots: unknown[]; truncated: boolean };
+    expect(payload.truncated).toBe(false);
+    expect(payload.slots.length).toBeLessThanOrEqual(AVAILABILITY_MAX_SLOTS);
+  });
+
   it("rejects holding a slot that was offered earlier but is now in the past (gate 2 after boundState)", async () => {
     const c = ctx();
     // Offered at 09:00, slot at 11:00 local — then the clock moves past the slot start.

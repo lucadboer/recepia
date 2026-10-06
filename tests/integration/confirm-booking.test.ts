@@ -106,7 +106,7 @@ describe("confirm_booking", () => {
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);
   });
 
-  it("is idempotent: repeating confirm does not duplicate the event, the outbox row or the message", async () => {
+  it("is idempotent: repeating confirm never duplicates the event, the outbox row or the message; the outbox owns the reply until delivered", async () => {
     const clock = new FakeClock(NOW);
     const calendar = new FakeCalendar();
     const messaging = new FakeMessaging();
@@ -114,14 +114,17 @@ describe("confirm_booking", () => {
 
     const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, PATIENT);
     const first = await confirmBooking(d, hold.id, PATIENT);
-    const second = await confirmBooking(d, hold.id, PATIENT);
-
+    const whilePending = await confirmBooking(d, hold.id, PATIENT);
     expect(first.outcome).toBe("confirmed");
-    expect(second.outcome).toBe("already_confirmed");
-    expect(second.booking.id).toBe(first.booking.id);
+    expect(whilePending.outcome).toBe("confirmed"); // confirmation still queued → no extra reply
+    expect(whilePending.booking.id).toBe(first.booking.id);
+
+    await dispatchOutbox(d);
+    const afterDelivery = await confirmBooking(d, hold.id, PATIENT);
+    expect(afterDelivery.outcome).toBe("already_confirmed"); // patient already notified
+
     expect(calendar.createdCount).toBe(1);
     expect(await outboxRows()).toHaveLength(1);
-    await dispatchOutbox(d);
     expect(messaging.sent).toHaveLength(1);
   });
 

@@ -4,6 +4,7 @@
 // created in this conversation. The patient phone is injected from context — never
 // taken from LLM args.
 
+import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
@@ -80,7 +81,11 @@ export async function dispatchTool(
         if (!from || !to || !type) {
           return result(state, "Argumentos inválidos para get_availability.", true);
         }
-        const slots = await getAvailability(deps, { from: new Date(from), to: new Date(to) }, type);
+        const all = await getAvailability(deps, { from: new Date(from), to: new Date(to) }, type);
+        // Expose at most AVAILABILITY_MAX_SLOTS (the earliest). What the model sees is EXACTLY
+        // what is recorded as offered, so gate 2 never rejects a slot the model could quote.
+        const truncated = all.length > AVAILABILITY_MAX_SLOTS;
+        const slots = truncated ? all.slice(0, AVAILABILITY_MAX_SLOTS) : all;
         const iso = slots.map((s) => s.start.toISOString());
         state = recordOfferedSlots(state, iso, now);
         return result(
@@ -91,6 +96,7 @@ export async function dispatchTool(
               end: s.end.toISOString(),
               type: s.type,
             })),
+            truncated,
           }),
           false,
         );

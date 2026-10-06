@@ -7,6 +7,8 @@ export interface InterceptOptions {
   reject?: (sql: string) => Error | null | undefined;
   /** Runs before every statement that is not rejected (e.g. to race another writer). */
   before?: (sql: string) => Promise<void> | void;
+  /** Runs AFTER the statement executed; throwing here simulates a lost acknowledgment. */
+  after?: (sql: string) => Promise<void> | void;
 }
 
 export function sqlOf(args: unknown[]): string {
@@ -31,7 +33,9 @@ export function interceptingPool(real: Pool, opts: InterceptOptions): Pool {
         const err = opts.reject?.(sql);
         if (err) throw err;
         await opts.before?.(sql);
-        return origQuery(...args);
+        const result = await origQuery(...args);
+        await opts.after?.(sql);
+        return result;
       };
       mutable.release = (...args: unknown[]) => {
         mutable.query = origQuery;

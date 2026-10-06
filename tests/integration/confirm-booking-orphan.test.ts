@@ -185,6 +185,53 @@ describe("confirm_booking — orphan-event compensation", () => {
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);
   });
 
+  it("a COMMIT that LANDED but whose acknowledgment was lost keeps the event, returns the booking and lets the outbox own the reply", async () => {
+    const messaging = new FakeMessaging();
+    const hold = await holdSlot(
+      depsWith(inertCalendar, messaging),
+      { start: SLOT, type: "cleaning" },
+      PATIENT,
+    );
+    const deleted: string[] = [];
+    const calendar: CalendarPort = {
+      async createEvent() {
+        return { eventId: "evt_ack_lost" };
+      },
+      async deleteEvent(key) {
+        deleted.push(key);
+      },
+    };
+    let lost = false;
+    const deps: Deps = {
+      pool: interceptingPool(pool, {
+        after: (sql) => {
+          if (!lost && sql.trim().toUpperCase() === "COMMIT") {
+            lost = true;
+            throw new Error("connection reset after COMMIT"); // the DB committed, we never heard back
+          }
+        },
+      }),
+      clock: new FakeClock(NOW),
+      calendar,
+      messaging,
+      receptionPhone: RECEPTION,
+    };
+
+    const result = await confirmBooking(deps, hold.id, PATIENT);
+
+    expect(lost).toBe(true);
+    expect(result.outcome).toBe("confirmed"); // the outbox row exists → it owns the patient message
+    expect(result.booking.status).toBe("confirmed");
+    expect(result.booking.googleEventId).toBe("evt_ack_lost");
+    expect(deleted).toHaveLength(0); // the committed event is NOT compensated away
+    expect(await countOutbox("booking_confirmation")).toBe(1);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    expect(await countAudit(pool, "calendar_orphan_compensated")).toBe(0);
+    expect(await countAudit(pool, "escalated")).toBe(0);
+    await dispatchOutbox({ ...deps, pool });
+    expect(messaging.sent.filter((m) => m.to === PATIENT.phone)).toHaveLength(1);
+  });
+
   it("a COMMIT that fails AFTER the confirm UPDATE never yields a confirmed result nor a patient message [T232]", async () => {
     const messaging = new FakeMessaging();
     const hold = await holdSlot(

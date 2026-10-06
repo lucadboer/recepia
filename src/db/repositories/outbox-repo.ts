@@ -65,6 +65,17 @@ export async function claimDue(
   return { id: r.id, kind: r.kind, toPhone: r.to_phone, body: r.body, attempts: r.attempts };
 }
 
+/** Delivery status of the confirmation enqueued for a booking (by dedupe key), or null if none. */
+export async function confirmationStatus(
+  q: Queryable,
+  bookingId: string,
+): Promise<"pending" | "sent" | "failed" | null> {
+  const { rows } = await q.query("SELECT status FROM outbox_message WHERE dedupe_key = $1", [
+    `booking_confirmation:${bookingId}`,
+  ]);
+  return rows[0] ? (rows[0].status as "pending" | "sent" | "failed") : null;
+}
+
 export async function markSent(
   q: Queryable,
   id: string,

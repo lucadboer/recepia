@@ -1,5 +1,5 @@
 import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import { type AddressInfo, connect } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import type { InboundMessage } from "../../src/agent/types";
 import { createWebhookServer } from "../../src/webhook/server";
@@ -241,6 +241,38 @@ describe("webhook server (node:http)", () => {
     await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // now deduped at the edge
     await settle();
     expect(calls).toBe(2);
+  });
+
+  it("answers 400 to a request target WHATWG URL cannot parse (e.g. '//') and stays alive", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+      },
+    });
+    server = s.server;
+    const raw = await new Promise<string>((resolve, reject) => {
+      const sock = connect(s.port, "127.0.0.1", () => {
+        sock.write("GET // HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+      });
+      let data = "";
+      sock.on("data", (c) => {
+        data += c.toString();
+      });
+      sock.on("end", () => resolve(data));
+      sock.on("error", reject);
+    });
+    expect(raw.startsWith("HTTP/1.1 400")).toBe(true);
+    // Still serving: a valid request right after is accepted.
+    const res = await fetch(`http://127.0.0.1:${s.port}${BASE}/${SECRET}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: upsert("ALIVE-1"),
+    });
+    expect(res.status).toBe(200);
+    await settle();
+    expect(calls).toBe(1);
   });
 
   it("returns 404 for non-POST methods and never calls onInbound", async () => {

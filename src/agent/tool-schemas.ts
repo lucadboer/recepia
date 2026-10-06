@@ -13,7 +13,7 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.availability,
     description:
-      "Lista os horários de rotina realmente livres em um período. É a ÚNICA fonte de horários — nunca invente horários.",
+      "Lista os horários de rotina realmente livres em um período (no máximo 40, os mais próximos; se `truncated` for true, consulte um período menor). É a ÚNICA fonte de horários — nunca invente horários.",
     inputSchema: {
       type: "object",
       properties: {

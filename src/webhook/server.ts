@@ -105,7 +105,14 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const logStatus = cloud?.onStatus ?? defaultLogStatus;
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const { pathname, searchParams } = new URL(req.url ?? "/", "http://localhost");
+    // Node's parser accepts targets like "//" that WHATWG URL rejects; an uncaught throw
+    // here would take the whole server down before any authentication ran.
+    const parsed = parseTarget(req.url);
+    if (!parsed) {
+      res.writeHead(400).end();
+      return;
+    }
+    const { pathname, searchParams } = parsed;
 
     // --- Cloud API path (only when configured; exact match) ---
     if (cloud && pathname === cloudBase) {
@@ -190,6 +197,14 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   server.headersTimeout = WEBHOOK_HEADERS_TIMEOUT_MS;
   server.requestTimeout = WEBHOOK_REQUEST_TIMEOUT_MS;
   return server;
+}
+
+function parseTarget(url: string | undefined): URL | null {
+  try {
+    return new URL(url ?? "/", "http://localhost");
+  } catch {
+    return null;
+  }
 }
 
 function safeDecode(segment: string): string {

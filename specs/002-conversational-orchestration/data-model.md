@@ -47,7 +47,7 @@ interface ConversationState {
   phone: string;
   status: "active" | "escalated" | "completed";
   history: LlmMessage[];          // running tool-use transcript — bounded (HISTORY_MAX_MESSAGES, trimmed at user-turn boundaries)
-  offeredSlots: string[];         // ISO starts returned by get_availability (guardrail 2) — past slots pruned, capped
+  offeredSlots: string[];         // ISO starts the model SAW (≤ AVAILABILITY_MAX_SLOTS per call, guardrail 2) — past slots pruned, capped at 3× that
   activeHoldIds: string[];        // hold ids created this conversation (guardrail 3) — capped
   lastConfirmedBookingId: string | null;
   processedInboundIds: string[];  // idempotency (FR-207) — capped (most recent kept)
