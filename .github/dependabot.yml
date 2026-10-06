@@ -1,0 +1,26 @@
+# Keeps the "always latest, audited" dependency policy (CONTRIBUTING.md) honest without
+# hand-editing package.json. The 3-day cooldown mirrors pnpm's minimumReleaseAge gate.
+version: 2
+updates:
+  - package-ecosystem: npm # pnpm lockfiles are handled by the npm ecosystem
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 3
+    groups:
+      runtime:
+        dependency-type: production
+      dev-tooling:
+        dependency-type: development
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Sao_Paulo

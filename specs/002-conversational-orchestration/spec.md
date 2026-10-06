@@ -6,7 +6,7 @@
 
 **Status**: Draft (product/legal/model decisions marked `[DEFERRED — NEEDS-USER]`)
 
-> Spec artifacts in English (author preference); patient-facing strings stay pt-BR. This slice adds the **language layer** on top of the already-built, fully-tested deterministic tools. It is built and tested entirely **behind ports with fakes — no secrets, no network**. Real adapters (Anthropic, Google Calendar, WhatsApp) are scaffolds behind a needs-creds boundary; live calls are deferred.
+> Spec artifacts in English (author preference); patient-facing strings stay pt-BR. This slice adds the **language layer** on top of the already-built, fully-tested deterministic tools. It is built and tested entirely **behind ports with fakes — no secrets, no network**. The real adapters (Anthropic, Google Calendar, WhatsApp Cloud API / Evolution) are implemented behind the same ports, fail fast with `NotConfigured` without credentials, and are exercised by the opt-in live suite (`tests/live`, `LIVE_*` flags).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -53,7 +53,7 @@ No booking is committed before the patient's opt-in is recorded; opt-out is hono
 - **FR-202**: Every slot offered or held MUST originate from a `get_availability` result in the same conversation (no model-invented times).
 - **FR-203**: `confirm_booking` MUST only be dispatched for a hold created earlier in the same conversation (structural form of explicit-confirmation-before-commit).
 - **FR-204** *(amended 2026-10-05)*: The system MUST escalate to reception, deterministically and before invoking the LLM, on any escalation signal (full list in [data-model.md](data-model.md)); escalation creates no booking. Every reception notification MUST include the patient's phone, the reason, the triggering context, and a deterministic excerpt of the recent conversation (no LLM-generated summary).
-- **FR-205**: The system MUST record patient opt-in consent before committing a booking, and MUST honor opt-out; both are audited.
+- **FR-205**: The system MUST record patient opt-in consent before committing a booking, and MUST honor opt-out; both are audited. *(Decided 2026-10-06)* Opt-out stops proactive messages (queued notifications are cancelled) and blocks `confirm_booking`; the agent still answers messages the patient sends.
 - **FR-206**: The LLM tool-use loop MUST be bounded (`MAX_ITERATIONS`); on exhaustion it escalates and sends a pt-BR fallback.
 - **FR-207**: Inbound delivery MUST be idempotent per `providerMessageId`.
 - **FR-208**: All patient-facing messages MUST be pt-BR.
@@ -76,4 +76,4 @@ No booking is committed before the patient's opt-in is recorded; opt-out is hono
 ## Assumptions
 - Inbound = pure per-provider parsers + `handleInbound` entrypoint; `MessagingPort` stays outbound-only (resolves 001's deferred `onMessage`).
 - Consent required before `confirm` (browsing/holding collect the minimum); consent is a repo (not a port).
-- `[DEFERRED — NEEDS-USER]`: model id/params, patient copy, opt-in legal copy, LGPD retention/finalidade, escalation routing, webhook hosting, live integration creds.
+- Decided on 2026-10-06 (owner): patient copy = current wording (T220); opt-in/opt-out wording accepted, counsel review recommended before a pilot (T221); retention = purge `conversation_state`/`outbox_message` after 90 days of inactivity, keep `patient_consent` and `audit_log` (T222, job in feature 005); escalation routing = single reception number, any hour, CLI release (T223); `AGENT_MAX_ITERATIONS = 8` final (T225); opt-out keeps the agent answering (T247). Live credentials and webhook hosting are configured per environment.

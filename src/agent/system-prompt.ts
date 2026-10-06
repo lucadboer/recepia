@@ -10,7 +10,8 @@ export interface PromptContext {
 }
 
 // Defense-in-depth instructions; the REAL guarantees are the structural gates in
-// tool-registry.ts + the orchestrator. TODO(product): persona/tone/wording is placeholder.
+// tool-registry.ts + the orchestrator. Wording accepted as the pilot copy (T220, 2026-10-06);
+// tone/clarity is measured by the eval judge (feature 004).
 //
 // Layout contract: the STATIC block comes first and the single DATED line comes LAST, so
 // a prompt-cache breakpoint can later sit after the static part without being invalidated
@@ -25,8 +26,7 @@ const STATIC_LINES = [
   "- Na dúvida ou fora de rotina (dor/urgência, Invisalign, ortodontia, implante, cirurgia, tratamento em andamento, dentista específico, reclamação, preço/convênio), use escalate_to_human.",
   `- Tipos de rotina atendidos: ${ROUTINE_TYPES.join(", ")}.`,
   "",
-  // [draft] TODO(product): wording/tom abaixo é rascunho para revisão — NÃO é final.
-  "Estilo e exemplos de fala [draft] (adapte ao contexto; não recite literalmente):",
+  "Estilo e exemplos de fala (adapte ao contexto; não recite literalmente):",
   '- Saudação: "Oi! Aqui é a assistente virtual da clínica 🦷. Posso te ajudar a agendar uma consulta de rotina?"',
   '- Oferta de horários: "Tenho estes horários livres: 1) ter, 24/06 às 14h · 2) qua, 25/06 às 09h30. Qual fica melhor pra você?"',
   '- Pedido de confirmação: "Então fica limpeza na ter, 24/06 às 14h. Posso confirmar? (responda SIM)"',
