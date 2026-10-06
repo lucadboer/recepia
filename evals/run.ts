@@ -134,6 +134,12 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
       "--repetitions applies to live mode only (the deterministic mode is exactly repeatable)",
     );
   }
+  if (args.writeBaseline && args.caseId) {
+    throw new Error("--write-baseline needs the whole golden set (drop --case)");
+  }
+  if (args.writeBaseline && args.mode !== "live") {
+    throw new Error("--write-baseline applies to live mode only");
+  }
   return args;
 }
 
@@ -174,7 +180,10 @@ export function liveSkipReason(env: NodeJS.ProcessEnv): string | null {
     : "ANTHROPIC_API_KEY is not set — live evaluation skipped (this is not a pass)";
 }
 
-/** FR-411: accumulate the estimated spend and stop before the next execution once the cap is exceeded. */
+/**
+ * FR-411: accumulate the estimated spend and stop as soon as the cap is exceeded. The check is
+ * reactive — a run can overshoot the cap by at most one execution (≈ US$ 0.03) or one judge call.
+ */
 export function capGuard(capUsd: number, cost: (ex: Execution) => number | null) {
   let spent = 0;
   return {
@@ -273,7 +282,6 @@ export async function runSuite(
   const scored: ScoredExecution[] = [];
   for (const c of cases) {
     for (let rep = 1; rep <= opts.repetitions; rep++) {
-      if (opts.shouldStop?.(scored)) return { scored, stopped: true };
       const run = opts.run ?? runCase;
       const execution = await run(c, {
         pool: opts.pool,
@@ -292,9 +300,47 @@ export async function runSuite(
       };
       scored.push(s);
       opts.onExecution?.(s);
+      // Checked AFTER accounting for this execution (including the last one): a run that ends
+      // over the cap is partial even when nothing was left to run (FR-411).
+      if (opts.shouldStop?.(scored)) return { scored, stopped: true };
     }
   }
   return { scored, stopped: false };
+}
+
+/**
+ * Judge every execution's transcript under the same spend cap: the judge's own cost is added
+ * after each call and judging stops (remaining transcripts `skipped`) once the cap is exceeded.
+ */
+export async function judgeExecutions(
+  scored: ScoredExecution[],
+  opts: {
+    llm: LLMPort;
+    rubric: ReturnType<typeof loadRubric>;
+    /** USD for the judge usage accumulated so far (null = unknown model). */
+    costOfUsage: (usage: MeasuringJudge["usage"]) => number | null;
+    guard: ReturnType<typeof capGuard>;
+  },
+): Promise<{ results: Map<string, JudgeResult>; stopped: boolean }> {
+  const results = new Map<string, JudgeResult>();
+  const judge = new MeasuringJudge(opts.llm);
+  let accounted = 0;
+  let stopped = false;
+  for (const s of scored) {
+    const key = `${s.execution.caseId}#${s.execution.rep}`;
+    if (stopped) {
+      results.set(key, { status: "skipped", rubricVersion: opts.rubric.version });
+      continue;
+    }
+    results.set(key, await judgeTranscript(judge, opts.rubric, s.execution.transcript));
+    const total = opts.costOfUsage(judge.usage);
+    if (total !== null) {
+      opts.guard.add(total - accounted);
+      accounted = total;
+    }
+    if (opts.guard.shouldStop()) stopped = true;
+  }
+  return { results, stopped };
 }
 
 export function buildReport(input: {
@@ -495,23 +541,32 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
     });
     const metrics = computeMetrics(scored, cases);
     const baseline = readBaseline();
-    const comparison = baseline ? compareWithBaseline(metrics, baseline) : null;
+    const comparison = baseline
+      ? compareWithBaseline(metrics, baseline, 5, { model, promptVersion })
+      : null;
     const commit = currentCommit(io.env);
-    // Judge (off by default): a separate model scores tone/clarity of the agent replies. Its
-    // spend counts toward the cap report but never toward the agent's cost metrics.
-    const judgeResults = new Map<string, JudgeResult>();
+    // Judge (off by default): a separate model scores tone/clarity of the agent replies under
+    // the SAME spend cap (its cost never enters the agent's cost metrics). Not run at all when
+    // the agent suite already stopped at the cap.
+    let judgeResults = new Map<string, JudgeResult>();
+    let judgeStopped = false;
     if (judgeModel && rubric) {
-      io.log(`judge · model=${judgeModel} · rubric ${rubric.version}`);
-      const judgeLlm = new MeasuringJudge(
-        new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model: judgeModel }),
-      );
-      for (const s of scored) {
-        const verdict = await judgeTranscript(judgeLlm, rubric, s.execution.transcript);
-        judgeResults.set(`${s.execution.caseId}#${s.execution.rep}`, verdict);
+      if (stopped) {
+        io.log("judge · skipped: the spend cap was reached during the agent run");
+      } else {
+        io.log(`judge · model=${judgeModel} · rubric ${rubric.version}`);
+        const judged = await judgeExecutions(scored, {
+          llm: new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model: judgeModel }),
+          rubric,
+          costOfUsage: (usage) => costUsd(pricing, judgeModel, usage, io.error),
+          guard,
+        });
+        judgeResults = judged.results;
+        judgeStopped = judged.stopped;
+        if (judgeStopped) io.log("judge · PARTIAL: the spend cap was reached while judging");
       }
-      const judgeCost = costUsd(pricing, judgeModel, judgeLlm.usage, io.error);
-      if (judgeCost !== null) guard.add(judgeCost);
     }
+    const partial = stopped || judgeStopped;
     const report = buildReport({
       mode: "live",
       model,
@@ -521,7 +576,7 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
       durationMs: Math.round(performance.now() - t0),
       repetitions: args.repetitions,
       capUsd: args.capUsd,
-      partial: stopped,
+      partial,
       spentUsd: metrics.cost.totalUsd === null ? null : guard.spentUsd(),
       judge:
         judgeModel && rubric
@@ -535,7 +590,7 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
     });
     const paths = writeReports(REPORTS_DIR, report);
     if (args.writeBaseline) {
-      if (stopped) {
+      if (partial) {
         io.error("refusing to write a baseline from a partial run");
       } else {
         const b: Baseline = { model, promptVersion, date: report.date, commit, metrics };
@@ -545,7 +600,7 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
     }
     const { summary } = report;
     io.log("");
-    if (stopped) {
+    if (partial) {
       io.log(
         `PARTIAL: spend cap US$ ${args.capUsd.toFixed(2)} exceeded after ${summary.executions} execution(s) (estimate US$ ${guard.spentUsd().toFixed(4)})`,
       );
@@ -568,10 +623,15 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
         `no regression vs baseline ${baseline.date} (${baseline.model ?? "—"}, ${baseline.promptVersion})`,
       );
     }
+    if (comparison && (!comparison.sameModel || !comparison.samePromptVersion)) {
+      io.log(
+        `note: baseline model/prompt differ from this run (${baseline?.model ?? "—"} / ${baseline?.promptVersion} vs ${model} / ${promptVersion})`,
+      );
+    }
     io.log(`report: ${paths.json} · ${paths.markdown}`);
     return exitCodeFor({
       failed: summary.failed,
-      stopped,
+      stopped: partial,
       regression: comparison ? !comparison.pass : false,
     });
   } finally {

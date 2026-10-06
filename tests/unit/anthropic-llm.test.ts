@@ -203,6 +203,22 @@ describe("AnthropicLLM — response mapping onto the port", () => {
     expect(res.stopReason).toBe(expected);
   });
 
+  it("carries the refusal's stop_details (category / explanation) and omits them otherwise", async () => {
+    const refused = message({ stop_reason: "refusal", content: [] });
+    (refused as unknown as Record<string, unknown>).stop_details = {
+      type: "refusal",
+      category: "frontier_llm",
+      explanation: "declined",
+    };
+    const { client } = stubClient([refused, message({})]);
+    const llm = new AnthropicLLM({ client });
+    expect(await llm.turn(input)).toMatchObject({
+      stopReason: "refusal",
+      stopDetails: { category: "frontier_llm", explanation: "declined" },
+    });
+    expect((await llm.turn(input)).stopDetails).toBeUndefined();
+  });
+
   it("round-trips thinking blocks UNCHANGED when the history is replayed within a turn", async () => {
     const { client, calls } = stubClient([message({})]);
     const redacted = {

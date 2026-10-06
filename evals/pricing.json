@@ -2,10 +2,35 @@
   "asOf": "2026-09-25",
   "source": "Claude API reference bundled with the coding agent (cached 2026-09-25). Re-check https://www.anthropic.com/pricing when refreshing. Estimates only: no batch/long-context tiers.",
   "usdPerMTok": {
-    "claude-sonnet-5-5": { "input": 2, "output": 10, "cacheRead": 0.2, "cacheWrite": 2.5 },
-    "claude-sonnet-5": { "input": 2, "output": 10, "cacheRead": 0.2, "cacheWrite": 2.5 },
-    "claude-sonnet-4-6": { "input": 3, "output": 15, "cacheRead": 0.3, "cacheWrite": 3.75 },
-    "claude-haiku-4-5": { "input": 1, "output": 5, "cacheRead": 0.1, "cacheWrite": 1.25 },
-    "claude-opus-5-5": { "input": 4, "output": 20, "cacheRead": 0.4, "cacheWrite": 5 }
+    "claude-sonnet-5-5": {
+      "input": 2,
+      "output": 10,
+      "cacheRead": 0.2,
+      "cacheWrite": 2.5
+    },
+    "claude-sonnet-5": {
+      "input": 2,
+      "output": 10,
+      "cacheRead": 0.2,
+      "cacheWrite": 2.5
+    },
+    "claude-sonnet-4-6": {
+      "input": 3,
+      "output": 15,
+      "cacheRead": 0.3,
+      "cacheWrite": 3.75
+    },
+    "claude-haiku-4-5": {
+      "input": 1,
+      "output": 5,
+      "cacheRead": 0.1,
+      "cacheWrite": 1.25
+    },
+    "claude-opus-5-5": {
+      "input": 4,
+      "output": 20,
+      "cacheRead": 0.2,
+      "cacheWrite": 5
+    }
   }
 }

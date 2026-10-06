@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { type EvalCase, validateCase } from "../../evals/lib/case-schema";
 import type { Execution } from "../../evals/lib/runner";
-import { capGuard, exitCodeFor, liveSkipReason, main, runSuite } from "../../evals/run";
+import {
+  capGuard,
+  exitCodeFor,
+  judgeExecutions,
+  liveSkipReason,
+  main,
+  runSuite,
+} from "../../evals/run";
 
 // T434 — live-mode behaviour that must hold without a key, a database or a network:
 // explicit skip, spend cap → partial + non-zero exit, repetitions, errors never scored as success.
@@ -72,6 +79,15 @@ describe("live mode without a credential", () => {
 });
 
 describe("live mode argument validation (no database reached)", () => {
+  it("refuses --write-baseline on a subset or in fake mode", async () => {
+    const log: string[] = [];
+    const io = { env: {}, log: (l: string) => log.push(l), error: (l: string) => log.push(l) };
+    expect(await main(["--mode", "live", "--write-baseline", "--case", "happy-01"], io)).toBe(2);
+    expect(await main(["--write-baseline"], io)).toBe(2);
+    expect(log.join("\n")).toMatch(/whole golden set/);
+    expect(log.join("\n")).toMatch(/live mode only/);
+  });
+
   it("refuses a judge model equal to the model under test before touching the database", async () => {
     const log: string[] = [];
     const code = await main(["--mode", "live", "--judge"], {
@@ -128,6 +144,70 @@ describe("runSuite in live mode (execution injected, no database)", () => {
     expect(scored).toHaveLength(2); // the third would push the total over the cap
     expect(guard.spentUsd()).toBeCloseTo(0.006);
     expect(exitCodeFor({ failed: 0, stopped: true, regression: false })).toBe(1);
+  });
+
+  it("a run whose LAST execution crosses the cap is still partial (no next iteration needed)", async () => {
+    const cases = [makeCase("a")];
+    const guard = capGuard(0.005, () => 0.006);
+    const { scored, stopped } = await runSuite(cases, {
+      pool: noPool,
+      mode: "live",
+      repetitions: 1,
+      llmFor: () => ({ turn: async () => ({ stopReason: "end_turn", content: [] }) }),
+      run: async (c, o) => fakeExecution(c.id, o.rep ?? 1),
+      costOf: guard.costOf,
+      shouldStop: guard.shouldStop,
+    });
+    expect(scored).toHaveLength(1);
+    expect(stopped).toBe(true);
+  });
+
+  it("the judge runs under the same cap: its cost is added per call and the rest is skipped", async () => {
+    const cases = [makeCase("a"), makeCase("b"), makeCase("c")];
+    const guard = capGuard(0.005, () => 0.001); // agent run: 0.003 spent after three executions
+    const { scored, stopped } = await runSuite(cases, {
+      pool: noPool,
+      mode: "live",
+      repetitions: 1,
+      llmFor: () => ({ turn: async () => ({ stopReason: "end_turn", content: [] }) }),
+      run: async (c, o) =>
+        fakeExecution(c.id, o.rep ?? 1, {
+          transcript: [
+            { role: "patient", text: "oi" },
+            { role: "agent", text: "olá" },
+          ],
+        }),
+      costOf: guard.costOf,
+      shouldStop: guard.shouldStop,
+    });
+    expect(stopped).toBe(false);
+    let calls = 0;
+    const judgeLlm = {
+      async turn() {
+        calls++;
+        return {
+          stopReason: "end_turn" as const,
+          content: [
+            { type: "text" as const, text: '{"tone": 4, "clarity": 4, "justification": "ok"}' },
+          ],
+          usage: { inputTokens: 1000, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+        };
+      },
+    };
+    const judged = await judgeExecutions(scored, {
+      llm: judgeLlm,
+      rubric: { version: "v1", text: "R" },
+      costOfUsage: (u) => u.inputTokens * 0.0000015, // 0.0015 per call → 0.0045, 0.006 > cap after the 2nd
+      guard,
+    });
+    expect(calls).toBe(2);
+    expect(judged.stopped).toBe(true);
+    expect([...judged.results.values()].map((r) => r.status)).toEqual([
+      "scored",
+      "scored",
+      "skipped",
+    ]);
+    expect(guard.spentUsd()).toBeCloseTo(0.006);
   });
 
   it("an execution with a model/transient error is counted and never scored as success", async () => {

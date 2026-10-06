@@ -46,5 +46,5 @@ All unknowns from the plan's Technical Context are resolved below. Decisions are
 - **Rationale**: spec FR-410 and Clarification Q5.
 
 ## R10 — Pricing table (dated)
-- **Decision**: `evals/pricing.json` with `asOf: "2026-09-25"` and USD per MTok: `claude-sonnet-5-5` in 2 / out 10 / cache read 0.20 / cache write 2.50; `claude-sonnet-4-6` 3 / 15 / 0.30 / 3.75; `claude-haiku-4-5` 1 / 5 / 0.10 / 1.25; `claude-opus-5-5` 4 / 20 / 0.40 / 5. Source: the Claude API reference bundled with the coding agent (cached 2026-09-25); to be re-checked against the official pricing page when the table is refreshed.
+- **Decision**: `evals/pricing.json` with `asOf: "2026-09-25"` and USD per MTok: `claude-sonnet-5-5` in 2 / out 10 / cache read 0.20 / cache write 2.50; `claude-sonnet-4-6` 3 / 15 / 0.30 / 3.75; `claude-haiku-4-5` 1 / 5 / 0.10 / 1.25; `claude-opus-5-5` 4 / 20 / 0.20 (0.05× input on this model) / 5. Source: the Claude API reference bundled with the coding agent (cached 2026-09-25); to be re-checked against the official pricing page when the table is refreshed.
 - **Rationale**: cost estimates must name their source and date (FR-405/412).

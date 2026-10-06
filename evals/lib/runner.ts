@@ -245,6 +245,7 @@ function isTurnAware(llm: LLMPort): llm is LLMPort & TurnAware {
 interface AuditRow {
   id: string;
   action: string;
+  entity_id: string | null;
   payload: Record<string, unknown> | null;
   /** Phone of the booking the row points at (booking rows only). */
   booking_phone: string | null;
@@ -262,10 +263,11 @@ async function collectObservations(
 ): Promise<Observations> {
   const phone = c.patient.phone;
   // audit_log.id is a uuid: order by insertion time (each write is its own transaction, so
-  // created_at is strictly increasing in practice; id only breaks exact ties). Seeded rows
-  // write no audit, so everything here was written by the agent during this execution.
+  // created_at is strictly increasing in practice; id only breaks exact ties). Seeded bookings
+  // write no audit row (only the seeded consent does, through recordConsent/recordOptOut), so
+  // every booking/hold/escalation row here was written by the agent during this execution.
   const { rows: audit } = await pool.query<AuditRow>(
-    `SELECT a.id, a.action, a.payload, b.patient_phone AS booking_phone
+    `SELECT a.id, a.action, a.entity_id, a.payload, b.patient_phone AS booking_phone
      FROM audit_log a LEFT JOIN booking b ON b.id = a.entity_id
      ORDER BY a.created_at, a.id`,
   );
@@ -273,15 +275,11 @@ async function collectObservations(
   const history = state?.history ?? [];
   const toolCalls = collectToolCalls(parts.llm, history);
 
-  // Holds/bookings/escalations of THIS conversation (the seed may contain other phones' rows).
+  // Holds/bookings/escalations of THIS conversation and THIS execution: audit rows only, so
+  // seeded bookings (even for the patient's own phone) are never counted as agent writes.
   const holds = audit.filter((r) => r.action === "hold_created" && r.payload?.phone === phone);
-  const { rows: ownHolds } = await pool.query<{ id: string; start_ts: Date }>(
-    "SELECT id, start_ts FROM booking WHERE patient_phone = $1 AND created_via = 'ai' ORDER BY created_at, id",
-    [phone],
-  );
-  const { rows: confirmed } = await pool.query<{ n: number }>(
-    "SELECT count(*)::int AS n FROM booking WHERE patient_phone = $1 AND status = 'confirmed' AND created_via = 'ai'",
-    [phone],
+  const bookings = audit.filter(
+    (r) => r.action === "booking_confirmed" && r.booking_phone === phone,
   );
   const escalations = audit
     .filter((r) => r.action === "escalated" && (r.payload?.phone ?? phone) === phone)
@@ -309,14 +307,14 @@ async function collectObservations(
     toolCalls,
     writes: {
       holds: holds.length,
-      bookings: confirmed[0]?.n ?? 0,
+      bookings: bookings.length,
       calendarEvents: parts.calendar.createdCount,
       escalations: escalations.length,
     },
     escalations,
     offeredSlots,
     heldStarts,
-    ownHoldIds: ownHolds.map((h) => h.id),
+    ownHoldIds: holds.map((h) => h.entity_id).filter((id): id is string => id !== null),
     writesWithoutConsent,
     status: (state?.status ?? "active") as ConversationStatus,
     messages: parts.messaging.sent.map((m) => ({ to: m.to, body: m.body })),

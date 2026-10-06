@@ -44,6 +44,9 @@ export interface BaselineComparison {
   baselineModel: string | null;
   baselinePromptVersion: string;
   tolerancePp: number;
+  /** False when the run used a different model / prompt than the baseline (shown, never a failure). */
+  sameModel: boolean;
+  samePromptVersion: boolean;
   regressions: {
     metric: string;
     baseline: number | null;
@@ -62,6 +65,7 @@ export function compareWithBaseline(
   current: Metrics,
   baseline: Baseline,
   tolerancePp = 5,
+  context?: { model: string | null; promptVersion: string },
 ): BaselineComparison {
   const regressions: BaselineComparison["regressions"] = [];
   for (const [cat, base] of Object.entries(baseline.metrics.taskSuccess.byCategory)) {
@@ -93,6 +97,8 @@ export function compareWithBaseline(
     baselineModel: baseline.model,
     baselinePromptVersion: baseline.promptVersion,
     tolerancePp,
+    sameModel: context ? context.model === baseline.model : true,
+    samePromptVersion: context ? context.promptVersion === baseline.promptVersion : true,
     regressions,
     pass: regressions.length === 0,
   };

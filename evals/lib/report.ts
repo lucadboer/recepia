@@ -182,6 +182,12 @@ export function renderMarkdown(run: RunReport): string {
     lines.push(
       `Baseline: ${run.baseline.baselineDate} · ${run.baseline.baselineModel ?? "—"} · ${run.baseline.baselinePromptVersion} · tolerance ${run.baseline.tolerancePp} pp → **${run.baseline.pass ? "no regression" : "REGRESSION"}**`,
     );
+    if (!run.baseline.sameModel || !run.baseline.samePromptVersion) {
+      lines.push("");
+      lines.push(
+        `> Note: this run used ${run.baseline.sameModel ? "the same model" : "a DIFFERENT model"} and ${run.baseline.samePromptVersion ? "the same prompt version" : "a DIFFERENT prompt version"} than the baseline — compare with care.`,
+      );
+    }
     if (run.baseline.regressions.length) {
       lines.push("");
       lines.push("| Metric | Baseline | Current | Delta |");

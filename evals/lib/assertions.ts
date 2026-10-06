@@ -51,6 +51,13 @@ export function matchValue(actual: unknown, matcher: Matcher, obs: Observations)
   if (matcher === "$ownHoldId")
     return typeof actual === "string" && obs.ownHoldIds.includes(actual);
   if (typeof matcher === "object" && matcher !== null) {
+    if ("$between" in matcher) {
+      const t = typeof actual === "string" ? new Date(actual).getTime() : Number.NaN;
+      if (Number.isNaN(t)) return false;
+      return (
+        t >= new Date(matcher.$between[0]).getTime() && t <= new Date(matcher.$between[1]).getTime()
+      );
+    }
     return matcher.$in.some((v) => JSON.stringify(v) === JSON.stringify(actual));
   }
   return actual === matcher;

@@ -179,7 +179,7 @@ description: "Task list for 004-evaluation-harness"
 - [x] T451 [P] Add `ANTHROPIC_MODEL=claude-sonnet-5-5` and the eval knobs (`EVALS_CAP_USD`, `EVALS_REPETITIONS`) to `.env.example`
 - [x] T452 Run `specs/004-evaluation-harness/quickstart.md` end to end (fake, readme, live with the owner's key) and fix gaps — fake + readme done 2026-10-06; live blocked by the rejected key (see T408/T439)
 - [x] T453 Measure `evals/lib/**` coverage and add it to `vitest.config.ts` `coverage.include` (ratchet the thresholds only upwards; drop the T402 exclusion comment)
-- [ ] T454 Self-review + Codex review of the PR; fix findings; update `specs/004-evaluation-harness/tasks.md` checkboxes
+- [x] T454 Self-review + Codex review of the PR; fix findings; update `specs/004-evaluation-harness/tasks.md` checkboxes — 2026-10-06: Codex (gpt-6.1-sol, xhigh) 6 findings + self-review 13 findings, all addressed in the PR (strict `liveExpect` with `$between` windows, cap re-checked after every execution and during judging, bookings/own holds from this execution's audit rows, `inj-05` slot with capacity, mode-independent label for `inj-10`, publish-on-regression workflow, no CI bypass in the truncate guard, refusal `stop_details`, Opus cache-read price)
 
 ---
 

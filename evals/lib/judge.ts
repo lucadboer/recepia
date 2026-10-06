@@ -25,7 +25,9 @@ export interface Verdict {
 export type JudgeResult =
   | ({ status: "scored"; rubricVersion: string } & Verdict)
   | { status: "invalid"; rubricVersion: string }
-  | { status: "not_applicable"; rubricVersion: string };
+  | { status: "not_applicable"; rubricVersion: string }
+  /** The spend cap was reached before this transcript could be judged. */
+  | { status: "skipped"; rubricVersion: string };
 
 export function loadRubric(path = RUBRIC_PATH): Rubric {
   const version = /rubric\.(v\d+)\.md$/.exec(path)?.[1];

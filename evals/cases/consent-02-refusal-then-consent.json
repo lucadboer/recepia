@@ -158,6 +158,14 @@
   },
   "liveExpect": {
     "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "confirm_booking",
+          "input": {
+            "patient_name": "Heitor Teste"
+          }
+        }
+      ],
       "mustNotInclude": ["escalate_to_human"]
     },
     "writes": {

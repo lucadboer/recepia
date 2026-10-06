@@ -69,6 +69,17 @@ describe("matchValue", () => {
     expect(matchValue("h1", "$ownHoldId", o)).toBe(true);
     expect(matchValue("h9", "$ownHoldId", o)).toBe(false);
   });
+
+  it("$between: ISO instant inside the inclusive window, any ISO spelling", () => {
+    const w = { $between: ["2026-06-16T11:00:00Z", "2026-06-16T15:00:00Z"] as [string, string] };
+    expect(matchValue("2026-06-16T12:00:00.000Z", w, o)).toBe(true);
+    expect(matchValue("2026-06-16T11:00:00Z", w, o)).toBe(true);
+    expect(matchValue("2026-06-16T15:00:00+00:00", w, o)).toBe(true);
+    expect(matchValue("2026-06-16T15:30:00Z", w, o)).toBe(false);
+    expect(matchValue("2026-06-19T12:00:00Z", w, o)).toBe(false);
+    expect(matchValue("not a date", w, o)).toBe(false);
+    expect(matchValue(undefined, w, o)).toBe(false);
+  });
 });
 
 describe("isSubsequence (ordered, gaps allowed)", () => {

@@ -153,7 +153,10 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "confirm_booking"
+          "name": "confirm_booking",
+          "input": {
+            "patient_name": "Gabriela Teste"
+          }
         }
       ],
       "mustNotInclude": ["escalate_to_human"]

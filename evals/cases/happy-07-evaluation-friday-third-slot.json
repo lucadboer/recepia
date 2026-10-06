@@ -137,13 +137,26 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "get_availability"
+          "name": "get_availability",
+          "input": {
+            "type": "evaluation"
+          }
         },
         {
-          "name": "hold_slot"
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-19T11:00:00Z", "2026-06-19T15:00:00Z"]
+            },
+            "type": "evaluation"
+          }
         },
         {
-          "name": "confirm_booking"
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Gabriela Teste"
+          }
         }
       ],
       "mustNotInclude": ["escalate_to_human"]

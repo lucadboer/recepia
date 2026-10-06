@@ -30,7 +30,11 @@ the safety layer can end a response with `stop_reason: "refusal"`.
 ## Consequences
 - Lowest latency/cost setting for a short, tool-driven dialogue; adaptive thinking at `low`
   effort stays an option to measure with the harness (`--model`) before changing the default.
-- Replaying thinking across inbound turns would need the `block_binding: drop_block` beta with
-  adaptive thinking; not needed while blocks are stripped on persist.
+- Replaying thinking across inbound turns is possible without any beta by keeping the request
+  append-only: freeze the static `system` block and send the dated line as a mid-conversation
+  `role: "system"` message (supported on Sonnet 5.5). That is also what prompt caching wants, so
+  feature 005 should revisit strip-on-persist together with caching; stripping is the reference's
+  "recovery" form and is acceptable today only because the dated line already edits the prefix
+  every turn.
 - The live validation (`LIVE_LLM=1 pnpm test:live`) is the gate for this decision; the adapter
   is unit-tested against a stubbed SDK client for the request shape and response mapping.

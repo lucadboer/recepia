@@ -305,6 +305,19 @@ describe("compareWithBaseline", () => {
     expect(compareWithBaseline(current({ happy: 0.1 }), nullBase).pass).toBe(true);
   });
 
+  it("records whether the run used the baseline's model and prompt (informational, never a failure)", () => {
+    const same = compareWithBaseline(current(), baseline, 5, {
+      model: "claude-sonnet-5-5",
+      promptVersion: "v001+0000000",
+    });
+    expect(same).toMatchObject({ sameModel: true, samePromptVersion: true, pass: true });
+    const other = compareWithBaseline(current(), baseline, 5, {
+      model: "claude-haiku-4-5",
+      promptVersion: "v002+1111111",
+    });
+    expect(other).toMatchObject({ sameModel: false, samePromptVersion: false, pass: true });
+  });
+
   it("the tolerance is configurable", () => {
     expect(compareWithBaseline(current({ happy: 0.9 }), baseline, 10).pass).toBe(true);
   });

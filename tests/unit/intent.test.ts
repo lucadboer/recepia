@@ -35,3 +35,9 @@ describe("isAffirmative — a negated reply is never consent (feature 004 golden
     expect(isAffirmative(text)).toBe(expected);
   });
 });
+
+describe("isAffirmative — documented conservative case", () => {
+  it('"Não, pode sim" is NOT consent (negation wins; the agent asks again)', () => {
+    expect(isAffirmative("Não, pode sim")).toBe(false);
+  });
+});

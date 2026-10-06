@@ -97,10 +97,12 @@ export class AnthropicLLM implements LLMPort {
       messages: toMessageParams(input.messages),
     });
 
+    const stopDetails = refusalDetails(response);
     return {
       stopReason: mapStopReason(response.stop_reason),
       content: fromResponseContent(response.content),
       usage: mapUsage(response.usage),
+      ...(stopDetails ? { stopDetails } : {}),
     };
   }
 }
@@ -159,6 +161,15 @@ function mapStopReason(reason: Anthropic.StopReason | null): LlmTurnResult["stop
     default:
       return "end_turn";
   }
+}
+
+/** `stop_details` accompanies `stop_reason: "refusal"`; carried so reception/ops see the category. */
+function refusalDetails(response: Anthropic.Message): LlmTurnResult["stopDetails"] | undefined {
+  const sd = (
+    response as { stop_details?: { category?: string | null; explanation?: string | null } }
+  ).stop_details;
+  if (response.stop_reason !== "refusal" || !sd) return undefined;
+  return { category: sd.category ?? null, explanation: sd.explanation ?? null };
 }
 
 function mapUsage(usage: Anthropic.Usage): LlmUsage {

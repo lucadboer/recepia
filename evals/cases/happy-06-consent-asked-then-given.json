@@ -152,13 +152,26 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "get_availability"
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
         },
         {
-          "name": "hold_slot"
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-16T11:00:00Z", "2026-06-16T15:00:00Z"]
+            },
+            "type": "cleaning"
+          }
         },
         {
-          "name": "confirm_booking"
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Fábio Teste"
+          }
         }
       ],
       "mustNotInclude": ["escalate_to_human"]

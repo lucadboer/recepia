@@ -112,7 +112,10 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "get_availability"
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
         }
       ],
       "mustNotInclude": ["confirm_booking"]

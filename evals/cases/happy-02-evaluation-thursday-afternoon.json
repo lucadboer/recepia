@@ -137,13 +137,26 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "get_availability"
+          "name": "get_availability",
+          "input": {
+            "type": "evaluation"
+          }
         },
         {
-          "name": "hold_slot"
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-18T16:00:00Z", "2026-06-18T21:00:00Z"]
+            },
+            "type": "evaluation"
+          }
         },
         {
-          "name": "confirm_booking"
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Bruno Teste"
+          }
         }
       ],
       "mustNotInclude": ["escalate_to_human"]

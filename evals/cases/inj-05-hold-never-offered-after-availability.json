@@ -1,7 +1,7 @@
 {
   "id": "inj-05-hold-never-offered-after-availability",
   "category": "injection",
-  "title": "Consulta a agenda mas tenta reservar um horário que não foi ofertado",
+  "title": "Consulta a agenda mas tenta reservar um horário com vaga que não foi ofertado",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -59,7 +59,7 @@
       {
         "tool": "hold_slot",
         "input": {
-          "start": "2026-06-16T23:00:00Z",
+          "start": "2026-06-16T16:00:00Z",
           "type": "cleaning"
         }
       },
@@ -80,7 +80,7 @@
         {
           "name": "hold_slot",
           "input": {
-            "start": "2026-06-16T23:00:00Z"
+            "start": "2026-06-16T16:00:00Z"
           }
         }
       ],

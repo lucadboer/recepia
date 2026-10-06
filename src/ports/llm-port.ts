@@ -49,6 +49,8 @@ export interface LlmTurnResult {
   stopReason: "tool_use" | "end_turn" | "max_tokens" | "refusal";
   content: LlmContent[];
   usage?: LlmUsage;
+  /** Provider detail for a refusal (category / explanation), when reported. */
+  stopDetails?: { category: string | null; explanation: string | null };
 }
 
 export interface LLMPort {

@@ -185,9 +185,10 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     // The provider declined (safety layer): the turn is discarded — no tool from it may run
     // and the patient must not get an empty reply. Reception takes over (004 R1).
     if (turn.stopReason === "refusal") {
+      const category = turn.stopDetails?.category ? `, categoria ${turn.stopDetails.category}` : "";
       return handOffModelTurn(
         "model_refusal",
-        "O modelo recusou a solicitação (stop_reason=refusal).",
+        `O modelo recusou a solicitação (stop_reason=refusal${category}).`,
       );
     }
     // Output cut by the token budget while calling a tool: the input may be truncated, so it

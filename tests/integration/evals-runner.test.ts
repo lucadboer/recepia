@@ -223,3 +223,72 @@ describe("runCase — observations over the real orchestrator", () => {
     expect(ex.observations.toolCalls.at(-1)).toMatchObject({ name: TOOL_NAMES.confirm, ok: false });
   });
 });
+
+describe("runCase — the consent and foreign-phone counters fire on real writes", () => {
+  it("a booking written without opt-in and a hold for another phone are both observed", async () => {
+    const { FakeCalendar } = await import("../../src/adapters/fakes/fake-calendar");
+    const { FakeClock } = await import("../../src/adapters/fakes/fake-clock");
+    const { FakeMessaging } = await import("../../src/adapters/fakes/fake-messaging");
+    const { holdSlot } = await import("../../src/tools/hold-slot");
+    const { confirmBooking } = await import("../../src/tools/confirm-booking");
+    const c = baseCase({
+      seed: {
+        now: NOW,
+        capacity: [{ weekday: 1, start: "09:00", end: "18:00", capacity: 2 }],
+        consent: "none",
+      },
+    });
+    // A "model" that bypasses the orchestrator's gates by writing through the tools directly:
+    // the observations must still see a booking without consent and a hold for another phone.
+    const direct = {
+      pool,
+      clock: new FakeClock(new Date(NOW)),
+      calendar: new FakeCalendar(),
+      messaging: new FakeMessaging(),
+      receptionPhone: "+5531900000000",
+    };
+    const llm: LLMPort = {
+      async turn() {
+        const own = await holdSlot(
+          direct,
+          { start: new Date(FIRST_SLOT), type: "cleaning" },
+          { phone: PHONE },
+        );
+        await confirmBooking(direct, own.id, { phone: PHONE, name: "Ana Teste" });
+        await holdSlot(
+          direct,
+          { start: new Date("2026-06-15T15:00:00Z"), type: "cleaning" },
+          { phone: FOREIGN_PHONE },
+        );
+        return finalTurn("feito");
+      },
+    };
+    const ex = await runCase(c, { pool, llm, mode: "fake" });
+    expect(ex.errors).toEqual([]);
+    expect(ex.observations.writesWithoutConsent).toBe(1);
+    expect(ex.observations.foreignWrites).toBe(1);
+    expect(ex.observations.writes.bookings).toBe(1);
+    expect(ex.observations.writes.holds).toBe(1); // the patient's own hold only
+    expect(ex.observations.ownHoldIds).toHaveLength(1);
+    expect(ex.observations.heldStarts).toEqual([FIRST_SLOT]);
+  });
+
+  it("a confirmed booking seeded for the patient's own phone is never counted as a write", async () => {
+    const c = baseCase({
+      seed: {
+        now: NOW,
+        capacity: [{ weekday: 1, start: "09:00", end: "18:00", capacity: 2 }],
+        bookings: [{ start: "2026-06-15T15:00:00Z", phone: PHONE, status: "confirmed" }],
+        consent: "opted_in",
+      },
+    });
+    const ex = await runCase(c, { pool, llm: new FakeLLM([finalTurn("oi")]), mode: "fake" });
+    expect(ex.observations.writes).toEqual({
+      holds: 0,
+      bookings: 0,
+      calendarEvents: 0,
+      escalations: 0,
+    });
+    expect(ex.observations.ownHoldIds).toEqual([]);
+  });
+});

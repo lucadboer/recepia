@@ -92,6 +92,7 @@ jobs:
           path: evals/reports/fake/latest.*
           retention-days: 90
           if-no-files-found: warn
+          overwrite: true
 
   live:
     name: live metrics (production model vs committed baseline)
@@ -152,10 +153,12 @@ jobs:
         env:
           EVALS_REPETITIONS: ${{ github.event.inputs.repetitions || '3' }}
           EVALS_CAP_USD: ${{ github.event.inputs.cap_usd || '5' }}
+          EVALS_MODEL_INPUT: ${{ github.event.inputs.model }}
+          EVALS_JUDGE_INPUT: ${{ github.event.inputs.judge }}
         run: |
           args=()
-          if [ -n "${{ github.event.inputs.model }}" ]; then args+=(--model "${{ github.event.inputs.model }}"); fi
-          if [ "${{ github.event.inputs.judge }}" = "true" ]; then args+=(--judge); fi
+          if [ -n "$EVALS_MODEL_INPUT" ]; then args+=(--model "$EVALS_MODEL_INPUT"); fi
+          if [ "$EVALS_JUDGE_INPUT" = "true" ]; then args+=(--judge); fi
           pnpm evals:live "${args[@]}"
       - name: Report summary
         if: always()
@@ -171,13 +174,18 @@ jobs:
           path: evals/reports/latest.*
           retention-days: 90
           if-no-files-found: ignore
+          overwrite: true
+      # Every completed scheduled/dispatched run is published — a regression or a partial run is
+      # exactly what a reviewer must see (FR-406); runs on a non-production model stay artifacts, so
+      # the README never shows another model's numbers as "the agent's".
       - name: Publish the report through a pull request (scheduled / dispatched runs only)
-        if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.ANTHROPIC_API_KEY != ''
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.ANTHROPIC_API_KEY != '' && github.event.inputs.model == '' && hashFiles('evals/reports/latest.json') != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           pnpm evals:readme
           day="$(date -u +%Y-%m-%d)"
+          outcome="$(jq -r 'if .partial then "PARTIAL" elif (.baseline != null and .baseline.pass == false) then "REGRESSION" elif .summary.failed > 0 then "FAILURES" else "ok" end' evals/reports/latest.json)"
           branch="evals/report-${day}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -187,10 +195,10 @@ jobs:
             echo "nothing to publish (report unchanged)"
             exit 0
           fi
-          git commit -m "evals: live report ${day} (automated run, feature 004)"
+          git commit -m "evals: live report ${day} — ${outcome} (automated run, feature 004)"
           git push --force-with-lease origin "$branch"
           if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" = "0" ]; then
             gh pr create --head "$branch" --base main \
-              --title "evals: live report ${day}" \
+              --title "evals: live report ${day} — ${outcome}" \
               --body "Automated live evaluation run (feature 004, FR-406). Review the report and the README block; \`evals/baseline.json\` is never updated by automation — change it in a reviewed PR when the numbers should become the new reference. Note: pull requests opened with the workflow token do not trigger CI; close and reopen the PR (or push an empty commit) to run the checks."
           fi
