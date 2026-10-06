@@ -268,8 +268,12 @@ async function runOnce(rep: number): Promise<RunResult> {
      GROUP BY start_ts HAVING count(*) > $1`,
     [CAPACITY],
   );
+  // Only the MEASURED conversations count as confirmed (warm-up bookings are excluded).
   const confirmed = await pool.query(
-    "SELECT count(*)::int AS n FROM booking WHERE status IN ('confirmed','patient_confirmed','done')",
+    `SELECT count(*)::int AS n FROM booking
+     WHERE status IN ('confirmed','patient_confirmed','done')
+       AND patient_phone = ANY($1::text[])`,
+    [phones.slice(WARMUP).map((p) => `+${p}`)],
   );
 
   await new Promise<void>((resolve) => server.close(() => resolve()));
