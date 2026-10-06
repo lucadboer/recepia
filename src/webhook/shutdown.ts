@@ -24,14 +24,15 @@ export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
   let inProgress: Promise<boolean> | null = null;
 
   async function run(): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs; // ONE budget for draining + closing, not two
     log("[shutdown] stopping background jobs and the HTTP listener");
     stopJobs(opts.jobs);
     const closed = new Promise<void>((resolve) => {
       opts.server.close(() => resolve());
     });
     const drained = await opts.queue.drain(timeoutMs);
-    // Don't hang on lingering keep-alive sockets beyond the same budget.
-    await Promise.race([closed, sleep(timeoutMs)]);
+    // Don't hang on lingering keep-alive sockets beyond what is left of the budget.
+    await Promise.race([closed, sleep(Math.max(0, deadline - Date.now()))]);
     await opts.close();
     log(drained ? "[shutdown] clean" : "[shutdown] timed out with turns still in flight");
     return drained;

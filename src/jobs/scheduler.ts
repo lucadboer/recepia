@@ -32,8 +32,8 @@ export function schedule(job: ScheduledJob, onError: JobErrorHandler = defaultOn
   const timer = setInterval(() => {
     if (inFlight) return;
     inFlight = true;
-    job
-      .run()
+    Promise.resolve()
+      .then(() => job.run()) // a synchronous throw becomes a rejection, never an uncaught exception
       .catch((err) => onError(job.name, err))
       .finally(() => {
         inFlight = false;

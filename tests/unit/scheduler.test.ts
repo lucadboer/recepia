@@ -50,6 +50,23 @@ describe("schedule — in-process periodic job with an in-flight guard (T245)", 
     h.stop();
   });
 
+  it("a run() that throws SYNCHRONOUSLY is reported too and does not kill the schedule", async () => {
+    const boom = new Error("sync boom");
+    const run = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => {
+        throw boom;
+      })
+      .mockResolvedValue(undefined);
+    const onError = vi.fn();
+    const h = schedule({ name: "sweep", everyMs: 1000, run }, onError);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(onError).toHaveBeenCalledWith("sweep", boom);
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(h.running).toBe(false);
+    h.stop();
+  });
+
   it("stop() clears the interval — no further runs", async () => {
     const run = vi.fn(async () => {});
     const h = schedule({ name: "t", everyMs: 1000, run });

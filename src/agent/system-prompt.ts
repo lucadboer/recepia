@@ -1,5 +1,5 @@
 import { ROUTINE_TYPES } from "../config";
-import { formatOffset, toLocalParts } from "../domain/time";
+import { formatLocalPt, formatOffset, toLocalParts } from "../domain/time";
 import { toolDefs } from "./tool-schemas";
 
 export interface PromptContext {
@@ -47,14 +47,11 @@ function weekdayPt(now: Date, timezone: string): string {
 
 /** The one line that changes per turn: today's weekday, date, time, zone and ISO offset. */
 export function datedLine({ now, timezone }: PromptContext): string {
-  const { dateStr, minutesOfDay } = toLocalParts(now, timezone);
-  const [yyyy, mm, dd] = dateStr.split("-") as [string, string, string];
-  const hh = String(Math.floor(minutesOfDay / 60)).padStart(2, "0");
-  const mi = String(minutesOfDay % 60).padStart(2, "0");
+  const { date, time } = formatLocalPt(now, timezone);
   const offset = formatOffset(now, timezone);
-  const example = `${yyyy}-${mm}-${dd}T09:00:00${offset}`;
+  const example = `${toLocalParts(now, timezone).dateStr}T09:00:00${offset}`;
   return (
-    `Hoje é ${weekdayPt(now, timezone)}, ${dd}/${mm}/${yyyy}, ${hh}:${mi} (${timezone}). ` +
+    `Hoje é ${weekdayPt(now, timezone)}, ${date}, ${time} (${timezone}). ` +
     "Interprete 'hoje', 'amanhã' e 'semana que vem' a partir desta data. " +
     `Ao chamar get_availability, passe from/to em ISO 8601 com o offset ${offset} (ex.: ${example}); nunca invente horários.`
   );

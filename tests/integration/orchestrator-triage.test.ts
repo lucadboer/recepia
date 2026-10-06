@@ -47,7 +47,10 @@ describe("orchestrator — triage escalates every category BEFORE the LLM", () =
     expect(toReception).toHaveLength(1);
     // Reception must be able to call the patient back: phone + what they said (FR-204).
     expect(toReception[0].body).toContain(`Paciente: ${PHONE}`);
-    expect(toReception[0].body).toContain(text);
+    expect(toReception[0].body).toContain(`Contexto: ${text}`);
+    // First message of the conversation: nothing BEFORE the trigger to excerpt, and the
+    // trigger itself is not repeated as a summary line.
+    expect(toReception[0].body).not.toContain("Últimas mensagens");
     const { rows } = await pool.query("SELECT count(*)::int AS n FROM booking");
     expect(rows[0].n).toBe(0);
   });

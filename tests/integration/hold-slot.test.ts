@@ -6,7 +6,7 @@ import { HOLD_TTL_MS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import { getById } from "../../src/db/repositories/booking-repo";
 import type { Deps } from "../../src/deps";
-import { SlotUnavailableError } from "../../src/domain/errors";
+import { SlotOutOfWindowError, SlotUnavailableError } from "../../src/domain/errors";
 import { expireHolds } from "../../src/jobs/expire-holds";
 import { holdSlot } from "../../src/tools/hold-slot";
 import {
@@ -20,7 +20,7 @@ import {
 } from "../helpers/db";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
-const SLOT = new Date("2026-06-15T14:00:00Z"); // Monday 11:00 local
+const SLOT = new Date("2026-06-15T15:00:00Z"); // Monday 12:00 local (lead 3h)
 
 let pool: Pool;
 
@@ -76,6 +76,30 @@ describe("hold_slot", () => {
     await expect(
       holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" }),
     ).rejects.toBeInstanceOf(SlotUnavailableError);
+  });
+
+  it("rejects a start inside the lead time, beyond the horizon, or off the grid — nothing written", async () => {
+    const d = makeDeps(new FakeClock(NOW));
+    const attempts = [
+      new Date("2026-06-15T13:30:00Z"), // 1h30 ahead: inside the 2h minimum lead
+      new Date("2026-07-20T14:00:00Z"), // a Monday with capacity, but > 30 days ahead
+      new Date("2026-06-15T15:10:00Z"), // off the 30-min grid
+    ];
+    for (const start of attempts) {
+      await expect(
+        holdSlot(d, { start, type: "cleaning" }, { phone: "+55a" }),
+      ).rejects.toBeInstanceOf(SlotOutOfWindowError);
+    }
+    const { rows } = await pool.query("SELECT count(*)::int AS n FROM booking");
+    expect(rows[0].n).toBe(0);
+    expect(await countAudit(pool, "hold_created")).toBe(0);
+    // The boundary itself (exactly now + 2h, on the grid) is bookable.
+    const edge = await holdSlot(
+      d,
+      { start: new Date("2026-06-15T14:00:00Z"), type: "cleaning" },
+      { phone: "+55a" },
+    );
+    expect(edge.id).toBeTruthy();
   });
 
   it("frees the seat after the hold expires (sweep job + hold_expired audit)", async () => {

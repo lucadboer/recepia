@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   alignUpToSlot,
   bookingWindow,
+  formatLocalPt,
   formatOffset,
   fromLocal,
   timeToMinutes,
@@ -84,6 +85,17 @@ describe("time — genuinely timezone-aware (IANA, DST-safe) — FR-213", () => 
   it("honours São Paulo's historical DST (2018: UTC-2 in summer, UTC-3 in winter)", () => {
     expect(toLocalParts(new Date("2018-12-15T12:00:00Z")).minutesOfDay).toBe(10 * 60); // BRST
     expect(toLocalParts(new Date("2018-06-15T12:00:00Z")).minutesOfDay).toBe(9 * 60); // BRT
+  });
+
+  it("formatLocalPt renders DD/MM/YYYY + HH:MM in the zone (midnight rollover safe)", () => {
+    expect(formatLocalPt(new Date("2026-06-16T02:00:00Z"))).toEqual({
+      date: "15/06/2026",
+      time: "23:00",
+    });
+    expect(formatLocalPt(new Date("2026-07-15T13:00:00Z"), NY)).toEqual({
+      date: "15/07/2026",
+      time: "09:00",
+    });
   });
 
   it("aligns to the 30-min grid in LOCAL wall time for any zone", () => {

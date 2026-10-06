@@ -13,6 +13,7 @@ import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { InboundMessage } from "../../src/agent/types";
 import { AGENT_MAX_ITERATIONS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
+import { enqueueOutbox } from "../../src/db/repositories/outbox-repo";
 import { dispatchOutbox, OUTBOX_BACKOFF_MS } from "../../src/jobs/dispatch-outbox";
 import type { LLMPort } from "../../src/ports/llm-port";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent, RECEPTION } from "../helpers/agent";
@@ -399,6 +400,26 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(bodies).toHaveLength(2); // the reception notice AND the patient hand-off reply
     expect(bodies).toContain(reply.escalatedToReception());
     expect(bodies.some((b) => b.includes("Motivo: ambiguity"))).toBe(true);
+  });
+
+  it("the in-turn outbox flush delivers only THIS conversation's messages; other recipients wait for the scheduler", async () => {
+    const other = "+55outra";
+    await enqueueOutbox(pool, {
+      kind: "booking_confirmation",
+      toPhone: other,
+      body: "pendente de outra conversa",
+      now: AGENT_NOW,
+    });
+    const llm = new FakeLLM([finalTurn("olá!")]);
+    const h = makeAgent(pool, llm);
+
+    await handleInbound(h.deps, inbound("oi"));
+
+    expect(h.messaging.sent.filter((m) => m.to === other)).toHaveLength(0);
+    const { rows } = await pool.query("SELECT status FROM outbox_message WHERE to_phone = $1", [
+      other,
+    ]);
+    expect(rows[0].status).toBe("pending");
   });
 
   it("bounds the loop at MAX_ITERATIONS, then escalates", async () => {

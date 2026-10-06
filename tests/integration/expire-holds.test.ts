@@ -15,10 +15,11 @@ import {
   seedRule,
   testPool,
 } from "../helpers/db";
+import { interceptingPool } from "../helpers/pool";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
-const SLOT = new Date("2026-06-15T14:00:00Z");
-const OTHER_SLOT = new Date("2026-06-15T15:00:00Z");
+const SLOT = new Date("2026-06-15T15:00:00Z"); // lead 3h: still bookable after the TTL elapses
+const OTHER_SLOT = new Date("2026-06-15T16:00:00Z");
 const RECEPTION = "+5511999999999";
 
 let pool: Pool;
@@ -91,16 +92,18 @@ describe("expireHolds — the scheduled sweep (T245)", () => {
     // Right before the sweep's UPDATE runs, another request lazily reclaims the same slot
     // (holdSlot expires `victim` and audits hold_expired itself, in its own transaction).
     let raced = false;
-    const racingPool = interceptingPool(pool, async (sql) => {
-      // Match the sweep's UPDATE only (a SELECT-then-UPDATE sweep would double-audit here).
-      if (
-        !raced &&
-        sql.startsWith("UPDATE booking SET status = 'expired'") &&
-        sql.includes("expires_at <= $1")
-      ) {
-        raced = true;
-        await holdSlot(real, { start: SLOT, type: "cleaning" }, { phone: "+55late" });
-      }
+    const racingPool = interceptingPool(pool, {
+      before: async (sql) => {
+        // Match the sweep's UPDATE only (a SELECT-then-UPDATE sweep would double-audit here).
+        if (
+          !raced &&
+          sql.startsWith("UPDATE booking SET status = 'expired'") &&
+          sql.includes("expires_at <= $1")
+        ) {
+          raced = true;
+          await holdSlot(real, { start: SLOT, type: "cleaning" }, { phone: "+55late" });
+        }
+      },
     });
 
     const expired = await expireHolds(makeDeps(clock, racingPool));
@@ -115,30 +118,3 @@ describe("expireHolds — the scheduled sweep (T245)", () => {
     expect(audited.rows.map((r) => r.entity_id)).toEqual([victim.id]);
   });
 });
-
-type AnyQuery = (...a: unknown[]) => unknown;
-
-/** Runs `before(sql)` ahead of every statement on clients checked out through the wrapper; restores on release. */
-function interceptingPool(real: Pool, before: (sql: string) => Promise<void>): Pool {
-  return {
-    query: (...args: unknown[]) => (real as unknown as { query: AnyQuery }).query(...args),
-    async connect() {
-      const client = await real.connect();
-      const mutable = client as unknown as { query: AnyQuery; release: AnyQuery };
-      const origQuery = mutable.query.bind(client);
-      const origRelease = mutable.release.bind(client);
-      mutable.query = async (...args: unknown[]) => {
-        const sql =
-          typeof args[0] === "string" ? args[0] : ((args[0] as { text?: string })?.text ?? "");
-        await before(sql);
-        return origQuery(...args);
-      };
-      mutable.release = (...args: unknown[]) => {
-        mutable.query = origQuery;
-        mutable.release = origRelease;
-        return origRelease(...args);
-      };
-      return client;
-    },
-  } as unknown as Pool;
-}

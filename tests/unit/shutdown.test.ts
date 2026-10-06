@@ -52,6 +52,23 @@ describe("createShutdown — graceful stop (T246)", () => {
     expect(server.close).toHaveBeenCalledTimes(1);
   });
 
+  it("spends at most ONE budget even when both the queue and the server hang", async () => {
+    const queue = new PerKeyQueue();
+    void queue.run("p", () => new Promise<void>(() => {})); // never settles
+    const neverClosing = { close: vi.fn() }; // never calls back
+    const shutdown = createShutdown({
+      server: neverClosing,
+      jobs: [],
+      queue,
+      close: async () => {},
+      timeoutMs: 60,
+      log: () => {},
+    });
+    const t0 = Date.now();
+    expect(await shutdown()).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(60 * 2); // not 2x the budget
+  });
+
   it("returns false when in-flight work does not drain within the budget, but still closes deps", async () => {
     const queue = new PerKeyQueue();
     void queue.run("p", () => new Promise<void>(() => {})); // never settles

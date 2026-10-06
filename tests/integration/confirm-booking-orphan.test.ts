@@ -10,6 +10,7 @@ import type { CalendarPort } from "../../src/ports/calendar-port";
 import { confirmBooking } from "../../src/tools/confirm-booking";
 import { holdSlot } from "../../src/tools/hold-slot";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { interceptingPool } from "../helpers/pool";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
 const SLOT = new Date("2026-06-15T14:00:00Z");
@@ -43,52 +44,24 @@ function depsWith(calendar: CalendarPort, messaging: FakeMessaging): Deps {
   return { pool, clock: new FakeClock(NOW), calendar, messaging, receptionPhone: RECEPTION };
 }
 
-type AnyQuery = (...a: unknown[]) => unknown;
-
-/**
- * Wraps the real pool so that, for clients checked out through it, every statement is
- * first offered to `reject(sql)`; a returned Error rejects the query, otherwise it passes
- * through. The patched `query` is RESTORED on `release`, so the physical client goes back
- * to the pool clean and later tests never inherit the interception.
- */
-function interceptingPool(real: Pool, reject: (sql: string) => Error | null): Pool {
-  return {
-    query: (...args: unknown[]) => (real as unknown as { query: AnyQuery }).query(...args),
-    async connect() {
-      const client = await real.connect();
-      const mutable = client as unknown as { query: AnyQuery; release: AnyQuery };
-      const origQuery = mutable.query.bind(client);
-      const origRelease = mutable.release.bind(client);
-      mutable.query = (...args: unknown[]) => {
-        const sql =
-          typeof args[0] === "string" ? args[0] : ((args[0] as { text?: string })?.text ?? "");
-        const err = reject(sql);
-        return err ? Promise.reject(err) : origQuery(...args);
-      };
-      mutable.release = (...args: unknown[]) => {
-        mutable.query = origQuery;
-        mutable.release = origRelease;
-        return origRelease(...args);
-      };
-      return client;
-    },
-  } as unknown as Pool;
-}
-
 /** The confirmation UPDATE (…SET status='confirmed') fails → `commit_failed` orphan branch. */
 function poolFailingConfirmTx(real: Pool, sentinel: Error): Pool {
-  return interceptingPool(real, (sql) => (sql.includes("status = 'confirmed'") ? sentinel : null));
+  return interceptingPool(real, {
+    reject: (sql) => (sql.includes("status = 'confirmed'") ? sentinel : null),
+  });
 }
 
 /** The FIRST `COMMIT` issued through the wrapper fails (the confirmation transaction). */
 function poolFailingFirstCommit(real: Pool, sentinel: Error): Pool {
   let failed = false;
-  return interceptingPool(real, (sql) => {
-    if (!failed && sql.trim().toUpperCase() === "COMMIT") {
-      failed = true;
-      return sentinel;
-    }
-    return null;
+  return interceptingPool(real, {
+    reject: (sql) => {
+      if (!failed && sql.trim().toUpperCase() === "COMMIT") {
+        failed = true;
+        return sentinel;
+      }
+      return null;
+    },
   });
 }
 

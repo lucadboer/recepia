@@ -5,6 +5,7 @@ import {
   CalendarWriteError,
   HoldExpiredError,
   OutOfScopeError,
+  SlotOutOfWindowError,
   SlotUnavailableError,
 } from "../domain/errors";
 
@@ -28,6 +29,8 @@ export const reply = {
 export function errorReply(err: unknown): string {
   if (err instanceof SlotUnavailableError)
     return "Esse horário acabou de ser preenchido. Quer que eu busque outros horários livres?";
+  if (err instanceof SlotOutOfWindowError)
+    return "Esse horário não está mais disponível para agendamento. Quer que eu busque outros horários livres?";
   if (err instanceof HoldExpiredError)
     return "A reserva expirou antes da confirmação. Posso oferecer novos horários?";
   if (err instanceof OutOfScopeError)

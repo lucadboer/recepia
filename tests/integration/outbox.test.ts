@@ -242,6 +242,34 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     expect((await rows()).every((r) => r.status === "sent")).toBe(true);
   });
 
+  it("a recipients filter delivers only matching rows and leaves the others pending", async () => {
+    const clock = new FakeClock(NOW);
+    const messaging = new FakeMessaging();
+    await enqueueOutbox(pool, { kind: "escalation", toPhone: RECEPTION, body: "r", now: NOW });
+    await enqueueOutbox(pool, {
+      kind: "booking_confirmation",
+      toPhone: PATIENT,
+      body: "p",
+      now: NOW,
+    });
+    await enqueueOutbox(pool, {
+      kind: "booking_confirmation",
+      toPhone: "+55other",
+      body: "o",
+      now: NOW,
+    });
+
+    const r = await dispatchOutbox(makeDeps(clock, messaging), {
+      recipients: [PATIENT, RECEPTION],
+    });
+
+    expect(r.sent).toBe(2);
+    expect(messaging.sent.map((m) => m.to).sort()).toEqual([PATIENT, RECEPTION].sort());
+    const pending = (await rows()).filter((x) => x.status === "pending");
+    expect(pending).toHaveLength(1);
+    expect(pending[0].to_phone).toBe("+55other");
+  });
+
   it("times out a hanging send and schedules a retry instead of blocking forever", async () => {
     const clock = new FakeClock(NOW);
     const hanging = {

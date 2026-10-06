@@ -22,6 +22,12 @@ export interface DispatchOutboxOptions {
   /** Max rows processed per call (one transaction each). Default 20. */
   batchSize?: number;
   sendTimeoutMs?: number;
+  /**
+   * Only deliver rows addressed to these phones. The orchestrator uses it to flush just the
+   * current patient's confirmation and the reception notice inside a turn, so one slow
+   * provider never makes a patient wait on other conversations' retries.
+   */
+  recipients?: string[];
 }
 
 export interface DispatchOutboxResult {
@@ -41,6 +47,12 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Bound a send. NOTE (at-least-once): when the timeout fires the underlying request keeps
+ * running; if the provider actually delivered, the row is retried and the recipient may get
+ * the same message twice. Accepted for now (FR-214); provider message ids for idempotent
+ * sends are planned with the durable inbound pipeline (feature 006).
+ */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
@@ -76,19 +88,23 @@ export async function dispatchOutbox(
   const timeoutMs = opts.sendTimeoutMs ?? OUTBOX_SEND_TIMEOUT_MS;
   const result: DispatchOutboxResult = { sent: 0, retried: 0, failed: 0 };
   for (let i = 0; i < batchSize; i++) {
-    const outcome = await dispatchOne(deps, timeoutMs);
+    const outcome = await dispatchOne(deps, timeoutMs, opts.recipients);
     if (outcome === null) break;
     result[outcome]++;
   }
   return result;
 }
 
-async function dispatchOne(deps: Deps, timeoutMs: number): Promise<Outcome | null> {
+async function dispatchOne(
+  deps: Deps,
+  timeoutMs: number,
+  recipients?: string[],
+): Promise<Outcome | null> {
   const now = deps.clock.now();
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
-    const row = await claimDue(client, now);
+    const row = await claimDue(client, now, recipients);
     if (!row) {
       await client.query("COMMIT");
       return null;

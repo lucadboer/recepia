@@ -81,10 +81,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   const persist = (s: ConversationState): Promise<ConversationState> =>
     deps.conversations.save(boundState(s, now));
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
-  // our own patient-facing reply. Dispatcher errors never fail the turn — the scheduled
-  // dispatcher retries (FR-214).
+  // our own patient-facing reply — only THIS conversation's recipients, so a slow provider
+  // never makes this patient wait on other conversations' retries (those belong to the
+  // scheduled dispatcher). Dispatcher errors never fail the turn (FR-214).
   const flushOutbox = async (): Promise<void> => {
-    await dispatchOutbox(deps).catch((err) => {
+    await dispatchOutbox(deps, { recipients: [msg.phone, deps.receptionPhone] }).catch((err) => {
       console.error("[orchestrator] outbox dispatch failed", err);
     });
   };
@@ -130,7 +131,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
       reason: triaged.reason ?? "triage",
       phone: msg.phone,
       context: msg.text,
-      summary: summarizeHistory(state.history),
+      summary: summarizeHistory(state.history.slice(0, -1)), // the trigger itself is the context
     });
     state = markEscalated(state, now);
     state = await persist(state);
@@ -194,9 +195,8 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     if (escalatedThisTurn) {
       state = await persist(state);
       await flushOutbox();
-      if (!confirmationEnqueued) {
-        await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
-      }
+      if (confirmationEnqueued) return { status: "escalated" }; // the confirmation owns the reply
+      await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
       return { status: "escalated", reply: reply.escalatedToReception() };
     }
   }

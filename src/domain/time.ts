@@ -88,6 +88,18 @@ export function toLocalParts(instant: Date, tz: string = CLINIC_TIMEZONE): Local
   };
 }
 
+/** Clinic-local "DD/MM/YYYY" and "HH:MM" — the one place patient-facing date formatting lives. */
+export function formatLocalPt(
+  instant: Date,
+  tz: string = CLINIC_TIMEZONE,
+): { date: string; time: string } {
+  const { dateStr, minutesOfDay } = toLocalParts(instant, tz);
+  const [yyyy, mm, dd] = dateStr.split("-") as [string, string, string];
+  const hh = String(Math.floor(minutesOfDay / 60)).padStart(2, "0");
+  const mi = String(minutesOfDay % 60).padStart(2, "0");
+  return { date: `${dd}/${mm}/${yyyy}`, time: `${hh}:${mi}` };
+}
+
 /**
  * UTC instant for a clinic-local wall time (inverse of toLocalParts). Two-pass
  * inversion handles DST edges: a wall time that does not exist (spring-forward gap)

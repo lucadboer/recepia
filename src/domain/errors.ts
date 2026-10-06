@@ -7,6 +7,14 @@ export class SlotUnavailableError extends Error {
   }
 }
 
+/** The requested start is outside [now + lead, now + horizon] or off the 30-min grid. */
+export class SlotOutOfWindowError extends Error {
+  constructor(message = "O horário está fora da janela de agendamento.") {
+    super(message);
+    this.name = "SlotOutOfWindowError";
+  }
+}
+
 export class HoldExpiredError extends Error {
   constructor(message = "A reserva expirou.") {
     super(message);

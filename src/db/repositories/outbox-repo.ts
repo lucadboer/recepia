@@ -45,15 +45,20 @@ export async function enqueueOutbox(
  * Claim ONE due row for this transaction. `FOR UPDATE SKIP LOCKED` lets concurrent
  * dispatchers work the queue without ever picking the same row while both are alive.
  */
-export async function claimDue(client: PoolClient, now: Date): Promise<OutboxRow | null> {
+export async function claimDue(
+  client: PoolClient,
+  now: Date,
+  recipients?: string[],
+): Promise<OutboxRow | null> {
   const { rows } = await client.query(
     `SELECT id, kind, to_phone, body, attempts
      FROM outbox_message
      WHERE status = 'pending' AND next_attempt_at <= $1
+       AND ($2::text[] IS NULL OR to_phone = ANY($2::text[]))
      ORDER BY next_attempt_at, created_at
      LIMIT 1
      FOR UPDATE SKIP LOCKED`,
-    [now],
+    [now, recipients ?? null],
   );
   const r = rows[0];
   if (!r) return null;

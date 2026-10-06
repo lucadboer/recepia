@@ -7,6 +7,7 @@ import type { Deps } from "../../src/deps";
 import { dispatchOutbox } from "../../src/jobs/dispatch-outbox";
 import { escalateToHuman } from "../../src/tools/escalate-to-human";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
+import { interceptingPool } from "../helpers/pool";
 
 const RECEPTION = "+5511999999999";
 const PATIENT = "+5531988887777";
@@ -78,7 +79,12 @@ describe("escalate_to_human", () => {
   it("is atomic: if the outbox insert fails, no escalated audit row is written and the call rejects", async () => {
     const messaging = new FakeMessaging();
     const sentinel = new Error("outbox insert boom");
-    const d: Deps = { ...makeDeps(messaging), pool: poolFailingOutboxInsert(pool, sentinel) };
+    const d: Deps = {
+      ...makeDeps(messaging),
+      pool: interceptingPool(pool, {
+        reject: (sql) => (sql.includes("INSERT INTO outbox_message") ? sentinel : null),
+      }),
+    };
 
     await expect(
       escalateToHuman(d, { reason: "urgency", phone: PATIENT, context: "dor" }),
@@ -151,30 +157,3 @@ describe("escalate_to_human", () => {
     expect(rows[0].payload.summary).toEqual([]);
   });
 });
-
-type AnyQuery = (...a: unknown[]) => unknown;
-
-/** Rejects the outbox INSERT on clients checked out through the wrapper; restores on release. */
-function poolFailingOutboxInsert(real: Pool, sentinel: Error): Pool {
-  return {
-    query: (...args: unknown[]) => (real as unknown as { query: AnyQuery }).query(...args),
-    async connect() {
-      const client = await real.connect();
-      const mutable = client as unknown as { query: AnyQuery; release: AnyQuery };
-      const origQuery = mutable.query.bind(client);
-      const origRelease = mutable.release.bind(client);
-      mutable.query = (...args: unknown[]) => {
-        const sql =
-          typeof args[0] === "string" ? args[0] : ((args[0] as { text?: string })?.text ?? "");
-        if (sql.includes("INSERT INTO outbox_message")) return Promise.reject(sentinel);
-        return origQuery(...args);
-      };
-      mutable.release = (...args: unknown[]) => {
-        mutable.query = origQuery;
-        mutable.release = origRelease;
-        return origRelease(...args);
-      };
-      return client;
-    },
-  } as unknown as Pool;
-}
