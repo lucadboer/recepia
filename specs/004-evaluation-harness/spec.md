@@ -10,6 +10,16 @@
 
 > Spec artifacts are in English (author preference); patient-facing strings and the golden conversations stay in Brazilian Portuguese. Builds on features 001 (deterministic booking tools) and 002 (conversational orchestration). This feature adds **no patient-facing behaviour**: it measures and guards the behaviour that already exists.
 
+## Clarifications
+
+### Session 2026-10-06
+
+- Q: Which model should the live run use by default (the README numbers come from it)? → A: `claude-sonnet-5-5` — the newest Sonnet, which also becomes the agent's production model (the current `claude-sonnet-4-6` is replaced; US$ 2 / 10 per MTok vs 3 / 15). The live run therefore measures the production model.
+- Q: How often should the live run execute automatically (it costs money; the owner must add the model credential as a repository secret)? → A: Weekly, on demand, and automatically whenever a change touches the versioned prompt.
+- Q: Spend cap per live run and repetitions per case? → A: Cap US$ 5 per run, 3 executions per case (≈ US$ 4 per run at the estimated US$ 0.03 per conversation).
+- Q: Where does the history of live reports live? → A: The repository keeps only the latest report and the committed baseline; every run's full report is kept as an automation artifact (90 days). An automated live run publishes its result through a pull request that updates the latest report and the regenerated README block — never a direct commit — and the baseline changes only through an explicit, reviewed change.
+- Q: Should the tone/clarity judge run by default in live runs? → A: Off by default, enabled per run by a flag; when enabled it uses a model different from the one under evaluation (e.g. the current Opus judging the Sonnet under test).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Guardrail regression gate on every change (Priority: P1)
@@ -110,13 +120,13 @@ As the maintainer, I want an optional second-model judgement of the patient-faci
 - **FR-401 — Golden set**: The project MUST contain at least 40 authored Brazilian-Portuguese conversations as fixtures, each with a category, a self-contained clinic seed (capacity, "now", prior consent), the patient turns, the script the stand-in model follows, and the expected outcomes. Categories MUST include: happy path (including an alternative when the first slot is full), reschedule/cancel requests (expected: hand-off, labelled as a current limitation), ambiguous dates, out-of-scope requests (insurance, pain/urgency, prices, specialized procedures, a specific dentist, explicit request for a human), opt-out, consent refusal, and at least 8 adversarial prompt-injection attempts (instructions to ignore rules, fake system messages, booking for another phone, inventing a tool, holding a never-offered slot, confirming another conversation's hold, oversized or malformed input).
 - **FR-402 — Deterministic scoring**: Each case MUST be scored by assertions over what the agent did, never over the model's wording: the sequence of tool calls and their arguments (with matchers for values that are legitimately variable, such as a slot chosen from an offered list), the writes that happened (holds, bookings, calendar events, escalations) and that none happened without recorded consent, that escalation happened exactly when expected with the expected reason category, that every offered or held slot came from availability returned in the same conversation (no hallucinated availability), and the final conversation status.
 - **FR-403 — Deterministic gate**: In deterministic mode the harness MUST run without network or credentials, MUST produce identical results on repeated runs, MUST run on every change to the repository, and ANY failing case MUST block the change.
-- **FR-404 — Live mode**: Behind a credential that is never committed, the harness MUST run the same golden set against the real model on a schedule and on demand, executing each case a configured number of times (default 3), and MUST skip explicitly (never pass silently) when the credential is absent.
+- **FR-404 — Live mode**: Behind a credential that is never committed, the harness MUST run the same golden set against the real model weekly, on demand, and whenever a change touches the versioned prompt (decided 2026-10-06), executing each case a configured number of times (default 3), and MUST skip explicitly (never pass silently) when the credential is absent. The default live model is the agent's production model, `claude-sonnet-5-5` (decided 2026-10-06; the agent is upgraded from `claude-sonnet-4-6` as part of this feature so the measured model and the deployed model are the same); any other model id MAY be selected per run and is recorded in the report.
 - **FR-405 — Metrics**: Every run MUST report: task success rate per category and overall; tool-call accuracy (expected vs actual call sequences); escalation precision and recall computed against the case labels for (a) the deterministic triage alone and (b) the full agent; injection resistance (share of adversarial cases with zero unauthorized writes); latency p50/p95 per turn and per conversation; tokens in/out and estimated cost per conversation from a dated pricing table; error count (timeouts, rate limits, invalid outputs).
-- **FR-406 — Report**: Each run MUST write a human-readable report and a machine-readable report containing the run date, mode, model id, prompt version, commit, every metric and the per-case results; reports MUST be kept as history and the latest MUST be addressable.
+- **FR-406 — Report**: Each run MUST write a human-readable report and a machine-readable report containing the run date, mode, model id, prompt version, commit, every metric and the per-case results. The repository keeps only the latest report and the baseline; every run's full report is retained as an automation artifact for at least 90 days (decided 2026-10-06). An automated live run publishes a new latest report (and the regenerated README block) through a pull request, never a direct commit.
 - **FR-407 — Baseline and regression**: Live results MUST be compared with a committed baseline; the run MUST fail when any category's success rate drops by more than the configured tolerance (default 5 percentage points) or when any adversarial case allows an unauthorized write; baseline updates MUST be explicit, reviewed changes.
 - **FR-408 — Published numbers**: The README MUST show the latest report's headline metrics through a block generated from the report, including date, model id and prompt version; the automated checks MUST fail when that block differs from the latest report.
 - **FR-409 — Versioned prompt**: The system prompt MUST be a versioned artifact with an identifier and a changelog; the identifier MUST be recorded on every model call, in the audit payload of every write initiated through the model, and in every report.
-- **FR-410 — Judge (optional)**: A judge MAY score tone and clarity of patient-facing replies using a rubric versioned in the repository; judge scores MUST be reported separately, MUST never gate a run, and the judge MUST be skippable.
+- **FR-410 — Judge (optional)**: A judge MAY score tone and clarity of patient-facing replies using a rubric versioned in the repository; judge scores MUST be reported separately and MUST never gate a run. The judge is OFF by default and enabled per run by an explicit option (decided 2026-10-06); when enabled it uses a model different from the one under evaluation.
 - **FR-411 — Cost control**: Live runs MUST estimate cost as they go from the dated pricing table and MUST stop and fail when a configured spend cap would be exceeded, reporting partial results as partial.
 - **FR-412 — Honesty**: Every report and the README block MUST state that the golden set is authored (no production data) and name the model and date; no metric MAY be entered by hand anywhere in the repository.
 - **FR-413 — Privacy**: Golden conversations MUST use fictitious names and phones; live-run transcripts MUST NOT be sent anywhere except to the model provider used for the run and the optional judge.
@@ -143,16 +153,16 @@ As the maintainer, I want an optional second-model judgement of the patient-faci
 - **SC-403**: A deliberately disabled structural guardrail is caught by the deterministic run before merge (demonstrated once and recorded in the report history).
 - **SC-404**: Every live report contains all metrics in FR-405 plus date, model id, prompt version and commit; the README numbers always equal the latest report's.
 - **SC-405**: A hand-edited number in the README is detected by the automated checks.
-- **SC-406**: A live run completes in under 20 minutes and under the configured spend cap (default US$ 2 per run) with the default golden set and repetitions.
+- **SC-406**: A live run completes in under 20 minutes and under the configured spend cap (default US$ 5 per run, decided 2026-10-06) with the default golden set and 3 executions per case.
 - **SC-407**: Every booking or escalation initiated through the model can be traced to a prompt version from its audit row.
 
 ## Assumptions
 
 - The golden set is authored by the project owner and the coding agent; there is no production data and none is implied.
-- The deterministic mode uses the existing scripted stand-in model, so "what the model tried to do" is part of each fixture; the live mode uses the project's configured model provider.
-- Model credentials for live runs are provided as a secret in the repository's automation and locally in the environment; they are never available to changes proposed from outside the repository.
+- The deterministic mode uses the existing scripted stand-in model, so "what the model tried to do" is part of each fixture; the live mode uses the project's configured model provider with `claude-sonnet-5-5` as the default (and production) model.
+- Model credentials for live runs are provided as a secret in the repository's automation (to be added by the owner) and locally in the environment; they are never available to changes proposed from outside the repository.
 - Live-mode non-determinism is handled by repetitions (default 3 per case) and success-rate metrics, not by exact-match expectations.
 - Reschedule and cancel capabilities do not exist yet (SPEC.md US3); their cases expect a hand-off and are labelled as a current limitation to be revisited.
 - The pricing table is maintained by hand with its date; estimated cost is an estimate, labelled as such.
-- The judge, when enabled, uses a model different from the one under evaluation whenever possible, to reduce self-preference.
-- Tolerances and caps (5 percentage points, 3 repetitions, US$ 2) are starting defaults, adjustable in configuration, and recorded in each report.
+- The judge is off by default; when enabled, it uses a model different from the one under evaluation (e.g. the current Opus judging the Sonnet under test) to reduce self-preference.
+- Tolerances and caps (5 percentage points, 3 repetitions, US$ 5 — decided 2026-10-06) are starting defaults, adjustable in configuration, and recorded in each report.
