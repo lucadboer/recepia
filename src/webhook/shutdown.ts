@@ -33,7 +33,10 @@ export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
     const closed = new Promise<void>((resolve) => {
       opts.server.close(() => resolve());
     });
-    await Promise.race([closed, sleep(remaining())]);
+    const listenerClosed = await Promise.race([
+      closed.then(() => true),
+      sleep(remaining()).then(() => false),
+    ]);
     // 2. Only now drain the per-phone queue — nothing new can be enqueued anymore.
     const drained = await opts.queue.drain(remaining());
     // 3. Release shared resources last — bounded too: pool.end() waits for checked-out
@@ -42,12 +45,13 @@ export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
       opts.close().then(() => true),
       sleep(remaining()).then(() => false),
     ]);
-    const clean = drained && closedDeps;
-    log(
-      clean
-        ? "[shutdown] clean"
-        : `[shutdown] timed out (${drained ? "" : "turns in flight"}${!drained && !closedDeps ? ", " : ""}${closedDeps ? "" : "resources not released"})`,
-    );
+    const unfinished = [
+      listenerClosed ? null : "requests still open",
+      drained ? null : "turns in flight",
+      closedDeps ? null : "resources not released",
+    ].filter((x): x is string => x !== null);
+    const clean = unfinished.length === 0;
+    log(clean ? "[shutdown] clean" : `[shutdown] timed out: ${unfinished.join(", ")}`);
     return clean;
   }
 

@@ -297,6 +297,28 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     ).toBe(true);
   });
 
+  it("a SLOW failed send schedules the retry from the failure time, not from the claim [Codex P2]", async () => {
+    const clock = new FakeClock(NOW);
+    const SEND_TOOK_MS = 20_000; // longer than the first backoff (5 s)
+    const slowFailing = {
+      async sendMessage() {
+        clock.advance(SEND_TOOK_MS); // the provider hung, then failed
+        throw new Error("provider timeout");
+      },
+    };
+    await enqueueOutbox(pool, { kind: "escalation", toPhone: RECEPTION, body: "x", now: NOW });
+    const deps: Deps = { ...makeDeps(clock, new FakeMessaging()), messaging: slowFailing };
+
+    const r = await dispatchOutbox(deps, { batchSize: 5 });
+
+    expect(r).toEqual({ sent: 0, retried: 1, failed: 0 }); // claimed ONCE in the batch, not re-claimed
+    const [row] = await rows();
+    expect(row.attempts).toBe(1);
+    expect(new Date(row.next_attempt_at).getTime()).toBe(
+      NOW.getTime() + SEND_TOOK_MS + OUTBOX_BACKOFF_MS[0],
+    );
+  });
+
   it("times out a hanging send and schedules a retry instead of blocking forever", async () => {
     const clock = new FakeClock(NOW);
     const hanging = {

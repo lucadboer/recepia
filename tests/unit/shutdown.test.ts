@@ -81,6 +81,21 @@ describe("createShutdown — graceful stop (T246)", () => {
     expect(order).toEqual(["late-turn.done", "deps.close"]);
   });
 
+  it("a listener that cannot close in time makes the verdict unclean even with an empty queue [Codex P2]", async () => {
+    const neverClosing = { close: vi.fn() }; // an upload keeps a request open; close(cb) never fires
+    const close = vi.fn(async () => {});
+    const shutdown = createShutdown({
+      server: neverClosing,
+      jobs: [],
+      queue: new PerKeyQueue(),
+      close,
+      timeoutMs: 40,
+      log: () => {},
+    });
+    expect(await shutdown()).toBe(false); // entrypoint exits 1: requests were still open
+    expect(close).toHaveBeenCalledTimes(1); // resources are still released
+  });
+
   it("a hanging deps.close() (e.g. pool.end on a stalled client) is bounded by the budget too [Codex P2]", async () => {
     const shutdown = createShutdown({
       server: fakeServer(),

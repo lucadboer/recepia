@@ -114,15 +114,18 @@ async function dispatchOne(
     let outcome: Outcome;
     try {
       await withTimeout(deps.messaging.sendMessage(row.toPhone, row.body), timeoutMs);
-      await markSent(client, row.id, attempts, now);
+      await markSent(client, row.id, attempts, deps.clock.now());
       outcome = "sent";
     } catch (sendErr) {
       const message = errorMessage(sendErr);
+      // Backoff counts from the moment the send FAILED, not from the claim: a send that took
+      // longer than the backoff must not come due again inside the same batch.
+      const failedAt = deps.clock.now();
       if (attempts >= OUTBOX_MAX_ATTEMPTS) {
-        await deadLetter(deps, client, row, attempts, message, now);
+        await deadLetter(deps, client, row, attempts, message, failedAt);
         outcome = "failed";
       } else {
-        const nextAt = new Date(now.getTime() + backoffFor(attempts));
+        const nextAt = new Date(failedAt.getTime() + backoffFor(attempts));
         await markRetry(client, row.id, attempts, nextAt, message);
         outcome = "retried";
       }
