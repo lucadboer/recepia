@@ -458,10 +458,17 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
   const pricing = loadPricing();
   const model = args.model ?? (io.env.ANTHROPIC_MODEL || DEFAULT_MODEL);
   const llm = new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model });
-  const judgeModel = args.judge
-    ? judgeModelFor(model, io.env.EVALS_JUDGE_MODEL || undefined)
-    : null;
-  const rubric = args.judge ? loadRubric() : null;
+  let judgeModel: string | null = null;
+  let rubric: ReturnType<typeof loadRubric> | null = null;
+  if (args.judge) {
+    try {
+      judgeModel = judgeModelFor(model, io.env.EVALS_JUDGE_MODEL || undefined);
+      rubric = loadRubric();
+    } catch (e) {
+      io.error(`evals: ${(e as Error).message}`);
+      return 2;
+    }
+  }
   const all = loadCases(CASES_DIR);
   const cases = args.caseId ? all.filter((c) => c.id === args.caseId) : all;
   if (cases.length === 0) {

@@ -71,6 +71,23 @@ describe("live mode without a credential", () => {
   });
 });
 
+describe("live mode argument validation (no database reached)", () => {
+  it("refuses a judge model equal to the model under test before touching the database", async () => {
+    const log: string[] = [];
+    const code = await main(["--mode", "live", "--judge"], {
+      env: {
+        ANTHROPIC_API_KEY: "sk-ant-test",
+        DATABASE_URL: "postgres://u:p@localhost:5434/db",
+        EVALS_JUDGE_MODEL: "claude-sonnet-5-5",
+      },
+      log: (l) => log.push(l),
+      error: (l) => log.push(l),
+    });
+    expect(code).toBe(2);
+    expect(log.join("\n")).toMatch(/different from the model under test/);
+  });
+});
+
 describe("runSuite in live mode (execution injected, no database)", () => {
   it("honours repetitions and uses liveExpect instead of expect", async () => {
     const cases = [makeCase("a"), makeCase("b")];
