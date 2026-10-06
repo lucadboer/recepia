@@ -1,5 +1,5 @@
 // Patient-facing pt-BR copy (FR-208). Centralized so the orchestrator never inlines
-// strings. TODO(product): all wording below is placeholder pending product/legal review.
+// strings. Wording accepted as the pilot copy by the owner (T220/T221, 2026-10-06).
 
 import {
   CalendarWriteError,
@@ -22,7 +22,7 @@ export const reply = {
     "Sua solicitação está com a nossa recepção, que vai continuar o atendimento por aqui. Obrigado pela paciência!",
   // tool_result for tools the model requested AFTER escalate_to_human in the same response.
   toolCancelledAfterHandoff: () => "Conversa encaminhada à recepção; esta ação não foi executada.",
-  // TODO(legal): LGPD opt-in wording must be reviewed by counsel.
+  // LGPD opt-in wording accepted by the owner (T221); counsel review recommended before a real pilot.
   askConsent: () =>
     "Para concluir, preciso da sua autorização para tratar seus dados (nome e telefone) com a finalidade de agendar sua consulta. Você autoriza? (responda SIM)",
 };

@@ -15,7 +15,8 @@ export const HORIZON_DAYS = 30; // book at most 30 days ahead
 export const CALENDAR_MAX_ATTEMPTS = 3;
 export const CALENDAR_RETRY_BASE_MS = 25;
 
-// Safety cap on the LLM tool-use loop. TODO(product): tune final value (NEEDS-USER).
+// Safety cap on the LLM tool-use loop (final, T225): one booking needs 3 tool calls; 8 leaves
+// room for one alternative slot plus recovery. A cost budget per conversation comes with 005.
 export const AGENT_MAX_ITERATIONS = 8;
 
 // Bounds on per-phone ConversationState (T239). One inbound message produces at most
