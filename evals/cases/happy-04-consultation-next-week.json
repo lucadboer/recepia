@@ -1,0 +1,161 @@
+{
+  "id": "happy-04-consultation-next-week",
+  "category": "happy_path",
+  "title": "Consulta semana que vem (lista truncada)",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000104"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma consulta para a semana que vem."
+    },
+    {
+      "text": "Segunda às 9h, por favor. Diego Teste."
+    },
+    {
+      "text": "SIM"
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-22T12:00:00Z",
+          "to": "2026-06-26T21:00:00Z",
+          "type": "consultation"
+        }
+      },
+      {
+        "text": "Na semana que vem tenho segunda 09:00, 09:30, 10:00… Qual dia e horário?"
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "consultation"
+        }
+      },
+      {
+        "text": "Reservei o horário para Diego Teste. Posso confirmar? (responda SIM)"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Diego Teste"
+        }
+      },
+      {
+        "text": "Confirmado! Até lá."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "consultation"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "2026-06-22T12:00:00.000Z",
+            "type": "consultation"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Diego Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 3,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        },
+        {
+          "name": "hold_slot"
+        },
+        {
+          "name": "confirm_booking"
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  }
+}

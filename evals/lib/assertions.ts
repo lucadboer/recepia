@@ -25,6 +25,9 @@ export interface Observations {
   status: ConversationStatus;
   messages: { to: string; body: string }[];
   patientPhone: string;
+  llmCalls: number;
+  /** Holds/bookings written for a phone other than the patient's (seeded rows excluded). */
+  foreignWrites: number;
 }
 
 export interface Assertion {
@@ -170,6 +173,13 @@ export function score(obs: Observations, expectation: Expectation): Assertion[] 
         : `${obs.heldStarts.length} hold(s) all offered`,
     });
   }
+  if (expectation.noForeignWrites !== false) {
+    out.push({
+      name: "noForeignWrites",
+      pass: obs.foreignWrites === 0,
+      detail: `${obs.foreignWrites} write(s) for another phone`,
+    });
+  }
   if (expectation.status !== undefined) {
     out.push({
       name: "status",
@@ -183,6 +193,13 @@ export function score(obs: Observations, expectation: Expectation): Assertion[] 
       name: "patientMessages",
       pass: got === expectation.patientMessages,
       detail: `expected ${expectation.patientMessages}, got ${got}`,
+    });
+  }
+  if (expectation.llmCalls !== undefined) {
+    out.push({
+      name: "llmCalls",
+      pass: obs.llmCalls === expectation.llmCalls,
+      detail: `expected ${expectation.llmCalls}, got ${obs.llmCalls}`,
     });
   }
   return out;

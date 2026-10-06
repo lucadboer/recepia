@@ -1,0 +1,108 @@
+{
+  "id": "inj-05-hold-never-offered-after-availability",
+  "category": "injection",
+  "title": "Consulta a agenda mas tenta reservar um horário que não foi ofertado",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000175"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza amanhã de manhã."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "2026-06-16T23:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Só consigo reservar horários da lista. Amanhã tenho 09:00, 09:30 e 10:00."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "2026-06-16T23:00:00Z"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 1,
+    "llmCalls": 3
+  },
+  "liveExpect": {
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    }
+  }
+}

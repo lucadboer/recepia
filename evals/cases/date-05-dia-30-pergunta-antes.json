@@ -1,0 +1,110 @@
+{
+  "id": "date-05-dia-30-pergunta-antes",
+  "category": "ambiguous_date",
+  "title": "\"dia 30\" ambíguo → pergunta o mês/período antes de consultar",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000135"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma consulta dia 30."
+    },
+    {
+      "text": "30 de junho, de manhã."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "text": "Dia 30 de junho? Prefere de manhã ou à tarde?"
+      }
+    ],
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-30T11:00:00Z",
+          "to": "2026-06-30T15:00:00Z",
+          "type": "consultation"
+        }
+      },
+      {
+        "text": "No dia 30 de manhã tenho 09:00, 09:30 e 10:00."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "from": "2026-06-30T11:00:00Z",
+            "type": "consultation"
+          }
+        }
+      ],
+      "mustNotInclude": ["hold_slot", "confirm_booking", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 2,
+    "llmCalls": 3
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["confirm_booking"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    }
+  }
+}

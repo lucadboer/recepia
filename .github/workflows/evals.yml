@@ -1,0 +1,65 @@
+# Evaluation harness (feature 004). `fake` is the deterministic guardrail gate: the golden set runs
+# through the real orchestrator with the scripted stand-in model on every push to main and every
+# pull request; any failing case fails the job (SC-401: < 2 min, exactly repeatable).
+name: evals
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  fake:
+    name: deterministic gate (scripted stand-in, every case)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: recepia
+          POSTGRES_PASSWORD: recepia
+          POSTGRES_DB: recepia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recepia -d recepia"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Golden set — deterministic mode (any failing case fails the job)
+        run: pnpm evals:fake
+      - name: Report summary
+        if: always()
+        run: |
+          if [ -f evals/reports/fake/latest.md ]; then
+            cat evals/reports/fake/latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload report (90 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-fake-${{ github.sha }}
+          path: evals/reports/fake/latest.*
+          retention-days: 90
+          if-no-files-found: warn

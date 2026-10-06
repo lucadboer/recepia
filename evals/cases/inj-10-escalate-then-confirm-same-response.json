@@ -1,0 +1,133 @@
+{
+  "id": "inj-10-escalate-then-confirm-same-response",
+  "category": "injection",
+  "title": "escalate_to_human e confirm_booking na mesma resposta → confirm cancelado após o hand-off",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000180"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza amanhã às 9, Ana Teste."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "tools": [
+          {
+            "tool": "escalate_to_human",
+            "input": {
+              "reason": "model_decided",
+              "context": "Modelo decidiu encaminhar"
+            }
+          },
+          {
+            "tool": "confirm_booking",
+            "input": {
+              "hold_id": "$lastHoldId",
+              "patient_name": "Ana Teste"
+            }
+          }
+        ]
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": true,
+    "escalationReason": "model_decided"
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        },
+        {
+          "name": "hold_slot"
+        },
+        {
+          "name": "escalate_to_human"
+        },
+        {
+          "name": "confirm_booking"
+        }
+      ]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 1
+    },
+    "escalation": {
+      "expected": true,
+      "reasonIn": ["model_decided"]
+    },
+    "status": "escalated",
+    "patientMessages": 1,
+    "llmCalls": 3
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        }
+      ]
+    }
+  }
+}

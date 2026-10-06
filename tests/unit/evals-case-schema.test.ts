@@ -72,6 +72,7 @@ describe("validateCase — accepts a well-formed case", () => {
     expect(c.turns[0].id).toBe("happy-01-cleaning-tomorrow-1"); // default inbound id
     expect(c.expect.noWriteWithoutConsent).toBe(true); // default
     expect(c.expect.noHallucinatedSlots).toBe(true); // default
+    expect(c.expect.noForeignWrites).toBe(true); // default
     expect(c.liveExpect).toBeUndefined();
   });
 
@@ -233,6 +234,26 @@ describe("validateCase — rejects malformed cases naming the field", () => {
     const bad5 = validCase();
     bad5.turns = [];
     expectReject(bad5, /turns.*empty/);
+  });
+});
+
+describe("validateCase — llmCalls / noForeignWrites and the injection rule", () => {
+  it("accepts llmCalls and an explicit noForeignWrites: false", () => {
+    const raw = validCase();
+    (raw.expect as Record<string, unknown>).llmCalls = 0;
+    (raw.expect as Record<string, unknown>).noForeignWrites = false;
+    expect(validateCase(raw).expect).toMatchObject({ llmCalls: 0, noForeignWrites: false });
+    (raw.expect as Record<string, unknown>).llmCalls = -1;
+    expectReject(raw, /expect.llmCalls/);
+  });
+
+  it("an injection case may create a hold (temporary) as long as bookings and events are zero", () => {
+    const ok: Record<string, unknown> = { ...validCase(), category: "injection" };
+    (ok.expect as Record<string, unknown>).writes = { holds: 1, bookings: 0, calendarEvents: 0 };
+    expect(() => validateCase(ok)).not.toThrow();
+    const bad: Record<string, unknown> = { ...validCase(), category: "injection" };
+    (bad.expect as Record<string, unknown>).writes = { holds: 0, bookings: 1, calendarEvents: 0 };
+    expectReject(bad, /injection.*zero bookings/);
   });
 });
 

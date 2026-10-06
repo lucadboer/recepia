@@ -182,15 +182,17 @@ export async function runCase(c: EvalCase, opts: RunCaseOptions): Promise<Execut
     llm: { turn: async () => ({ stopReason: "end_turn", content: [] }) },
   };
   const ctx = await seedCase(pool, c, seedDeps);
-  const llm = new MeasuringLLM(typeof opts.llm === "function" ? opts.llm(ctx) : opts.llm);
+  const inner = typeof opts.llm === "function" ? opts.llm(ctx) : opts.llm;
+  const llm = new MeasuringLLM(inner);
   const deps: AgentDeps = { ...seedDeps, llm };
 
   const errors: ExecutionError[] = [];
   const perTurnMs: number[] = [];
   const transcript: TranscriptLine[] = [];
   const t0 = performance.now();
-  for (const turn of c.turns) {
+  for (const [turnIndex, turn] of c.turns.entries()) {
     if (turn.delayMs) clock.advance(turn.delayMs);
+    if (isTurnAware(inner)) inner.beginTurn(turnIndex);
     transcript.push({ role: "patient", text: turn.text });
     const sentBefore = messaging.sent.length;
     const started = performance.now();
@@ -232,10 +234,20 @@ export async function runCase(c: EvalCase, opts: RunCaseOptions): Promise<Execut
   };
 }
 
+/** A scripted LLM that must be told which inbound turn is starting (see evals/lib/script.ts). */
+interface TurnAware {
+  beginTurn(turnIndex: number): void;
+}
+function isTurnAware(llm: LLMPort): llm is LLMPort & TurnAware {
+  return typeof (llm as Partial<TurnAware>).beginTurn === "function";
+}
+
 interface AuditRow {
-  id: number;
+  id: string;
   action: string;
   payload: Record<string, unknown> | null;
+  /** Phone of the booking the row points at (booking rows only). */
+  booking_phone: string | null;
 }
 
 async function collectObservations(
@@ -249,8 +261,13 @@ async function collectObservations(
   },
 ): Promise<Observations> {
   const phone = c.patient.phone;
+  // audit_log.id is a uuid: order by insertion time (each write is its own transaction, so
+  // created_at is strictly increasing in practice; id only breaks exact ties). Seeded rows
+  // write no audit, so everything here was written by the agent during this execution.
   const { rows: audit } = await pool.query<AuditRow>(
-    "SELECT id, action, payload FROM audit_log ORDER BY id",
+    `SELECT a.id, a.action, a.payload, b.patient_phone AS booking_phone
+     FROM audit_log a LEFT JOIN booking b ON b.id = a.entity_id
+     ORDER BY a.created_at, a.id`,
   );
   const state = await parts.conversations.load(phone);
   const history = state?.history ?? [];
@@ -259,7 +276,7 @@ async function collectObservations(
   // Holds/bookings/escalations of THIS conversation (the seed may contain other phones' rows).
   const holds = audit.filter((r) => r.action === "hold_created" && r.payload?.phone === phone);
   const { rows: ownHolds } = await pool.query<{ id: string; start_ts: Date }>(
-    "SELECT id, start_ts FROM booking WHERE patient_phone = $1 AND created_via = 'ai' ORDER BY id",
+    "SELECT id, start_ts FROM booking WHERE patient_phone = $1 AND created_via = 'ai' ORDER BY created_at, id",
     [phone],
   );
   const { rows: confirmed } = await pool.query<{ n: number }>(
@@ -270,15 +287,18 @@ async function collectObservations(
     .filter((r) => r.action === "escalated" && (r.payload?.phone ?? phone) === phone)
     .map((r) => ({ reason: String(r.payload?.reason ?? "unspecified") }));
 
-  // Consent in effect at each booking write, from the audit trail (append-only, ordered).
+  // Consent in effect at each booking write, from the audit trail (append-only, ordered), and
+  // writes that landed on another phone (the phone is injected from context, never from args).
   let consented = false;
   let writesWithoutConsent = 0;
+  let foreignWrites = 0;
   for (const r of audit) {
     if (r.payload?.phone === phone && r.action === "consent_recorded") consented = true;
     if (r.payload?.phone === phone && r.action === "consent_revoked") consented = false;
-    // booking_confirmed rows carry entity_id = booking id; scope to this patient's bookings.
-    if (r.action === "booking_confirmed" && !consented && (await isOwnBooking(pool, r, phone))) {
-      writesWithoutConsent++;
+    if (r.action === "hold_created" && r.payload?.phone !== phone) foreignWrites++;
+    if (r.action === "booking_confirmed") {
+      if (r.booking_phone !== phone) foreignWrites++;
+      else if (!consented) writesWithoutConsent++;
     }
   }
 
@@ -301,15 +321,9 @@ async function collectObservations(
     status: (state?.status ?? "active") as ConversationStatus,
     messages: parts.messaging.sent.map((m) => ({ to: m.to, body: m.body })),
     patientPhone: phone,
+    llmCalls: parts.llm.calls,
+    foreignWrites,
   };
-}
-
-async function isOwnBooking(pool: Pool, row: AuditRow, phone: string): Promise<boolean> {
-  const { rows } = await pool.query<{ patient_phone: string }>(
-    "SELECT b.patient_phone FROM audit_log a JOIN booking b ON b.id::text = a.entity_id WHERE a.id = $1",
-    [row.id],
-  );
-  return rows[0]?.patient_phone === phone;
 }
 
 /**

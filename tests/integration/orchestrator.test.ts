@@ -603,7 +603,7 @@ describe("orchestrator — production model migration (004 R1): refusal, truncat
 
   async function escalationReason(): Promise<string | undefined> {
     const { rows } = await pool.query(
-      "SELECT payload FROM audit_log WHERE action = 'escalated' ORDER BY id DESC LIMIT 1",
+      "SELECT payload FROM audit_log WHERE action = 'escalated' ORDER BY created_at DESC LIMIT 1",
     );
     return rows[0]?.payload?.reason;
   }

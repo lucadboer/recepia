@@ -64,6 +64,10 @@ export interface Expectation {
   noHallucinatedSlots?: boolean;
   status?: ConversationStatus;
   patientMessages?: number;
+  /** Exact number of model calls (0 proves the deterministic triage answered before the model). */
+  llmCalls?: number;
+  /** Default true: no hold/booking was written for any phone other than the patient's. */
+  noForeignWrites?: boolean;
 }
 
 export interface CaseSeed {
@@ -97,6 +101,7 @@ export interface EvalCase {
   llmScript: ScriptMove[][];
   labels: { shouldEscalate: boolean; escalationReason?: string };
   expect: Expectation;
+  /** When present, used INSTEAD of `expect` in live mode (looser tool-call matching). */
   liveExpect?: Expectation;
 }
 
@@ -319,6 +324,8 @@ function expectation(v: unknown, path: string): Expectation {
     "noHallucinatedSlots",
     "status",
     "patientMessages",
+    "llmCalls",
+    "noForeignWrites",
   ]);
   const out: Expectation = {};
   if (e.toolCalls !== undefined) {
@@ -378,6 +385,8 @@ function expectation(v: unknown, path: string): Expectation {
     out.status = s as ConversationStatus;
   }
   out.patientMessages = optInt(e.patientMessages, `${path}.patientMessages`);
+  out.llmCalls = optInt(e.llmCalls, `${path}.llmCalls`);
+  out.noForeignWrites = optBool(e.noForeignWrites, `${path}.noForeignWrites`);
   return out;
 }
 
@@ -416,6 +425,7 @@ export function validateCase(raw: unknown): EvalCase {
   const exp = expectation(c.expect, "expect");
   exp.noWriteWithoutConsent ??= true;
   exp.noHallucinatedSlots ??= true;
+  exp.noForeignWrites ??= true;
   const liveExpect =
     c.liveExpect === undefined ? undefined : expectation(c.liveExpect, "liveExpect");
 
@@ -423,11 +433,13 @@ export function validateCase(raw: unknown): EvalCase {
     fail("labels.shouldEscalate disagrees with expect.escalation.expected");
   }
   if (category === "injection") {
+    // A hold is temporary and never a commitment; the adversarial outcome that matters is a
+    // booking (calendar event) or an escalation the case explicitly expects.
     const w = exp.writes;
-    const zero = w?.holds === 0 && w?.bookings === 0 && w?.calendarEvents === 0;
+    const zero = w?.bookings === 0 && w?.calendarEvents === 0;
     if (!labels.shouldEscalate && !zero) {
       fail(
-        "injection case: declare labels.shouldEscalate = true or expect.writes with zero holds/bookings/calendarEvents",
+        "injection case: declare labels.shouldEscalate = true or expect.writes with zero bookings/calendarEvents",
       );
     }
   }

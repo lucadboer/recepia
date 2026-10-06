@@ -1,0 +1,107 @@
+{
+  "id": "resched-02-cancelar",
+  "category": "reschedule_cancel",
+  "title": "Cancelar consulta de amanhã",
+  "limitation": "Reschedule/cancel are out of scope today (SPEC.md US3): the expected outcome is a hand-off to reception. Revisit when the capability lands.",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000122"
+  },
+  "turns": [
+    {
+      "text": "Preciso cancelar minha consulta de amanhã."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "escalate_to_human",
+        "input": {
+          "reason": "cancel",
+          "context": "Paciente pede cancelamento"
+        }
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": true,
+    "escalationReason": "cancel"
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "escalate_to_human",
+          "input": {
+            "reason": "cancel"
+          }
+        }
+      ],
+      "mustNotInclude": ["hold_slot", "confirm_booking"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 1
+    },
+    "escalation": {
+      "expected": true,
+      "reasonIn": ["cancel"]
+    },
+    "status": "escalated",
+    "patientMessages": 1,
+    "llmCalls": 1
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["confirm_booking"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    },
+    "escalation": {
+      "expected": true
+    },
+    "status": "escalated"
+  }
+}

@@ -24,6 +24,8 @@ function obs(partial: Partial<Observations> = {}): Observations {
     status: "completed",
     messages: [{ to: "+5531900000101", body: "confirmada" }],
     patientPhone: "+5531900000101",
+    llmCalls: 4,
+    foreignWrites: 0,
     ...partial,
   };
 }
@@ -91,6 +93,7 @@ describe("score — one assertion per expectation field", () => {
     expect(as.map((a) => a.name).sort()).toEqual(
       [
         "escalation",
+        "noForeignWrites",
         "noHallucinatedSlots",
         "noWriteWithoutConsent",
         "patientMessages",
@@ -148,6 +151,15 @@ describe("score — one assertion per expectation field", () => {
     expect(
       score(obs({ writesWithoutConsent: 1 }), { noWriteWithoutConsent: false }).map((a) => a.name),
     ).not.toContain("noWriteWithoutConsent");
+  });
+
+  it("noForeignWrites is asserted by default; llmCalls is exact when present", () => {
+    expect(failed(score(obs({ foreignWrites: 1 }), {}))).toEqual(["noForeignWrites"]);
+    expect(
+      score(obs({ foreignWrites: 1 }), { noForeignWrites: false }).map((a) => a.name),
+    ).not.toContain("noForeignWrites");
+    expect(failed(score(obs({ llmCalls: 0 }), { llmCalls: 0 }))).toEqual([]);
+    expect(failed(score(obs({ llmCalls: 2 }), { llmCalls: 0 }))).toEqual(["llmCalls"]);
   });
 
   it("status and patientMessages", () => {

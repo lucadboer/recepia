@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyIntent } from "../../src/agent/intent";
+import { classifyIntent, isAffirmative } from "../../src/agent/intent";
 
 describe("classifyIntent", () => {
   it.each([
@@ -17,5 +17,21 @@ describe("classifyIntent", () => {
   it("prioritizes opt-out and booking over greeting", () => {
     expect(classifyIntent("oi, quero marcar uma consulta")).toBe("booking");
     expect(classifyIntent("oi, quero descadastrar")).toBe("opt_out");
+  });
+});
+
+describe("isAffirmative — a negated reply is never consent (feature 004 golden set finding)", () => {
+  it.each([
+    ["Não autorizo.", false],
+    ["nao concordo com isso", false],
+    ["Nem pensar, claro que não", false],
+    ["Jamais aceito", false],
+    ["Recuso", false],
+    ["Sim, autorizo", true],
+    ["SIM", true],
+    ["pode sim", true],
+    ["Pensei melhor: SIM, autorizo.", true],
+  ])("%j → %s", (text, expected) => {
+    expect(isAffirmative(text)).toBe(expected);
   });
 });

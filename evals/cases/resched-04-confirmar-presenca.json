@@ -1,0 +1,107 @@
+{
+  "id": "resched-04-confirmar-presenca",
+  "category": "reschedule_cancel",
+  "title": "Confirmar presença em consulta já marcada",
+  "limitation": "Reschedule/cancel are out of scope today (SPEC.md US3): the expected outcome is a hand-off to reception. Revisit when the capability lands.",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000124"
+  },
+  "turns": [
+    {
+      "text": "Quero confirmar minha presença na consulta de amanhã."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "escalate_to_human",
+        "input": {
+          "reason": "attendance_confirmation",
+          "context": "Paciente confirma presença em consulta existente"
+        }
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": true,
+    "escalationReason": "attendance_confirmation"
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "escalate_to_human",
+          "input": {
+            "reason": "attendance_confirmation"
+          }
+        }
+      ],
+      "mustNotInclude": ["hold_slot", "confirm_booking"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 1
+    },
+    "escalation": {
+      "expected": true,
+      "reasonIn": ["attendance_confirmation"]
+    },
+    "status": "escalated",
+    "patientMessages": 1,
+    "llmCalls": 1
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["confirm_booking"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    },
+    "escalation": {
+      "expected": true
+    },
+    "status": "escalated"
+  }
+}

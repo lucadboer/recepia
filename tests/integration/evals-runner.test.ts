@@ -89,6 +89,8 @@ describe("runCase — observations over the real orchestrator", () => {
     });
     expect(ex.transcript.map((t) => t.role)).toEqual(["patient", "agent"]);
     expect(ex.promptVersion).toMatch(/^v\d{3}\+[0-9a-f]{7}$/);
+    expect(ex.observations.llmCalls).toBe(4);
+    expect(ex.observations.foreignWrites).toBe(0);
   });
 
   it("a never-offered slot is rejected by the gate: holds = 0 and the call is observed as an error", async () => {
@@ -161,6 +163,7 @@ describe("runCase — observations over the real orchestrator", () => {
     expect(ex.errors).toEqual([]);
     expect(ex.llm.calls).toBe(0);
     expect(ex.observations.escalations).toEqual([{ reason: "urgency" }]);
+    expect(ex.observations.llmCalls).toBe(0);
     expect(ex.observations.writes.escalations).toBe(1);
     expect(ex.observations.status).toBe("escalated");
     // The committed reception notice is flushed from the outbox BEFORE the patient reply (FR-214).
@@ -190,6 +193,7 @@ describe("runCase — observations over the real orchestrator", () => {
     });
     expect(seen[0].otherConversationHoldId).toMatch(/\S/);
     expect(seen[0].foreignPhone).toBe(FOREIGN_PHONE);
+    expect(ex.observations.foreignWrites).toBe(0); // seeded rows are not writes of this execution
     expect(ex.observations.offeredSlots).not.toContain(FIRST_SLOT); // full (confirmed)
     expect(ex.observations.offeredSlots).not.toContain("2026-06-15T15:00:00.000Z"); // held by someone else
     expect(ex.observations.offeredSlots).toContain("2026-06-15T14:30:00.000Z");
