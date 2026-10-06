@@ -1,0 +1,51 @@
+import { SHUTDOWN_TIMEOUT_MS } from "../config";
+import { type JobHandle, stopJobs } from "../jobs/scheduler";
+import type { PerKeyQueue } from "./per-key-queue";
+
+export interface ShutdownOptions {
+  server: { close(cb?: (err?: Error) => void): unknown };
+  jobs: JobHandle[];
+  queue: PerKeyQueue;
+  /** Release shared resources (pool, adapters) — called exactly once, last. */
+  close: () => Promise<void>;
+  /** Budget to drain in-flight turns. Default: SHUTDOWN_TIMEOUT_MS. */
+  timeoutMs?: number;
+  log?: (msg: string) => void;
+}
+
+/**
+ * Graceful shutdown (T246): stop the background jobs, stop accepting connections, wait for
+ * in-flight inbound turns to finish (bounded), then close deps. Idempotent — repeated
+ * signals share the same in-flight promise. Resolves true when everything drained in time.
+ */
+export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
+  const timeoutMs = opts.timeoutMs ?? SHUTDOWN_TIMEOUT_MS;
+  const log = opts.log ?? ((m: string) => console.log(m));
+  let inProgress: Promise<boolean> | null = null;
+
+  async function run(): Promise<boolean> {
+    log("[shutdown] stopping background jobs and the HTTP listener");
+    stopJobs(opts.jobs);
+    const closed = new Promise<void>((resolve) => {
+      opts.server.close(() => resolve());
+    });
+    const drained = await opts.queue.drain(timeoutMs);
+    // Don't hang on lingering keep-alive sockets beyond the same budget.
+    await Promise.race([closed, sleep(timeoutMs)]);
+    await opts.close();
+    log(drained ? "[shutdown] clean" : "[shutdown] timed out with turns still in flight");
+    return drained;
+  }
+
+  return () => {
+    if (!inProgress) inProgress = run();
+    return inProgress;
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const t = setTimeout(resolve, ms);
+    t.unref?.();
+  });
+}

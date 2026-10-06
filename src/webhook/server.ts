@@ -1,12 +1,17 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { CloudStatus } from "../adapters/messaging/inbound/cloud-api-parser";
 import type { InboundMessage } from "../agent/types";
+import {
+  WEBHOOK_HEADERS_TIMEOUT_MS,
+  WEBHOOK_MAX_BODY_BYTES,
+  WEBHOOK_REQUEST_TIMEOUT_MS,
+} from "../config";
 import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
 import { parseAndAccept, RecentIds } from "./dispatch";
 import { PerKeyQueue } from "./per-key-queue";
 
 export interface CloudWebhookOptions {
-  /** URL prefix for the Cloud API webhook. Default: "/webhook/cloud". */
+  /** Exact path of the Cloud API webhook. Default: "/webhook/cloud". */
   basePath?: string;
   /** Verify token (GET challenge), chosen by you and set in the Meta dashboard. */
   verifyToken: string;
@@ -22,7 +27,7 @@ export interface CloudWebhookOptions {
 export interface WebhookServerOptions {
   /** Shared secret (WEBHOOK_SECRET) required in both the URL path and the Authorization header. */
   secret: string;
-  /** URL prefix before the secret token segment. Default: "/webhook/evolution". */
+  /** Path prefix before the secret token segment. Default: "/webhook/evolution". */
   basePath?: string;
   /** The ONLY business action: hand a fresh inbound message to the orchestrator. */
   onInbound: (msg: InboundMessage) => Promise<unknown>;
@@ -32,6 +37,8 @@ export interface WebhookServerOptions {
   cloud?: CloudWebhookOptions;
   /** Per-phone serialization of onInbound (shared by both providers). Default: a new queue. */
   queue?: PerKeyQueue;
+  /** Request bodies above this size are refused with 413. Default: WEBHOOK_MAX_BODY_BYTES. */
+  maxBodyBytes?: number;
 }
 
 function defaultLogStatus(s: CloudStatus): void {
@@ -42,18 +49,53 @@ function defaultLogStatus(s: CloudStatus): void {
 }
 
 /**
+ * Read the raw body with a hard size cap. Over the cap: answer 413 immediately (and ask the
+ * client to close) instead of buffering an unbounded payload; `onDone` is never called.
+ */
+function readBody(
+  req: IncomingMessage,
+  res: ServerResponse,
+  maxBytes: number,
+  onDone: (raw: Buffer) => void,
+): void {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let refused = false;
+  req.on("data", (c: Buffer) => {
+    if (refused) return;
+    size += c.length;
+    if (size > maxBytes) {
+      refused = true;
+      res.writeHead(413, { connection: "close" }).end();
+      req.resume(); // discard the rest; the socket closes after the response is flushed
+      return;
+    }
+    chunks.push(c);
+  });
+  req.on("error", () => {
+    if (!res.headersSent) res.writeHead(400).end();
+  });
+  req.on("end", () => {
+    if (!refused) onDone(Buffer.concat(chunks));
+  });
+}
+
+/**
  * Minimal webhook entrypoint over Node's built-in http (zero deps). It does NO business
  * logic: it verifies origin, parses/dedupes, acks fast, and hands fresh inbound messages
- * to onInbound (logging Cloud delivery statuses). Two independent paths:
- *   - Evolution (shared-secret, POST) at `/webhook/evolution/<token>` — unchanged.
+ * to onInbound (logging Cloud delivery statuses). Two independent paths, matched on the
+ * EXACT pathname (a path that merely shares a prefix is a 404, T229):
+ *   - Evolution (shared-secret, POST) at `/webhook/evolution/<token>` — exactly one segment.
  *   - Cloud API (GET verify + HMAC POST) at `/webhook/cloud` — only when `cloud` is set.
+ * Edge-dedupe ids are recorded only after onInbound SUCCEEDED, so a redelivery after a failed
+ * turn is processed again (at-least-once; DB idempotency by providerMessageId is the guarantee).
  */
 export function createWebhookServer(opts: WebhookServerOptions): Server {
   const basePath = opts.basePath ?? "/webhook/evolution";
   const recent = opts.recent ?? new RecentIds();
   const onError =
     opts.onError ?? ((err: unknown) => console.error("[webhook] inbound processing failed", err));
-
+  const maxBodyBytes = opts.maxBodyBytes ?? WEBHOOK_MAX_BODY_BYTES;
   // Messages from the same phone are processed one at a time (T240); different phones overlap.
   const queue = opts.queue ?? new PerKeyQueue();
 
@@ -62,17 +104,16 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const cloudRecent = cloud?.recent ?? new RecentIds();
   const logStatus = cloud?.onStatus ?? defaultLogStatus;
 
-  return createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = req.url ?? "";
+  const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    const { pathname, searchParams } = new URL(req.url ?? "/", "http://localhost");
 
-    // --- Cloud API path (only when configured) ---
-    if (cloud && url.startsWith(cloudBase)) {
+    // --- Cloud API path (only when configured; exact match) ---
+    if (cloud && pathname === cloudBase) {
       if (req.method === "GET") {
-        const q = new URL(url, "http://localhost").searchParams;
         const challenge = verifyChallenge({
-          mode: q.get("hub.mode") ?? undefined,
-          token: q.get("hub.verify_token") ?? undefined,
-          challenge: q.get("hub.challenge") ?? undefined,
+          mode: searchParams.get("hub.mode") ?? undefined,
+          token: searchParams.get("hub.verify_token") ?? undefined,
+          challenge: searchParams.get("hub.challenge") ?? undefined,
           expected: cloud.verifyToken,
         });
         if (challenge === null) {
@@ -83,11 +124,8 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
         return;
       }
       if (req.method === "POST") {
-        const chunks: Buffer[] = [];
-        req.on("data", (c: Buffer) => chunks.push(c));
-        req.on("error", () => res.writeHead(400).end());
-        req.on("end", () => {
-          const rawBody = Buffer.concat(chunks); // HMAC must be over the RAW bytes
+        readBody(req, res, maxBodyBytes, (rawBody) => {
+          // HMAC must be over the RAW bytes
           const result = parseAndAcceptCloud({
             rawBody,
             signatureHeader: req.headers["x-hub-signature-256"] as string | undefined,
@@ -104,6 +142,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
             void queue
               .run(m.phone, () => cloud.onInbound(m)) // messages → orchestrator
               .then((r) => {
+                cloudRecent.add(m.providerMessageId); // dedupe only a SUCCESSFUL turn (T230)
                 const status = (r as { status?: string } | null)?.status ?? "done";
                 console.log(`[webhook][cloud][handled] id=${m.providerMessageId} status=${status}`);
               })
@@ -116,20 +155,21 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
       return;
     }
 
-    // --- Evolution path (unchanged) ---
-    if (req.method !== "POST" || !url.startsWith(basePath)) {
+    // --- Evolution path: POST basePath + "/" + <exactly one token segment> ---
+    if (req.method !== "POST" || !pathname.startsWith(`${basePath}/`)) {
       res.writeHead(404).end();
       return;
     }
-    const pathToken = url.slice(basePath.length).replace(/^\//, "").split(/[/?]/)[0];
+    const rest = pathname.slice(basePath.length + 1);
+    if (rest.length === 0 || rest.includes("/")) {
+      res.writeHead(404).end();
+      return;
+    }
+    const pathToken = safeDecode(rest);
 
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("error", () => res.writeHead(400).end());
-    req.on("end", () => {
-      const rawBody = Buffer.concat(chunks).toString("utf8");
+    readBody(req, res, maxBodyBytes, (rawBody) => {
       const result = parseAndAccept({
-        rawBody,
+        rawBody: rawBody.toString("utf8"),
         authHeader: req.headers.authorization,
         pathToken,
         secret: opts.secret,
@@ -137,7 +177,25 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
       });
       res.writeHead(result.status).end();
       const msg = result.msg;
-      if (msg) void queue.run(msg.phone, () => opts.onInbound(msg)).catch(onError);
+      if (msg) {
+        void queue
+          .run(msg.phone, () => opts.onInbound(msg))
+          .then(() => recent.add(msg.providerMessageId)) // dedupe only a SUCCESSFUL turn (T230)
+          .catch(onError);
+      }
     });
   });
+
+  // Slowloris / stalled-upload protection (node:http built-ins).
+  server.headersTimeout = WEBHOOK_HEADERS_TIMEOUT_MS;
+  server.requestTimeout = WEBHOOK_REQUEST_TIMEOUT_MS;
+  return server;
+}
+
+function safeDecode(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
 }

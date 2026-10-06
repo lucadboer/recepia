@@ -162,23 +162,21 @@ describe("parseAndAcceptCloud — messages[] vs statuses[] are distinct", () => 
     expect(r.status).toBe(400);
   });
 
-  it("edge-dedupes a repeated inbound id", () => {
+  it("skips ids already recorded in `seen` but does NOT record them itself [T230]", () => {
     const seen = new RecentIds();
     const body = inbound("wamid.DUP");
     const sig = sign(body);
-    const first = parseAndAcceptCloud({
-      rawBody: Buffer.from(body),
-      signatureHeader: sig,
-      appSecret: SECRET,
-      seen,
-    });
-    const second = parseAndAcceptCloud({
-      rawBody: Buffer.from(body),
-      signatureHeader: sig,
-      appSecret: SECRET,
-      seen,
-    });
-    expect(first.msgs).toHaveLength(1);
-    expect(second.msgs).toHaveLength(0);
+    const parse = () =>
+      parseAndAcceptCloud({
+        rawBody: Buffer.from(body),
+        signatureHeader: sig,
+        appSecret: SECRET,
+        seen,
+      });
+    expect(parse().msgs).toHaveLength(1);
+    expect(seen.has("wamid.DUP")).toBe(false); // the server records after onInbound succeeds
+    expect(parse().msgs).toHaveLength(1);
+    seen.add("wamid.DUP");
+    expect(parse().msgs).toHaveLength(0);
   });
 });

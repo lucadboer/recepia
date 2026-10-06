@@ -155,6 +155,94 @@ describe("webhook server (node:http)", () => {
     expect(maxActive).toBeGreaterThanOrEqual(2); // different phones: overlapped
   });
 
+  it("returns 404 for a path that merely shares the prefix (/webhook/evolutionary) [T229]", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+      },
+    });
+    server = s.server;
+    const res = await fetch(`http://127.0.0.1:${s.port}${BASE}ary/${SECRET}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: upsert("PFX-1"),
+    });
+    expect(res.status).toBe(404); // not 401: this is not our route at all
+    await settle();
+    expect(calls).toBe(0);
+  });
+
+  it("returns 404 when the token is followed by extra path segments", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+      },
+    });
+    server = s.server;
+    const res = await fetch(`http://127.0.0.1:${s.port}${BASE}/${SECRET}/extra`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: upsert("SEG-1"),
+    });
+    expect(res.status).toBe(404);
+    await settle();
+    expect(calls).toBe(0);
+  });
+
+  it("rejects an oversized body with 413 and never calls onInbound [T246]", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+      },
+    });
+    server = s.server;
+    const huge = JSON.stringify({
+      event: "messages.upsert",
+      data: {
+        key: { remoteJid: "5531999998888@s.whatsapp.net", fromMe: false, id: "BIG-1" },
+        message: { conversation: "x".repeat(300 * 1024) }, // > 256 KiB
+      },
+    });
+    const res = await fetch(`http://127.0.0.1:${s.port}${BASE}/${SECRET}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: huge,
+    });
+    expect(res.status).toBe(413);
+    await settle();
+    expect(calls).toBe(0);
+  });
+
+  it("re-processes a redelivery after a FAILED turn, and skips it only after a successful one [T230]", async () => {
+    let calls = 0;
+    const s = await startSrv({
+      secret: SECRET,
+      onInbound: async () => {
+        calls++;
+        if (calls === 1) throw new Error("transient");
+      },
+      onError: () => {},
+    });
+    server = s.server;
+    const url = `http://127.0.0.1:${s.port}${BASE}/${SECRET}`;
+    const headers = { "content-type": "application/json", authorization: SECRET };
+    await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // fails
+    await settle();
+    expect(calls).toBe(1);
+    await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // redelivery → processed again
+    await settle();
+    expect(calls).toBe(2);
+    await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // now deduped at the edge
+    await settle();
+    expect(calls).toBe(2);
+  });
+
   it("returns 404 for non-POST methods and never calls onInbound", async () => {
     let calls = 0;
     const s = await startSrv({

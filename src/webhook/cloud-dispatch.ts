@@ -77,8 +77,7 @@ export function parseAndAcceptCloud(input: CloudDispatchInput): CloudDispatchRes
   const statuses = parseCloudApiStatuses(payload); // log-only, never routed
   const msgs: InboundMessage[] = [];
   for (const m of parseCloudApiInbound(payload)) {
-    if (input.seen.has(m.providerMessageId)) continue; // edge dedupe
-    input.seen.add(m.providerMessageId);
+    if (input.seen.has(m.providerMessageId)) continue; // edge dedupe (recorded by the server after success, T230)
     msgs.push(m);
   }
   return { status: 200, msgs, statuses };

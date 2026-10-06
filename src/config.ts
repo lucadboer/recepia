@@ -29,6 +29,12 @@ export const PROCESSED_IDS_MAX = 200;
 // continue" notice per interval; nothing else until reception releases the conversation.
 export const HANDOFF_NOTICE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
+// Webhook hardening (T246).
+export const WEBHOOK_MAX_BODY_BYTES = 256 * 1024; // provider payloads are a few KiB
+export const WEBHOOK_HEADERS_TIMEOUT_MS = 5_000;
+export const WEBHOOK_REQUEST_TIMEOUT_MS = 10_000; // must exceed headersTimeout
+export const SHUTDOWN_TIMEOUT_MS = 15_000; // budget to drain in-flight turns on SIGTERM
+
 // Background jobs (T245). The orchestrator also flushes the outbox within each turn; the
 // poller only catches retries and anything a crashed turn left behind.
 export const OUTBOX_POLL_MS = 15_000;

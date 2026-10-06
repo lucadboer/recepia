@@ -72,13 +72,20 @@ describe("parseAndAccept", () => {
     expect(r.msg).toBeUndefined();
   });
 
-  it("edge-dedupes a repeated providerMessageId -> second call 200, no msg", () => {
+  it("skips an id already recorded in `seen` (200, no msg) but does NOT record ids itself [T230]", () => {
     const seen = new RecentIds();
     const first = parseAndAccept(base({ seen }));
-    const second = parseAndAccept(base({ seen }));
     expect(first.msg).toBeDefined();
-    expect(second.status).toBe(200);
-    expect(second.msg).toBeUndefined();
+    // Recording is the server's job, AFTER onInbound succeeded — so a failed turn can be
+    // re-processed on redelivery. The pure parser only consults the set.
+    expect(seen.has("M1")).toBe(false);
+    const again = parseAndAccept(base({ seen }));
+    expect(again.msg).toBeDefined();
+
+    seen.add("M1");
+    const skipped = parseAndAccept(base({ seen }));
+    expect(skipped.status).toBe(200);
+    expect(skipped.msg).toBeUndefined();
   });
 
   it("rejects when the path token matches but the header is WRONG -> 401", () => {
