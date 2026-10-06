@@ -59,8 +59,9 @@ Commits a held slot: writes the calendar event and the patient confirmation.
 
 **Guarantees**
 - Requires a valid, non-expired hold; otherwise `HoldExpiredError` (explicit, recoverable — caller re-offers slots). Never writes silently.
-- Writes **exactly one** event via `CalendarPort.createEvent` (idempotency key = booking id), sets `google_event_id`, flips `status='held' → 'confirmed'`, then sends confirmation via `MessagingPort`.
-- **Idempotent**: a repeat for an already-confirmed hold returns the same booking; no duplicate event/message.
+- Writes **exactly one** event via `CalendarPort.createEvent` (idempotency key = booking id), sets `google_event_id`, flips `status='held' → 'confirmed'`, and *(amended 2026-10-05, 002 Phase 11)* **enqueues** the pt-BR confirmation as an `outbox_message` row **in the same transaction** as the flip and the `booking_confirmed` audit row (whose payload carries the `outboxId`). Delivery happens through `dispatchOutbox` (at-least-once, retries, dead-letter + reception notification) — see `specs/002-conversational-orchestration/contracts/orchestration.md`.
+- Returns `{ booking, outcome: "confirmed" | "already_confirmed" }`; the booking value is assigned only after the transaction's COMMIT resolves (a failed COMMIT never yields a confirmed result).
+- **Idempotent**: a repeat for an already-confirmed hold returns the same booking with `outcome: "already_confirmed"`; no duplicate event or outbox row.
 - On calendar-write failure: retry briefly (≤ 3, short backoff); if still failing → `escalate_to_human` + release the hold + raise `CalendarWriteError`; **no** patient confirmation without a written event (FR-021).
 - Writes `audit_log` (`booking_confirmed`) in the same transaction as the state flip.
 
@@ -73,14 +74,14 @@ Commits a held slot: writes the calendar event and the patient confirmation.
 
 ---
 
-## `escalate_to_human(reason, context) -> void`
+## `escalate_to_human({ reason, phone, context, summary? }) -> void`
 
-Hands a request to reception and ends the autonomous attempt.
+Hands a request to reception and ends the autonomous attempt. *(Signature amended 2026-10-05, 002 Phase 11 — previously `(reason, context)`.)*
 
 **Guarantees**
-- Notifies reception via `MessagingPort` with the conversation context.
-- Creates no booking/hold; ends the autonomous attempt.
-- Writes `audit_log` (`escalated`) with `reason` and `context`.
+- Notifies reception with the patient's `phone` (null only for patient-less system escalations such as an empty horizon), the `reason`, the triggering `context`, and an optional deterministic `summary` (last patient/assistant lines; never LLM-generated).
+- The reception notification is enqueued as an `outbox_message` row **in the same transaction** as the `escalated` audit row (payload: `reason`, `context`, `phone`, `summary`, `outboxId`); delivery via `dispatchOutbox` (at-least-once).
+- Creates no booking/hold; ends the autonomous attempt (the orchestrator enters the handed-off state).
 - Reasons covered in this slice: non-routine type (`OutOfScopeError`), empty horizon (no free slot within 30 days), unrecoverable calendar failure, ambiguity.
 
 **Required Tests**
