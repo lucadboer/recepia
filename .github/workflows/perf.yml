@@ -1,0 +1,61 @@
+# Performance smoke: real webhook + orchestrator + Postgres with fake LLM/Calendar/Messaging.
+# Hard gate: zero overbooking. Soft gate: p95 turn latency under budget (+10% tolerance).
+# Runs on main, nightly, on demand, and on PRs labelled `perf`.
+name: perf
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * *" # 02:00 America/Sao_Paulo
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, opened, reopened]
+
+concurrency:
+  group: perf-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: webhook load smoke (fakes) — no overbooking, p95 budget
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'perf')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: recepia
+          POSTGRES_PASSWORD: recepia
+          POSTGRES_DB: recepia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recepia -d recepia"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+      PERF_CONVERSATIONS: "40"
+      PERF_P95_BUDGET_MS: "1500"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Perf smoke (2 repetitions, median p95 reported)
+        run: pnpm perf:smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-report
+          path: perf-report.json
+          retention-days: 30
