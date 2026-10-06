@@ -118,7 +118,7 @@ export async function dispatchTool(
         if (!hasActiveHold(state, holdId)) {
           return result(state, "Reserva não reconhecida nesta conversa.", true);
         }
-        const booking = await confirmBooking(deps, holdId, { phone, name: patientName });
+        const { booking } = await confirmBooking(deps, holdId, { phone, name: patientName });
         state = recordConfirmed(state, booking.id, now);
         return result(
           state,

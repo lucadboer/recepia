@@ -72,7 +72,11 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
 
     expect(r.status).toBe("replied");
     expect(h.calendar.createdCount).toBe(1);
-    expect(h.messaging.sent.some((m) => m.to === PHONE)).toBe(true);
+    // The ONE patient message is the deterministic confirmation, delivered through the
+    // outbox within the turn (nudge after the tool loop) — not the LLM's closing text.
+    const toPatient = h.messaging.sent.filter((m) => m.to === PHONE);
+    expect(toPatient).toHaveLength(1);
+    expect(toPatient[0].body).toContain("confirmada");
     expect(await countAudit(pool, "booking_confirmed")).toBe(1);
     // The model is told today's date/time/timezone so it can build correct ISO ranges (FR-213).
     expect(llm.receivedInputs[0].system).toContain("segunda-feira");

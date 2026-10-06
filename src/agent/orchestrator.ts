@@ -1,5 +1,6 @@
 import { AGENT_MAX_ITERATIONS, CLINIC_TIMEZONE } from "../config";
 import type { Deps } from "../deps";
+import { dispatchOutbox } from "../jobs/dispatch-outbox";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent } from "../ports/llm-port";
 import { escalateToHuman } from "../tools/escalate-to-human";
@@ -152,6 +153,14 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     }
     state = appendMessage(state, { role: "user", content: toolResults }, now);
   }
+
+  // Deliver what the tools committed this turn (confirmation / escalation rows in the
+  // outbox) BEFORE our own closing reply, so the patient reads the confirmation first.
+  // Through turnDeps, so a delivered confirmation is counted below. Dispatcher errors
+  // never fail the turn — the scheduled dispatcher retries (FR-214).
+  await dispatchOutbox(turnDeps).catch((err) => {
+    console.error("[orchestrator] outbox dispatch failed", err);
+  });
 
   // A confirmation counts as delivered only if a patient-facing message actually went
   // out during the tool loop (a fresh confirm_booking). Idempotent re-confirms send

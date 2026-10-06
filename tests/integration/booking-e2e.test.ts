@@ -5,6 +5,7 @@ import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import type { Pool } from "../../src/db/pool";
 import type { Deps } from "../../src/deps";
 import { SlotUnavailableError } from "../../src/domain/errors";
+import { dispatchOutbox } from "../../src/jobs/dispatch-outbox";
 import { confirmBooking } from "../../src/tools/confirm-booking";
 import { getAvailability } from "../../src/tools/get-availability";
 import { holdSlot } from "../../src/tools/hold-slot";
@@ -48,10 +49,15 @@ describe("US1 end-to-end — book a routine slot with no human", () => {
 
     const slot = slots[0];
     const hold = await holdSlot(d, { start: slot.start, type: "cleaning" }, { phone: "+55joao" });
-    const booking = await confirmBooking(d, hold.id, { phone: "+55joao", name: "João" });
+    const { booking, outcome } = await confirmBooking(d, hold.id, {
+      phone: "+55joao",
+      name: "João",
+    });
 
+    expect(outcome).toBe("confirmed");
     expect(booking.status).toBe("confirmed");
     expect((d.calendar as FakeCalendar).createdCount).toBe(1);
+    await dispatchOutbox(d); // the confirmation is committed with the booking, delivered by the outbox
     expect((d.messaging as FakeMessaging).sent.some((m) => m.to === "+55joao")).toBe(true);
     expect(await countAudit(pool, "hold_created")).toBeGreaterThanOrEqual(1);
     expect(await countAudit(pool, "booking_confirmed")).toBe(1);
