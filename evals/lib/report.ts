@@ -6,7 +6,10 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Assertion } from "./assertions";
 import type { Category } from "./case-schema";
-import type { Metrics } from "./metrics";
+import type { BaselineComparison, Metrics } from "./metrics";
+
+export type { BaselineComparison } from "./metrics";
+
 import type { ExecutionError } from "./runner";
 
 export const HONESTY_LINE =
@@ -39,19 +42,6 @@ export interface CaseReport {
   executions: ExecutionReport[];
 }
 
-export interface BaselineComparison {
-  baselineDate: string;
-  baselineModel: string | null;
-  baselinePromptVersion: string;
-  regressions: {
-    metric: string;
-    baseline: number | null;
-    current: number | null;
-    delta: number | null;
-  }[];
-  pass: boolean;
-}
-
 export interface RunReport {
   schemaVersion: 1;
   mode: "fake" | "live";
@@ -62,6 +52,10 @@ export interface RunReport {
   durationMs: number;
   repetitions: number;
   capUsd: number | null;
+  /** True when the spend cap stopped the run before every execution (FR-411). */
+  partial: boolean;
+  /** Estimated spend of this run, null when the model has no price. */
+  spentUsd: number | null;
   judge: { enabled: boolean; model?: string; rubricVersion?: string };
   honesty: string;
   summary: { cases: number; executions: number; passed: number; failed: number; errors: number };
@@ -87,6 +81,8 @@ function orderedRun(run: RunReport): RunReport {
     durationMs: run.durationMs,
     repetitions: run.repetitions,
     capUsd: run.capUsd,
+    partial: run.partial,
+    spentUsd: run.spentUsd,
     judge: run.judge,
     honesty: run.honesty,
     summary: run.summary,
@@ -114,7 +110,13 @@ export function renderMarkdown(run: RunReport): string {
   lines.push(`- date: ${run.date}`);
   lines.push(`- duration: ${seconds(run.durationMs)}`);
   lines.push(`- repetitions per case: ${run.repetitions}`);
-  if (run.capUsd !== null) lines.push(`- spend cap: US$ ${run.capUsd.toFixed(2)}`);
+  if (run.capUsd !== null) {
+    lines.push(
+      `- spend cap: US$ ${run.capUsd.toFixed(2)} · spent (estimate): ${usd(run.spentUsd)}`,
+    );
+  }
+  if (run.partial)
+    lines.push("- **PARTIAL RUN**: stopped by the spend cap before every execution ran");
   lines.push(
     `- judge: ${run.judge.enabled ? `${run.judge.model} (rubric ${run.judge.rubricVersion})` : "not run"}`,
   );
@@ -175,7 +177,7 @@ export function renderMarkdown(run: RunReport): string {
     lines.push("## Baseline comparison");
     lines.push("");
     lines.push(
-      `Baseline: ${run.baseline.baselineDate} · ${run.baseline.baselineModel ?? "—"} · ${run.baseline.baselinePromptVersion} → **${run.baseline.pass ? "no regression" : "REGRESSION"}**`,
+      `Baseline: ${run.baseline.baselineDate} · ${run.baseline.baselineModel ?? "—"} · ${run.baseline.baselinePromptVersion} · tolerance ${run.baseline.tolerancePp} pp → **${run.baseline.pass ? "no regression" : "REGRESSION"}**`,
     );
     if (run.baseline.regressions.length) {
       lines.push("");

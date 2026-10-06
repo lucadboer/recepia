@@ -1,15 +1,41 @@
-# Evaluation harness (feature 004). `fake` is the deterministic guardrail gate: the golden set runs
-# through the real orchestrator with the scripted stand-in model on every push to main and every
-# pull request; any failing case fails the job (SC-401: < 2 min, exactly repeatable).
+# Evaluation harness (feature 004).
+#  - `fake`: the deterministic guardrail gate — the golden set runs through the real orchestrator
+#    with the scripted stand-in on every push to main and every pull request; any failing case
+#    fails the job (SC-401: < 2 min, exactly repeatable).
+#  - `live`: the same golden set against the production model (claude-sonnet-5-5) weekly, on
+#    demand, and on pull requests that touch prompts/**; compared with evals/baseline.json; under a
+#    spend cap. Skipped explicitly (never a pass) when ANTHROPIC_API_KEY is not configured as a
+#    repository secret. Scheduled/dispatched runs publish their report through a pull request —
+#    never a direct commit; the baseline is never written by automation (FR-406, FR-407).
 name: evals
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 6 * * 0" # Sunday 06:00 UTC — weekly live run
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Model id (empty = the production model)"
+        required: false
+        default: ""
+      repetitions:
+        description: "Executions per case"
+        required: false
+        default: "3"
+      cap_usd:
+        description: "Spend cap for this run (USD)"
+        required: false
+        default: "5"
+      judge:
+        description: "Also run the tone/clarity judge (different model, never a gate)"
+        type: boolean
+        default: false
 
 concurrency:
-  group: evals-${{ github.ref }}
+  group: evals-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
@@ -21,6 +47,7 @@ env:
 jobs:
   fake:
     name: deterministic gate (scripted stand-in, every case)
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     services:
@@ -49,6 +76,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Golden set — deterministic mode (any failing case fails the job)
         run: pnpm evals:fake
+      - name: README block equals the latest published report (numbers are never hand-written)
+        run: pnpm evals:readme --check
       - name: Report summary
         if: always()
         run: |
@@ -63,3 +92,105 @@ jobs:
           path: evals/reports/fake/latest.*
           retention-days: 90
           if-no-files-found: warn
+
+  live:
+    name: live metrics (production model vs committed baseline)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25 # SC-406: a full run must finish under 20 minutes
+    permissions:
+      contents: write
+      pull-requests: write
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: recepia
+          POSTGRES_PASSWORD: recepia
+          POSTGRES_DB: recepia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recepia -d recepia"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Does this pull request touch the versioned prompt?
+        id: prompt
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^prompts/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::prompts/** unchanged — the live run is not required for this pull request"
+          fi
+      - name: Credential check
+        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY is not configured as a repository secret — the live evaluation is SKIPPED (this is not a pass)"
+          fi
+      - uses: pnpm/action-setup@v4
+        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
+      - uses: actions/setup-node@v4
+        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
+      - name: Live run (the CLI exits 0 with a notice when the key is absent)
+        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
+        env:
+          EVALS_REPETITIONS: ${{ github.event.inputs.repetitions || '3' }}
+          EVALS_CAP_USD: ${{ github.event.inputs.cap_usd || '5' }}
+        run: |
+          args=()
+          if [ -n "${{ github.event.inputs.model }}" ]; then args+=(--model "${{ github.event.inputs.model }}"); fi
+          if [ "${{ github.event.inputs.judge }}" = "true" ]; then args+=(--judge); fi
+          pnpm evals:live "${args[@]}"
+      - name: Report summary
+        if: always()
+        run: |
+          if [ -f evals/reports/latest.md ]; then
+            cat evals/reports/latest.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload report (90 days)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evals-live-${{ github.run_id }}
+          path: evals/reports/latest.*
+          retention-days: 90
+          if-no-files-found: ignore
+      - name: Publish the report through a pull request (scheduled / dispatched runs only)
+        if: success() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.ANTHROPIC_API_KEY != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pnpm evals:readme
+          day="$(date -u +%Y-%m-%d)"
+          branch="evals/report-${day}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add evals/reports/latest.json evals/reports/latest.md README.md
+          if git diff --cached --quiet; then
+            echo "nothing to publish (report unchanged)"
+            exit 0
+          fi
+          git commit -m "evals: live report ${day} (automated run, feature 004)"
+          git push --force-with-lease origin "$branch"
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq 'length')" = "0" ]; then
+            gh pr create --head "$branch" --base main \
+              --title "evals: live report ${day}" \
+              --body "Automated live evaluation run (feature 004, FR-406). Review the report and the README block; \`evals/baseline.json\` is never updated by automation — change it in a reviewed PR when the numbers should become the new reference. Note: pull requests opened with the workflow token do not trigger CI; close and reopen the PR (or push an empty commit) to run the checks."
+          fi
