@@ -8,7 +8,8 @@ export type AuditAction =
   | "calendar_orphan_compensated"
   | "escalated"
   | "consent_recorded"
-  | "consent_revoked";
+  | "consent_revoked"
+  | "outbox_dead_letter";
 
 export interface AuditEntry {
   entity: string;
