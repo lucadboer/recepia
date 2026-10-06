@@ -1,6 +1,7 @@
 // Patient-facing strings — Portuguese only (FR-019, constitution).
 
-import { type AppointmentType, CLINIC_UTC_OFFSET_MINUTES } from "./config";
+import type { AppointmentType } from "./config";
+import { toLocalParts } from "./domain/time";
 
 const TYPE_LABELS_PT: Record<AppointmentType, string> = {
   evaluation: "avaliação",
@@ -9,14 +10,12 @@ const TYPE_LABELS_PT: Record<AppointmentType, string> = {
   consultation: "consulta",
 };
 
-/** Render an instant in clinic-local time (fixed offset) as DD/MM/YYYY às HH:MM. */
+/** Render an instant in clinic-local time (IANA zone, DST-aware) as DD/MM/YYYY às HH:MM. */
 export function formatSlotPt(start: Date): string {
-  const local = new Date(start.getTime() + CLINIC_UTC_OFFSET_MINUTES * 60_000);
-  const dd = String(local.getUTCDate()).padStart(2, "0");
-  const mm = String(local.getUTCMonth() + 1).padStart(2, "0");
-  const yyyy = local.getUTCFullYear();
-  const hh = String(local.getUTCHours()).padStart(2, "0");
-  const mi = String(local.getUTCMinutes()).padStart(2, "0");
+  const { dateStr, minutesOfDay } = toLocalParts(start);
+  const [yyyy, mm, dd] = dateStr.split("-") as [string, string, string];
+  const hh = String(Math.floor(minutesOfDay / 60)).padStart(2, "0");
+  const mi = String(minutesOfDay % 60).padStart(2, "0");
   return `${dd}/${mm}/${yyyy} às ${hh}:${mi}`;
 }
 

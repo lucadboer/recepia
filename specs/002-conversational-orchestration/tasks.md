@@ -83,7 +83,7 @@ Anthropic key+model (see `claude-api` skill), Google Calendar creds, WhatsApp Ev
 
 - [ ] T236 Escalations carry the patient phone + a deterministic last-N conversation summary (triage path, max_iterations path, `escalate_to_human` tool, `confirm_booking` failure paths), per FR-204 (amended)
 - [ ] T237 Handed-off state: `status = escalated` short-circuits the loop (no LLM call, no second reception notification); one pt-BR notice per `HANDOFF_NOTICE_INTERVAL_MS`; opt-out still honoured; `completed` conversations reset on the next inbound keeping dedupe ids; `pnpm conversation:release <phone>` CLI + optional `HANDOFF_AUTO_RELEASE_HOURS`, per FR-211, FR-212
-- [ ] T238 IANA timezone via `Intl` in `domain/time.ts` + `messages.ts` (drop `CLINIC_UTC_OFFSET_MINUTES`); dated `buildSystemPrompt({ now, timezone })` so the model can build correct ISO ranges, per FR-213
+- [x] T238 IANA timezone via `Intl` in `domain/time.ts` + `messages.ts` (drop `CLINIC_UTC_OFFSET_MINUTES`); dated `buildSystemPrompt({ now, timezone })` so the model can build correct ISO ranges, per FR-213
 - [ ] T239 Bound `ConversationState`: history trimmed at user-turn boundaries (tool_use/tool_result pairs never split), past offered slots pruned, caps on offered slots / active holds / processed ids, per plan "state bounds"
 - [ ] T240 Optimistic concurrency: `conversation_state.version` (migration 007) + `ConversationConflictError` on stale save; per-phone in-process serialization in the webhook, per plan "concurrency"
 - [ ] T241 Transactional outbox: `outbox_message` table (migration 008) + repo + `dispatchOutbox` job (`FOR UPDATE SKIP LOCKED`, backoff, dead-letter audit + escalation), per FR-214

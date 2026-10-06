@@ -1,4 +1,4 @@
-import { AGENT_MAX_ITERATIONS } from "../config";
+import { AGENT_MAX_ITERATIONS, CLINIC_TIMEZONE } from "../config";
 import type { Deps } from "../deps";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent } from "../ports/llm-port";
@@ -81,7 +81,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   }
 
   // 4. Bounded LLM tool-use loop.
-  const system = buildSystemPrompt();
+  const system = buildSystemPrompt({ now, timezone: CLINIC_TIMEZONE });
   let finalText: string | null = null;
   // "Confirmation delivered" must mean a confirmation message was REALLY sent to the
   // patient this turn — not merely that the confirm tool returned without error (an

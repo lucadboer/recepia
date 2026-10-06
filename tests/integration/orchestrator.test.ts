@@ -74,6 +74,10 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(h.calendar.createdCount).toBe(1);
     expect(h.messaging.sent.some((m) => m.to === PHONE)).toBe(true);
     expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    // The model is told today's date/time/timezone so it can build correct ISO ranges (FR-213).
+    expect(llm.receivedInputs[0].system).toContain("segunda-feira");
+    expect(llm.receivedInputs[0].system).toContain("15/06/2026");
+    expect(llm.receivedInputs[0].system).toContain("America/Sao_Paulo");
     const { rows } = await pool.query(
       "SELECT consent_at, created_via FROM booking WHERE patient_phone = $1 AND status = 'confirmed'",
       [PHONE],

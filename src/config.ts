@@ -2,12 +2,9 @@
 // Business hours and per-day capacity live in the database (capacity_rule /
 // capacity_override); these are the fixed knobs decided in spec + clarify.
 
+// IANA zone used for every clinic-local computation and patient-facing date (FR-213).
+// Resolved through Intl at runtime (DST-aware), never a fixed UTC offset.
 export const CLINIC_TIMEZONE = "America/Sao_Paulo";
-
-// Brazil has had no DST since 2019, so a fixed UTC offset is correct and keeps
-// the slot math pure/deterministic. If DST is ever reintroduced, swap this for a
-// tz-aware conversion (Intl/Temporal). Documented assumption.
-export const CLINIC_UTC_OFFSET_MINUTES = -180; // UTC-03:00
 
 export const SLOT_MINUTES = 30; // uniform routine duration + grid step (MVP)
 export const HOLD_TTL_MS = 10 * 60 * 1000; // 10 minutes
