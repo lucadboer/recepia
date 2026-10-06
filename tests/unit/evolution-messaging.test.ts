@@ -55,9 +55,12 @@ describe("EvolutionMessaging", () => {
     ["", "k", ""],
     ["b", "", ""],
     ["", "", ""],
-  ])("throws NotConfigured for an incomplete cred combo (base=%j key=%j inst=%j)", (base, key, inst) => {
-    expect(() => new EvolutionMessaging(base, key, inst)).toThrow(NotConfigured);
-  });
+  ])(
+    "throws NotConfigured for an incomplete cred combo (base=%j key=%j inst=%j)",
+    (base, key, inst) => {
+      expect(() => new EvolutionMessaging(base, key, inst)).toThrow(NotConfigured);
+    },
+  );
 
   it("includes the HTTP status (and provider detail) in the MessagingSendError message", async () => {
     const { fetchFn } = recorder({ ok: false, status: 502, text: "upstream down" });

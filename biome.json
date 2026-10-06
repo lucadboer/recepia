@@ -11,6 +11,6 @@
     "lineWidth": 100
   },
   "files": {
-    "includes": ["src/**", "tests/**"]
+    "includes": ["src/**", "tests/**", "scripts/**"]
   }
 }
