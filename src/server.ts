@@ -1,6 +1,7 @@
 import { handleInbound } from "./agent/orchestrator";
 import type { InboundMessage } from "./agent/types";
 import { buildAgentDeps } from "./composition";
+import { startJobs } from "./jobs/scheduler";
 import { type CloudWebhookOptions, createWebhookServer } from "./webhook/server";
 
 /**
@@ -29,8 +30,11 @@ const cloud: CloudWebhookOptions | undefined =
     : undefined;
 
 const server = createWebhookServer({ secret, onInbound: (msg) => handleInbound(deps, msg), cloud });
+// Background jobs: outbox delivery (retries) + hold-expiry sweep (T245).
+const jobs = startJobs(deps);
 server.listen(port, () => {
   console.log(`[recepia] webhook listening on :${port}`);
+  console.log(`  jobs:      ${jobs.map((j) => j.name).join(", ")}`);
   console.log("  evolution: POST /webhook/evolution/<token>");
   console.log(
     cloud

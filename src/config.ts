@@ -25,6 +25,11 @@ export const OFFERED_SLOTS_MAX = 60;
 export const ACTIVE_HOLDS_MAX = 10;
 export const PROCESSED_IDS_MAX = 200;
 
+// Background jobs (T245). The orchestrator also flushes the outbox within each turn; the
+// poller only catches retries and anything a crashed turn left behind.
+export const OUTBOX_POLL_MS = 15_000;
+export const HOLD_SWEEP_MS = 60_000;
+
 export const ROUTINE_TYPES = ["evaluation", "cleaning", "follow_up", "consultation"] as const;
 export type AppointmentType = (typeof ROUTINE_TYPES)[number];
 
