@@ -33,16 +33,29 @@ export interface ToolDispatchResult {
   content: string; // tool_result content fed back to the LLM
   isError: boolean;
   state: ConversationState;
+  /** The tool handed the conversation to reception — the orchestrator must stop the loop. */
   escalated: boolean;
+  /**
+   * The tool committed a patient-facing message (a fresh confirm_booking enqueued the
+   * confirmation). Role-based, not phone-based (T235): the orchestrator suppresses its own
+   * closing reply so the patient gets exactly one message (T227).
+   */
+  patientNotified: boolean;
 }
 
 function result(
   state: ConversationState,
   content: string,
   isError: boolean,
-  escalated = false,
+  flags: Partial<Pick<ToolDispatchResult, "escalated" | "patientNotified">> = {},
 ): ToolDispatchResult {
-  return { content, isError, state, escalated };
+  return {
+    content,
+    isError,
+    state,
+    escalated: flags.escalated ?? false,
+    patientNotified: flags.patientNotified ?? false,
+  };
 }
 
 function asString(v: unknown): string | null {
@@ -118,7 +131,10 @@ export async function dispatchTool(
         if (!hasActiveHold(state, holdId)) {
           return result(state, "Reserva não reconhecida nesta conversa.", true);
         }
-        const { booking } = await confirmBooking(deps, holdId, { phone, name: patientName });
+        const { booking, outcome } = await confirmBooking(deps, holdId, {
+          phone,
+          name: patientName,
+        });
         state = recordConfirmed(state, booking.id, now);
         return result(
           state,
@@ -128,6 +144,7 @@ export async function dispatchTool(
             start: booking.start.toISOString(),
           }),
           false,
+          { patientNotified: outcome === "confirmed" },
         );
       }
 
@@ -141,7 +158,7 @@ export async function dispatchTool(
           summary: summarizeHistory(state.history),
         });
         state = markEscalated(state, now);
-        return result(state, JSON.stringify({ escalated: true }), false, true);
+        return result(state, JSON.stringify({ escalated: true }), false, { escalated: true });
       }
 
       default:

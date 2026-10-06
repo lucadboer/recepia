@@ -64,9 +64,9 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   };
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
   // our own patient-facing reply. Dispatcher errors never fail the turn — the scheduled
-  // dispatcher retries (FR-214). `via` lets the tool loop count patient sends (T227).
-  const flushOutbox = async (via: AgentDeps = deps): Promise<void> => {
-    await dispatchOutbox(via).catch((err) => {
+  // dispatcher retries (FR-214).
+  const flushOutbox = async (): Promise<void> => {
+    await dispatchOutbox(deps).catch((err) => {
       console.error("[orchestrator] outbox dispatch failed", err);
     });
   };
@@ -110,20 +110,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // 4. Bounded LLM tool-use loop.
   const system = buildSystemPrompt({ now, timezone: CLINIC_TIMEZONE });
   let finalText: string | null = null;
-  // "Confirmation delivered" must mean a confirmation message was REALLY sent to the
-  // patient this turn — not merely that the confirm tool returned without error (an
-  // idempotent re-confirm succeeds but sends nothing). So count patient-facing sends
-  // made by the tools through a turn-scoped messaging wrapper, and use that below (T227).
-  let patientMessagesSent = 0;
-  const turnDeps: AgentDeps = {
-    ...deps,
-    messaging: {
-      async sendMessage(to, body) {
-        if (to === msg.phone) patientMessagesSent++;
-        await deps.messaging.sendMessage(to, body);
-      },
-    },
-  };
+  // A fresh confirm_booking commits the patient's confirmation into the outbox. That
+  // deterministic message OWNS the patient reply for this turn (T227): the orchestrator
+  // must not add its closing text on top, even if delivery is still pending (it is
+  // retried by the outbox). Role-based flag from the tool, not a phone match (T235).
+  let confirmationEnqueued = false;
   let iterations = 0;
   while (iterations < AGENT_MAX_ITERATIONS) {
     iterations++;
@@ -137,6 +128,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     }
 
     const toolResults: LlmContent[] = [];
+    let escalatedThisTurn = false;
     for (const tu of toolUses) {
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
@@ -150,9 +142,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
         });
         continue;
       }
-      const ctx: ToolContext = { deps: turnDeps, phone: msg.phone, state, now };
+      const ctx: ToolContext = { deps, phone: msg.phone, state, now };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
+      confirmationEnqueued ||= dispatched.patientNotified;
+      escalatedThisTurn ||= dispatched.escalated;
       toolResults.push({
         type: "tool_result",
         toolUseId: tu.id,
@@ -161,18 +155,24 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
       });
     }
     state = appendMessage(state, { role: "user", content: toolResults }, now);
+
+    // The model handed the conversation to reception: the autonomous attempt ENDS here.
+    // No further LLM call (it could keep holding/confirming after the hand-off); the
+    // patient gets the deterministic hand-off reply, not model text (T244).
+    if (escalatedThisTurn) {
+      state = await persist(state);
+      await flushOutbox();
+      if (!confirmationEnqueued) {
+        await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+      }
+      return { status: "escalated", reply: reply.escalatedToReception() };
+    }
   }
 
-  // Deliver what the tools committed this turn (confirmation / escalation rows in the
-  // outbox) BEFORE our own closing reply, so the patient reads the confirmation first.
-  // Through turnDeps, so a delivered confirmation is counted below. Dispatcher errors
-  // never fail the turn — the scheduled dispatcher retries (FR-214).
-  await flushOutbox(turnDeps);
-
-  // A confirmation counts as delivered only if a patient-facing message actually went
-  // out during the tool loop (a fresh confirm_booking). Idempotent re-confirms send
-  // nothing, so the closing reply below must still reach the patient (T227).
-  const confirmationDelivered = patientMessagesSent > 0;
+  // Deliver what the tools committed this turn (the confirmation row in the outbox)
+  // BEFORE our own closing reply, so the patient reads the confirmation first.
+  await flushOutbox();
+  const confirmationDelivered = confirmationEnqueued;
 
   // 5. Loop exhausted without a final reply → escalate + pt-BR fallback.
   if (finalText === null) {

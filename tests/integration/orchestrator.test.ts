@@ -8,10 +8,12 @@ import {
 } from "../../src/adapters/fakes/fake-llm";
 import { recordConsent } from "../../src/agent/consent";
 import { handleInbound } from "../../src/agent/orchestrator";
+import { reply } from "../../src/agent/reply";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { InboundMessage } from "../../src/agent/types";
 import { AGENT_MAX_ITERATIONS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
+import { dispatchOutbox, OUTBOX_BACKOFF_MS } from "../../src/jobs/dispatch-outbox";
 import type { LLMPort } from "../../src/ports/llm-port";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent, RECEPTION } from "../helpers/agent";
 import {
@@ -317,6 +319,82 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(toReception).toHaveLength(1);
     expect(toReception[0].body).toContain(`Paciente: ${PHONE}`);
     expect(toReception[0].body).toContain("Motivo: max_iterations");
+  });
+
+  it("an escalate_to_human tool call ENDS the loop: no further LLM call, deterministic hand-off reply [T244]", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.escalate, { reason: "ambiguity", context: "pedido confuso" })),
+      // Would be turn 2 — must never be requested.
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      finalTurn("texto que não deve ser enviado"),
+    ]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("quero algo"));
+
+    expect(r.status).toBe("escalated");
+    expect(llm.callCount).toBe(1);
+    const toPatient = h.messaging.sent.filter((m) => m.to === PHONE);
+    expect(toPatient).toEqual([{ to: PHONE, body: reply.escalatedToReception() }]);
+    expect(h.messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1);
+    expect(await bookingCount()).toBe(0);
+    const saved = await h.conversations.load(PHONE);
+    expect(saved?.status).toBe("escalated");
+    // History stays API-valid: the tool_use got its tool_result.
+    const last = saved?.history.at(-1);
+    expect(last?.role).toBe("user");
+    expect(last?.content[0].type).toBe("tool_result");
+  });
+
+  it("a confirmation that could not be delivered yet is NOT replaced by LLM text; the outbox retries it [T244/T235]", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Confirmado! Até breve."),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+    h.messaging.failTimes = 1; // the in-turn dispatch attempt fails (provider hiccup)
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("replied");
+    expect(h.calendar.createdCount).toBe(1);
+    // Nothing reached the patient yet — and crucially NOT the LLM's closing text either:
+    // the deterministic confirmation owns this message and is pending in the outbox.
+    expect(h.messaging.sent.filter((m) => m.to === PHONE)).toHaveLength(0);
+
+    h.clock.advance(OUTBOX_BACKOFF_MS[0]);
+    await dispatchOutbox(h.deps);
+    const toPatient = h.messaging.sent.filter((m) => m.to === PHONE);
+    expect(toPatient).toHaveLength(1);
+    expect(toPatient[0].body).toContain("confirmada");
+  });
+
+  it("when RECEPTION_PHONE equals the patient phone, the hand-off reply is not mistaken for a confirmation [T235]", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.escalate, { reason: "ambiguity", context: "x" })),
+    ]);
+    const h = makeAgent(pool, llm);
+    h.deps.receptionPhone = PHONE; // solo-demo artefact: reception == patient
+
+    const r = await handleInbound(h.deps, inbound("quero algo"));
+
+    expect(r.status).toBe("escalated");
+    const bodies = h.messaging.sent.filter((m) => m.to === PHONE).map((m) => m.body);
+    expect(bodies).toHaveLength(2); // the reception notice AND the patient hand-off reply
+    expect(bodies).toContain(reply.escalatedToReception());
+    expect(bodies.some((b) => b.includes("Motivo: ambiguity"))).toBe(true);
   });
 
   it("bounds the loop at MAX_ITERATIONS, then escalates", async () => {
