@@ -54,7 +54,7 @@ jobs:
       PERF_P95_BUDGET_MS: "1500"
       PERF_MIN_CONFIRMED_RATIO: "0.5"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
