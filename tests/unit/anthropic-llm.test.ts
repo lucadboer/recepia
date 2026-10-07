@@ -146,6 +146,69 @@ describe("AnthropicLLM — request shape for claude-sonnet-5-5 (research R1)", (
   });
 });
 
+describe("AnthropicLLM — prompt caching and timeout (005 FR-511, R5/R7)", () => {
+  it("splits system into [static + cache_control, dated] and turns on automatic caching for the tail", async () => {
+    const { client, calls } = stubClient([message({})]);
+    const system = "ESTÁTICO\n\nHoje é segunda-feira";
+    await new AnthropicLLM({ client }).turn({
+      ...input,
+      system,
+      systemCacheablePrefix: "ESTÁTICO".length,
+    });
+    expect(calls[0].system).toEqual([
+      { type: "text", text: "ESTÁTICO", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "\n\nHoje é segunda-feira" },
+    ]);
+    expect(calls[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("caches the whole system when the boundary covers it, and sends a plain string without a boundary", async () => {
+    const a = stubClient([message({})]);
+    await new AnthropicLLM({ client: a.client }).turn({
+      ...input,
+      system: "abc",
+      systemCacheablePrefix: 3,
+    });
+    expect(a.calls[0].system).toEqual([
+      { type: "text", text: "abc", cache_control: { type: "ephemeral" } },
+    ]);
+    const b = stubClient([message({})]);
+    await new AnthropicLLM({ client: b.client }).turn(input);
+    expect(b.calls[0].system).toBe("sistema");
+    expect(b.calls[0].cache_control).toEqual({ type: "ephemeral" });
+  });
+
+  it("ignores an out-of-range boundary (no empty blocks)", async () => {
+    const { client, calls } = stubClient([message({}), message({})]);
+    const llm = new AnthropicLLM({ client });
+    await llm.turn({ ...input, systemCacheablePrefix: 0 });
+    await llm.turn({ ...input, systemCacheablePrefix: 999 });
+    expect(calls[0].system).toBe("sistema");
+    expect(calls[1].system).toEqual([
+      { type: "text", text: "sistema", cache_control: { type: "ephemeral" } },
+    ]);
+  });
+
+  it("bounds each call with a timeout (option, then ANTHROPIC_TIMEOUT_MS, then 30 s)", () => {
+    expect(new AnthropicLLM({ apiKey: "k", timeoutMs: 1234 }).timeoutMs).toBe(1234);
+    vi.stubEnv("ANTHROPIC_TIMEOUT_MS", "4567");
+    expect(new AnthropicLLM({ apiKey: "k" }).timeoutMs).toBe(4567);
+    vi.stubEnv("ANTHROPIC_TIMEOUT_MS", "nonsense");
+    expect(new AnthropicLLM({ apiKey: "k" }).timeoutMs).toBe(30_000);
+    vi.unstubAllEnvs();
+  });
+
+  it("reports the served model and the provider on every result", async () => {
+    const { client } = stubClient([message({ model: "claude-sonnet-5-5-20260901" })]);
+    const llm = new AnthropicLLM({ client });
+    expect(llm.provider).toBe("anthropic");
+    expect(await llm.turn(input)).toMatchObject({
+      model: "claude-sonnet-5-5-20260901",
+      provider: "anthropic",
+    });
+  });
+});
+
 describe("AnthropicLLM — response mapping onto the port", () => {
   it("maps usage (input/output/cache read/cache write) and tool_use blocks", async () => {
     const { client } = stubClient([

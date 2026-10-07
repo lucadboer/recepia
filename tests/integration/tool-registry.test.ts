@@ -273,3 +273,55 @@ describe("tool-registry × state bounds (T239)", () => {
     expect(await bookingCount()).toBe(0);
   });
 });
+
+describe("tool-registry — rejectedBy names the guardrail (005 FR-503)", () => {
+  it("unknown tool → unknown_tool; invalid args → invalid_args; ok → undefined", async () => {
+    expect((await dispatchTool(ctx(), "writeBooking", {})).rejectedBy).toBe("unknown_tool");
+    expect((await dispatchTool(ctx(), TOOL_NAMES.hold, { start: 7 })).rejectedBy).toBe(
+      "invalid_args",
+    );
+    expect((await dispatchTool(ctx(), TOOL_NAMES.availability, {})).rejectedBy).toBe(
+      "invalid_args",
+    );
+    expect((await dispatchTool(ctx(), TOOL_NAMES.confirm, { hold_id: "x" })).rejectedBy).toBe(
+      "invalid_args",
+    );
+    const ok = await dispatchTool(ctx(), TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    expect(ok.rejectedBy).toBeUndefined();
+  });
+
+  it("hold of a slot never offered → not_offered; confirm of a hold from elsewhere → foreign_hold", async () => {
+    const notOffered = await dispatchTool(ctx(), TOOL_NAMES.hold, {
+      start: "2026-06-15T14:00:00.000Z",
+      type: "cleaning",
+    });
+    expect(notOffered.rejectedBy).toBe("not_offered");
+    const foreign = await dispatchTool(ctx(), TOOL_NAMES.confirm, {
+      hold_id: "00000000-0000-0000-0000-000000000000",
+      patient_name: "Ana",
+    });
+    expect(foreign.rejectedBy).toBe("foreign_hold");
+  });
+
+  it("a tool error is not a guardrail rejection (rejectedBy undefined, isError true)", async () => {
+    const c = ctx();
+    const offered = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const tooSoon = { ...c, state: offered.state };
+    // An offered slot whose lead time has run out: the deterministic tool refuses it.
+    tooSoon.deps = { ...c.deps, clock: new FakeClock(new Date("2026-06-15T13:30:00Z")) };
+    const r = await dispatchTool(tooSoon, TOOL_NAMES.hold, {
+      start: "2026-06-15T14:00:00.000Z",
+      type: "cleaning",
+    });
+    expect(r.isError).toBe(true);
+    expect(r.rejectedBy).toBeUndefined();
+  });
+});

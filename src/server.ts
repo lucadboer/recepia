@@ -2,6 +2,9 @@ import { handleInbound } from "./agent/orchestrator";
 import type { InboundMessage } from "./agent/types";
 import { buildAgentDeps, closeAgentDeps } from "./composition";
 import { startJobs } from "./jobs/scheduler";
+import { log } from "./telemetry/logger";
+import { usingRandomPseudonymKey } from "./telemetry/pseudonym";
+import { shutdownTelemetry, telemetryEndpointConfigured } from "./telemetry/register";
 import { PerKeyQueue } from "./webhook/per-key-queue";
 import { type CloudWebhookOptions, createWebhookServer } from "./webhook/server";
 import { createShutdown } from "./webhook/shutdown";
@@ -37,30 +40,58 @@ const server = createWebhookServer({
   onInbound: (msg) => handleInbound(deps, msg),
   cloud,
   queue,
+  // Readiness = the database answers (liveness needs nothing).
+  ready: async () => {
+    await deps.pool.query("SELECT 1");
+    return true;
+  },
 });
 // Background jobs: outbox delivery (retries) + hold-expiry sweep (T245).
 const jobs = startJobs(deps);
 // Graceful shutdown (T246): stop jobs, stop accepting, drain in-flight turns, close the pool.
 const shutdown = createShutdown({ server, jobs, queue, close: () => closeAgentDeps(deps) });
+
+/**
+ * Flush telemetry AFTER the drain settles, whatever its outcome, on its own short budget: the
+ * spans of turns that got stuck are exactly the ones worth keeping, and a timed-out drain must
+ * not skip the flush.
+ */
+const TELEMETRY_FLUSH_MS = 3_000;
+async function flushTelemetryAndExit(code: number): Promise<never> {
+  await Promise.race([
+    shutdownTelemetry(),
+    new Promise<void>((resolve) => setTimeout(resolve, TELEMETRY_FLUSH_MS).unref()),
+  ]);
+  process.exit(code);
+}
+
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
-    console.log(`[recepia] ${signal} received`);
+    log.info({ event: "signal", signal }, "shutdown requested");
     shutdown().then(
-      (clean) => process.exit(clean ? 0 : 1),
+      (clean) => flushTelemetryAndExit(clean ? 0 : 1),
       (err) => {
-        console.error("[recepia] shutdown failed", err);
-        process.exit(1);
+        log.error({ event: "shutdown.failed", err }, "shutdown failed");
+        return flushTelemetryAndExit(1);
       },
     );
   });
 }
+if (usingRandomPseudonymKey()) {
+  log.warn(
+    { event: "telemetry.random_pseudonym_key" },
+    "TELEMETRY_HASH_KEY not set: patient pseudonyms change on every restart",
+  );
+}
 server.listen(port, () => {
-  console.log(`[recepia] webhook listening on :${port}`);
-  console.log(`  jobs:      ${jobs.map((j) => j.name).join(", ")}`);
-  console.log("  evolution: POST /webhook/evolution/<token>");
-  console.log(
-    cloud
-      ? "  cloud:     GET+POST /webhook/cloud (verify challenge + X-Hub-Signature-256)"
-      : "  cloud:     (disabled — set WHATSAPP_VERIFY_TOKEN + WHATSAPP_APP_SECRET to enable)",
+  log.info(
+    {
+      event: "server.listening",
+      port,
+      jobs: jobs.map((j) => j.name),
+      cloudWebhook: Boolean(cloud),
+      tracing: telemetryEndpointConfigured(),
+    },
+    "webhook listening (evolution: POST /webhook/evolution/<token>; cloud: /webhook/cloud when configured)",
   );
 });

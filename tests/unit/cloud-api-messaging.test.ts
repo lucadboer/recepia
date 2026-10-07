@@ -60,3 +60,17 @@ describe("CloudApiMessaging", () => {
     await expect(m.sendMessage("+5516981526867", "x")).rejects.toThrow(/HTTP 401/);
   });
 });
+
+describe("review fix H3 — provider bodies are masked and bounded", () => {
+  it("masks an echoed recipient and truncates long bodies", async () => {
+    const { fetchFn } = recorder({
+      ok: false,
+      status: 400,
+      text: `recipient 5516981526867 not allowed ${"x".repeat(1000)}`,
+    });
+    const m = new CloudApiMessaging("p1", "TOK", "v23.0", fetchFn);
+    const err = await m.sendMessage("+5516981526867", "x").catch((e) => e);
+    expect(err.message).not.toContain("5516981526867");
+    expect(err.message.length).toBeLessThan(400);
+  });
+});

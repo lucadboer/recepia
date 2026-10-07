@@ -16,8 +16,11 @@ export const CALENDAR_MAX_ATTEMPTS = 3;
 export const CALENDAR_RETRY_BASE_MS = 25;
 
 // Safety cap on the LLM tool-use loop (final, T225): one booking needs 3 tool calls; 8 leaves
-// room for one alternative slot plus recovery. A cost budget per conversation comes with 005.
+// room for one alternative slot plus recovery. The cost bound is DEFAULT_AGENT_BUDGET_USD below.
 export const AGENT_MAX_ITERATIONS = 8;
+// Per-conversation estimated-cost budget (005 FR-510, decided 2026-10-07): ≈ 8× a full booking
+// conversation (~US$ 0.03). Reaching it hands the patient to reception. Override: AGENT_BUDGET_USD.
+export const DEFAULT_AGENT_BUDGET_USD = 0.25;
 
 // Bounds on per-phone ConversationState (T239). One inbound message produces at most
 // 1 + 2*AGENT_MAX_ITERATIONS history messages, so 40 keeps >= 2 full turns of context.
@@ -44,6 +47,10 @@ export const SHUTDOWN_TIMEOUT_MS = 15_000; // budget to drain in-flight turns on
 // poller only catches retries and anything a crashed turn left behind.
 export const OUTBOX_POLL_MS = 15_000;
 export const HOLD_SWEEP_MS = 60_000;
+// LGPD retention purge (005 FR-515): daily, first run shortly after start so a frequently
+// restarted process still purges.
+export const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const RETENTION_FIRST_RUN_MS = 60_000;
 
 export const ROUTINE_TYPES = ["evaluation", "cleaning", "follow_up", "consultation"] as const;
 export type AppointmentType = (typeof ROUTINE_TYPES)[number];

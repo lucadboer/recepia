@@ -234,3 +234,31 @@ describe("runSuite in live mode (execution injected, no database)", () => {
     expect(exitCodeFor({ failed: 0, stopped: false, regression: true })).toBe(1);
   });
 });
+
+describe("--provider (005 FR-514): the live run can measure the secondary provider", () => {
+  it("parses the provider and rejects unknown ones", async () => {
+    const { parseArgs } = await import("../../evals/run");
+    expect(parseArgs(["--mode", "live"]).provider).toBe("anthropic");
+    expect(parseArgs(["--mode", "live", "--provider", "openai-compatible"]).provider).toBe(
+      "openai-compatible",
+    );
+    expect(() => parseArgs(["--mode", "live", "--provider", "other"])).toThrow(/--provider/);
+  });
+
+  it("skips explicitly when the chosen provider is not configured", () => {
+    expect(liveSkipReason({}, "openai-compatible")).toMatch(/FALLBACK_LLM_/);
+    expect(
+      liveSkipReason(
+        {
+          FALLBACK_LLM_BASE_URL: "https://x.test/v1",
+          FALLBACK_LLM_API_KEY: "k",
+          FALLBACK_LLM_MODEL: "m",
+        },
+        "openai-compatible",
+      ),
+    ).toBeNull();
+    expect(liveSkipReason({ ANTHROPIC_API_KEY: "k" }, "openai-compatible")).toMatch(
+      /FALLBACK_LLM_/,
+    );
+  });
+});

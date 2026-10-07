@@ -1,12 +1,16 @@
 import { GoogleCalendar } from "./adapters/calendar/google-calendar";
-import { AnthropicLLM } from "./adapters/llm/anthropic-llm";
+import { AnthropicLLM, DEFAULT_MODEL } from "./adapters/llm/anthropic-llm";
+import { FallbackLLM } from "./adapters/llm/fallback-llm";
+import { OpenAICompatibleLLM } from "./adapters/llm/openai-compatible-llm";
 import { CloudApiMessaging } from "./adapters/messaging/cloud-api-messaging";
 import { EvolutionMessaging } from "./adapters/messaging/evolution-messaging";
 import type { AgentDeps } from "./agent/orchestrator";
+import { DEFAULT_AGENT_BUDGET_USD } from "./config";
 import { loadEnv } from "./db/env";
 import { makePool } from "./db/pool";
 import { DbConversationStore } from "./db/repositories/conversation-repo";
 import { NotConfigured } from "./domain/errors";
+import { assertPriced, loadPricing } from "./llm/pricing";
 import { systemClock } from "./ports/clock";
 import type { MessagingPort } from "./ports/messaging-port";
 
@@ -32,6 +36,9 @@ export function buildAgentDeps(): AgentDeps {
   if (!receptionPhone) {
     throw new NotConfigured("RECEPTION_PHONE not set (NEEDS-USER)");
   }
+  // Fail fast before opening anything: an unpriced model would make the budget unenforceable.
+  const pricing = assertConfiguredModelsPriced();
+  const budgetUsd = agentBudgetUsd();
   const pool = makePool();
   return {
     pool,
@@ -39,10 +46,74 @@ export function buildAgentDeps(): AgentDeps {
     calendar: new GoogleCalendar(),
     messaging: buildMessaging(),
     receptionPhone,
-    llm: new AnthropicLLM(),
+    llm: buildLlm(),
     conversations: new DbConversationStore(pool),
     handoffAutoReleaseMs: handoffAutoReleaseMs(),
+    budgetUsd,
+    pricing,
   };
+}
+
+/** AGENT_BUDGET_USD (005 FR-510): unset/empty → default; anything but a positive number fails fast. */
+export function agentBudgetUsd(raw = process.env.AGENT_BUDGET_USD): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_AGENT_BUDGET_USD;
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (!/^\d+(\.\d+)?$/.test(trimmed) || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`AGENT_BUDGET_USD must be a positive number of US dollars, got "${raw}"`);
+  }
+  return value;
+}
+
+export interface FallbackConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+/** FALLBACK_LLM_* (005 FR-513): all three → enabled, none → disabled, a partial set fails fast. */
+export function fallbackConfig(env: NodeJS.ProcessEnv = process.env): FallbackConfig | null {
+  const baseUrl = env.FALLBACK_LLM_BASE_URL || "";
+  const apiKey = env.FALLBACK_LLM_API_KEY || "";
+  const model = env.FALLBACK_LLM_MODEL || "";
+  const set = [baseUrl, apiKey, model].filter((v) => v.length > 0).length;
+  if (set === 0) return null;
+  if (set < 3) {
+    throw new Error(
+      "FALLBACK_LLM_BASE_URL, FALLBACK_LLM_API_KEY and FALLBACK_LLM_MODEL must be set together (or none)",
+    );
+  }
+  return { baseUrl, apiKey, model };
+}
+
+/** Primary Anthropic model, wrapped in FallbackLLM when a secondary provider is configured. */
+export function buildLlm(env: NodeJS.ProcessEnv = process.env): AnthropicLLM | FallbackLLM {
+  const fb = fallbackConfig(env);
+  const primary = new AnthropicLLM({
+    apiKey: env.ANTHROPIC_API_KEY,
+    model: env.ANTHROPIC_MODEL || undefined,
+    // With a fallback, fail over at once instead of after the SDK's retries (~3 × timeout + backoff).
+    ...(fb ? { maxRetries: 0 } : {}),
+  });
+  if (!fb) return primary;
+  const timeout = Number(env.FALLBACK_LLM_TIMEOUT_MS);
+  const secondary = new OpenAICompatibleLLM({
+    ...fb,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : undefined,
+  });
+  return new FallbackLLM(primary, secondary);
+}
+
+/** The models this process may call — each must have a price (005 FR-512). */
+export function pricedModels(env: NodeJS.ProcessEnv = process.env): string[] {
+  const fb = fallbackConfig(env);
+  return [env.ANTHROPIC_MODEL || DEFAULT_MODEL, ...(fb ? [fb.model] : [])];
+}
+
+export function assertConfiguredModelsPriced(env: NodeJS.ProcessEnv = process.env) {
+  const pricing = loadPricing();
+  assertPriced(pricing, pricedModels(env));
+  return pricing;
 }
 
 /** HANDOFF_AUTO_RELEASE_HOURS (optional): unset/invalid/<= 0 → never auto-release (FR-211). */

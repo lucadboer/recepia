@@ -10,7 +10,9 @@ import {
   OUTBOX_BACKOFF_MS,
   OUTBOX_MAX_ATTEMPTS,
 } from "../../src/jobs/dispatch-outbox";
+import { withSpan } from "../../src/telemetry/tracing";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
+import { startTestTelemetry, type TestTelemetry } from "../helpers/telemetry";
 
 const NOW = new Date("2026-06-15T12:00:00Z");
 const RECEPTION = "+5511999999999";
@@ -330,5 +332,80 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     expect(r).toEqual({ sent: 0, retried: 1, failed: 0 });
     const [row] = await rows();
     expect(row.last_error).toMatch(/timeout/i);
+  });
+});
+
+describe("outbox — trace context links delivery to the turn that committed it (005 FR-504)", () => {
+  let tel: TestTelemetry;
+  beforeAll(() => {
+    tel = startTestTelemetry();
+  });
+  afterAll(async () => {
+    await tel.stop();
+  });
+  beforeEach(() => tel.reset());
+
+  async function enqueueIn(span: boolean): Promise<string> {
+    const enqueue = async () => {
+      const client = await pool.connect();
+      try {
+        return (await enqueueOutbox(client, {
+          kind: "booking_confirmation",
+          toPhone: PATIENT,
+          conversationPhone: PATIENT,
+          body: "ok",
+          now: NOW,
+        })) as string;
+      } finally {
+        client.release();
+      }
+    };
+    return span ? withSpan("turn-origin", {}, enqueue) : enqueue();
+  }
+
+  it("stores the active traceparent on enqueue (NULL outside a span)", async () => {
+    const inside = await enqueueIn(true);
+    const outside = await enqueueIn(false);
+    const r = await pool.query(
+      "SELECT id, trace_context FROM outbox_message ORDER BY created_at, id",
+    );
+    const byId = new Map(r.rows.map((x) => [x.id, x.trace_context]));
+    const [origin] = tel.byName("turn-origin");
+    expect(byId.get(inside)).toBe(
+      `00-${origin.spanContext().traceId}-${origin.spanContext().spanId}-01`,
+    );
+    expect(byId.get(outside)).toBeNull();
+  });
+
+  it("dispatch creates one outbox.dispatch span per row, linked to the enqueuing span, on send, retry and dead-letter", async () => {
+    await enqueueIn(true);
+    const messaging = new FakeMessaging();
+    messaging.failTimes = 1;
+    const clock = new FakeClock(NOW);
+    await dispatchOutbox(makeDeps(clock, messaging)); // attempt 1 → retry
+    clock.advance(OUTBOX_BACKOFF_MS[0]);
+    await dispatchOutbox(makeDeps(clock, messaging)); // attempt 2 → sent
+    const [origin] = tel.byName("turn-origin");
+    const dispatches = tel.byName("outbox.dispatch");
+    expect(dispatches.map((d) => d.attributes["recepia.outbox.result"])).toEqual([
+      "retried",
+      "sent",
+    ]);
+    for (const d of dispatches) {
+      expect(d.links[0]?.context.spanId).toBe(origin.spanContext().spanId);
+      expect(d.attributes["recepia.outbox.kind"]).toBe("booking_confirmation");
+      expect(JSON.stringify(d.attributes)).not.toContain(PATIENT);
+    }
+    expect(dispatches.map((d) => d.attributes["recepia.outbox.attempt"])).toEqual([1, 2]);
+    // Codex review: a failed delivery is an ERROR span; a successful one is not.
+    expect(dispatches.map((d) => d.status.code)).toEqual([2, 0]);
+  });
+
+  it("a row without trace context is dispatched with no link and no error", async () => {
+    await enqueueIn(false);
+    await dispatchOutbox(makeDeps(new FakeClock(NOW), new FakeMessaging()));
+    const [d] = tel.byName("outbox.dispatch");
+    expect(d.links).toHaveLength(0);
+    expect(d.attributes["recepia.outbox.result"]).toBe("sent");
   });
 });

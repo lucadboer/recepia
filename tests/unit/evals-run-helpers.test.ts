@@ -50,3 +50,37 @@ describe("currentCommit", () => {
     expect(currentCommit({})).toMatch(/^[0-9a-f]{7,}$|^unknown$/);
   });
 });
+
+describe("classifyError — fallback-era provider errors (005)", async () => {
+  const { LlmProviderError } = await import("../../src/adapters/llm/errors");
+  const { FallbackExhaustedError } = await import("../../src/adapters/llm/fallback-llm");
+  it.each([
+    [new LlmProviderError("HTTP 429", 429, true), "rate_limit"],
+    [new LlmProviderError("HTTP 502", 502, true), "provider"],
+    [new LlmProviderError("timeout after 100 ms", null, true), "timeout"],
+    [new LlmProviderError("connection failed: ECONNREFUSED", null, true), "connection"],
+    [new LlmProviderError("HTTP 400", 400, false), "infrastructure"],
+  ])("%o → %s", (err, kind) => {
+    expect(classifyError(err).kind).toBe(kind);
+  });
+
+  it("a FallbackExhaustedError is classified by the primary's failure", () => {
+    const primary = Object.assign(new Error("slow"), { name: "APIConnectionTimeoutError" });
+    expect(classifyError(new FallbackExhaustedError(primary, new Error("also down"))).kind).toBe(
+      "timeout",
+    );
+  });
+});
+
+describe("review fix H1 — evals classify real SDK errors", async () => {
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  it("timeout and connection errors are not 'infrastructure'", () => {
+    expect(classifyError(new Anthropic.APIConnectionTimeoutError()).kind).toBe("timeout");
+    expect(classifyError(new Anthropic.APIConnectionError({ message: "x" })).kind).toBe(
+      "connection",
+    );
+    expect(classifyError(new Anthropic.RateLimitError(429, {}, "r", new Headers())).kind).toBe(
+      "rate_limit",
+    );
+  });
+});

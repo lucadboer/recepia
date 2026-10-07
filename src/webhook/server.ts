@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { SpanKind } from "@opentelemetry/api";
 import type { CloudStatus } from "../adapters/messaging/inbound/cloud-api-parser";
 import type { InboundMessage } from "../agent/types";
 import {
@@ -6,6 +7,9 @@ import {
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_REQUEST_TIMEOUT_MS,
 } from "../config";
+import { log } from "../telemetry/logger";
+import { messageRef, patientRef } from "../telemetry/pseudonym";
+import { ATTR, SPAN, startRootSpan } from "../telemetry/tracing";
 import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
 import { parseAndAccept, RecentIds } from "./dispatch";
 import { PerKeyQueue } from "./per-key-queue";
@@ -39,12 +43,63 @@ export interface WebhookServerOptions {
   queue?: PerKeyQueue;
   /** Request bodies above this size are refused with 413. Default: WEBHOOK_MAX_BODY_BYTES. */
   maxBodyBytes?: number;
+  /** Readiness probe for GET /readyz (e.g. `SELECT 1`). Absent = always ready. */
+  ready?: () => Promise<boolean>;
+}
+
+const READY_TIMEOUT_MS = 1_000;
+
+function sendJson(res: ServerResponse, status: number, body: unknown, head: boolean): void {
+  res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  res.end(head ? undefined : JSON.stringify(body));
+}
+
+/** True only when the probe resolves true within the timeout; a throw or a hang is "not ready". */
+async function probeReady(ready: (() => Promise<boolean>) | undefined): Promise<boolean> {
+  if (!ready) return true;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), READY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([ready().catch(() => false), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function defaultLogStatus(s: CloudStatus): void {
   const e = s.errors?.[0];
-  console.log(
-    `[webhook][cloud][status] id=${s.id} status=${s.status}${e ? ` error=${e.code}${e.title ? ` (${e.title})` : ""}` : ""}`,
+  log.info(
+    {
+      event: "webhook.cloud.status",
+      messageRef: messageRef(s.id),
+      status: s.status,
+      errorCode: e?.code,
+      errorTitle: e?.title,
+    },
+    "cloud delivery status",
+  );
+}
+
+/**
+ * One root span per accepted patient message (FR-501), started on acceptance so the queue wait
+ * is inside it; the turn runs as its child. Patient identified by pseudonym + masked phone.
+ */
+function traceInbound(
+  channel: "evolution" | "cloud",
+  msg: { phone: string; providerMessageId: string },
+) {
+  const patient = patientRef(msg.phone);
+  return startRootSpan(
+    SPAN.inbound,
+    {
+      [ATTR.channel]: channel,
+      [ATTR.messageRef]: messageRef(msg.providerMessageId),
+      [ATTR.patientId]: patient.id,
+      [ATTR.patientPhoneMasked]: patient.phoneMasked,
+    },
+    SpanKind.CONSUMER,
   );
 }
 
@@ -94,7 +149,9 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const basePath = opts.basePath ?? "/webhook/evolution";
   const recent = opts.recent ?? new RecentIds();
   const onError =
-    opts.onError ?? ((err: unknown) => console.error("[webhook] inbound processing failed", err));
+    opts.onError ??
+    ((err: unknown) =>
+      log.error({ event: "webhook.inbound_failed", err }, "inbound processing failed"));
   const maxBodyBytes = opts.maxBodyBytes ?? WEBHOOK_MAX_BODY_BYTES;
   // Messages from the same phone are processed one at a time (T240); different phones overlap.
   const queue = opts.queue ?? new PerKeyQueue();
@@ -103,6 +160,49 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const cloudBase = cloud?.basePath ?? "/webhook/cloud";
   const cloudRecent = cloud?.recent ?? new RecentIds();
   const logStatus = cloud?.onStatus ?? defaultLogStatus;
+
+  /**
+   * Hand an accepted message to its per-phone queue inside a root span (FR-501). Logs are written
+   * with the span active so they carry its trace id; the id is deduped only after a SUCCESSFUL
+   * turn (T230). Failures are reported once, inside the span.
+   */
+  // One readiness probe in flight at a time: under load, /readyz must not pile queries on the pool.
+  let probing: Promise<boolean> | null = null;
+
+  const dispatchInbound = (
+    channel: "evolution" | "cloud",
+    msg: InboundMessage,
+    handler: (m: InboundMessage) => Promise<unknown>,
+    seen: RecentIds,
+  ): void => {
+    const traced = traceInbound(channel, msg);
+    const ref = messageRef(msg.providerMessageId);
+    traced.within(() =>
+      log.info(
+        { event: "webhook.inbound", channel, messageRef: ref, patient: patientRef(msg.phone) },
+        "inbound message accepted",
+      ),
+    );
+    void queue
+      .run(msg.phone, () =>
+        traced.run(async () => {
+          try {
+            const r = await handler(msg);
+            seen.add(msg.providerMessageId);
+            const status = (r as { status?: string } | null)?.status ?? "done";
+            log.info(
+              { event: "webhook.handled", channel, messageRef: ref, status },
+              "inbound message handled",
+            );
+            return r;
+          } catch (err) {
+            onError(err);
+            throw err; // recorded on the span by run()
+          }
+        }),
+      )
+      .catch(() => {}); // already reported above
+  };
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     // Node's parser accepts targets like "//" that WHATWG URL rejects; an uncaught throw
@@ -113,6 +213,26 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
       return;
     }
     const { pathname, searchParams } = parsed;
+
+    // --- Health (FR-508): exact paths, no auth, no configuration revealed, not logged ---
+    if (pathname === "/healthz" || pathname === "/readyz") {
+      const head = req.method === "HEAD";
+      if (req.method !== "GET" && !head) {
+        res.writeHead(405, { allow: "GET, HEAD" }).end();
+        return;
+      }
+      if (pathname === "/healthz") {
+        sendJson(res, 200, { status: "ok" }, head);
+        return;
+      }
+      probing ??= probeReady(opts.ready).finally(() => {
+        probing = null;
+      });
+      void probing.then((ok) =>
+        sendJson(res, ok ? 200 : 503, { status: ok ? "ready" : "not_ready" }, head),
+      );
+      return;
+    }
 
     // --- Cloud API path (only when configured; exact match) ---
     if (cloud && pathname === cloudBase) {
@@ -141,20 +261,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
           });
           res.writeHead(result.status).end();
           for (const s of result.statuses) logStatus(s); // statuses: log only
-          for (const m of result.msgs) {
-            // Observability: phone masked (LGPD — last 4 digits); never logs message text.
-            console.log(
-              `[webhook][cloud][inbound] from=***${m.phone.slice(-4)} id=${m.providerMessageId}`,
-            );
-            void queue
-              .run(m.phone, () => cloud.onInbound(m)) // messages → orchestrator
-              .then((r) => {
-                cloudRecent.add(m.providerMessageId); // dedupe only a SUCCESSFUL turn (T230)
-                const status = (r as { status?: string } | null)?.status ?? "done";
-                console.log(`[webhook][cloud][handled] id=${m.providerMessageId} status=${status}`);
-              })
-              .catch(onError);
-          }
+          for (const m of result.msgs) dispatchInbound("cloud", m, cloud.onInbound, cloudRecent);
         });
         return;
       }
@@ -183,13 +290,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
         seen: recent,
       });
       res.writeHead(result.status).end();
-      const msg = result.msg;
-      if (msg) {
-        void queue
-          .run(msg.phone, () => opts.onInbound(msg))
-          .then(() => recent.add(msg.providerMessageId)) // dedupe only a SUCCESSFUL turn (T230)
-          .catch(onError);
-      }
+      if (result.msg) dispatchInbound("evolution", result.msg, opts.onInbound, recent);
     });
   });
 

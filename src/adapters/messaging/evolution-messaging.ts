@@ -1,5 +1,6 @@
 import { MessagingSendError, NotConfigured } from "../../domain/errors";
 import type { MessagingPort } from "../../ports/messaging-port";
+import { maskPhonesIn } from "../../telemetry/pseudonym";
 
 /**
  * Narrow structural type for the fetch we need. Decouples the adapter from DOM lib
@@ -49,7 +50,8 @@ export class EvolutionMessaging implements MessagingPort {
       body: JSON.stringify({ number, text: body }),
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      // Provider bodies can echo the recipient (number / JID): masked and truncated (FR-505).
+      const detail = maskPhonesIn(await res.text().catch(() => "")).slice(0, 300);
       throw new MessagingSendError(
         `EvolutionMessaging.sendMessage failed: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`,
       );

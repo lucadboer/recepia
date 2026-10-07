@@ -1,3 +1,4 @@
+import { emptyUsage } from "../../agent/conversation";
 import type { ConversationState } from "../../agent/types";
 import { ConversationConflictError } from "../../domain/errors";
 import type { ConversationStorePort } from "../../ports/conversation-store-port";
@@ -20,6 +21,7 @@ export class DbConversationStore implements ConversationStorePort {
     return {
       ...parsed,
       promptVersion: parsed.promptVersion ?? null, // rows written before FR-409 lack the field
+      usage: parsed.usage ?? emptyUsage(), // rows written before feature 005 lack the field
       version: rows[0].version as number,
       updatedAt: new Date(parsed.updatedAt),
     };

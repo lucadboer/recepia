@@ -31,6 +31,11 @@ export interface LlmTurnInput {
   messages: LlmMessage[];
   /** Version id of the system prompt artifact in effect (FR-409). Never sent to the provider. */
   promptVersion?: string;
+  /**
+   * Length of the stable prefix of `system` (static instructions). Adapters that support it
+   * mark that prefix as cacheable; the rest (the dated line) changes per turn (005 FR-511).
+   */
+  systemCacheablePrefix?: number;
 }
 
 /** Token accounting as reported by the provider; fakes report zeros. */
@@ -51,8 +56,15 @@ export interface LlmTurnResult {
   usage?: LlmUsage;
   /** Provider detail for a refusal (category / explanation), when reported. */
   stopDetails?: { category: string | null; explanation: string | null };
+  /** The model that actually answered (may differ from the requested one after a fallback). */
+  model?: string;
+  /** Who served the call: "anthropic", "openai-compatible", "fake", … */
+  provider?: string;
 }
 
 export interface LLMPort {
   turn(input: LlmTurnInput): Promise<LlmTurnResult>;
+  /** Requested model, when the adapter knows it (telemetry span name, budget pricing). */
+  readonly model?: string;
+  readonly provider?: string;
 }

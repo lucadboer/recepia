@@ -16,6 +16,7 @@ function liveReport(): RunReport {
     schemaVersion: 1,
     mode: "live",
     model: "claude-sonnet-5-5",
+    provider: "anthropic",
     promptVersion: "v001+c9e9f07",
     commit: "abc1234",
     date: "2026-10-06T12:00:00.000Z",
@@ -41,6 +42,8 @@ function liveReport(): RunReport {
       cost: {
         perConversationUsd: 0.0238,
         totalUsd: 3.21,
+        uncachedPerConversationUsd: null,
+        cacheHitRatio: null,
         tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
       },
       errors: { total: 1, byKind: { rate_limit: 1 } },
@@ -65,6 +68,7 @@ describe("renderBlock", () => {
       "61.5 %", // triage recall
       "5.0 s", // conversation p50
       "US$ 0.0238",
+      "Prompt cache hit ratio",
       "3 executions per case",
       HONESTY_LINE,
     ]) {

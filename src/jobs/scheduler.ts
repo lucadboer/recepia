@@ -1,12 +1,21 @@
-import { HOLD_SWEEP_MS, OUTBOX_POLL_MS } from "../config";
+import {
+  HOLD_SWEEP_MS,
+  OUTBOX_POLL_MS,
+  RETENTION_FIRST_RUN_MS,
+  RETENTION_INTERVAL_MS,
+} from "../config";
 import type { Deps } from "../deps";
+import { log } from "../telemetry/logger";
 import { dispatchOutbox } from "./dispatch-outbox";
 import { expireHolds } from "./expire-holds";
+import { purgeInactive } from "./retention";
 
 export interface ScheduledJob {
   name: string;
   everyMs: number;
   run: () => Promise<unknown>;
+  /** Also run once this long after start (default: only every `everyMs`). */
+  firstRunMs?: number;
 }
 
 export interface JobHandle {
@@ -19,7 +28,7 @@ export interface JobHandle {
 export type JobErrorHandler = (name: string, err: unknown) => void;
 
 const defaultOnError: JobErrorHandler = (name, err) => {
-  console.error(`[jobs] ${name} failed`, err);
+  log.error({ event: "job.failed", job: name, err }, "background job failed");
 };
 
 /**
@@ -29,7 +38,7 @@ const defaultOnError: JobErrorHandler = (name, err) => {
  */
 export function schedule(job: ScheduledJob, onError: JobErrorHandler = defaultOnError): JobHandle {
   let inFlight = false;
-  const timer = setInterval(() => {
+  const tick = () => {
     if (inFlight) return;
     inFlight = true;
     Promise.resolve()
@@ -38,14 +47,20 @@ export function schedule(job: ScheduledJob, onError: JobErrorHandler = defaultOn
       .finally(() => {
         inFlight = false;
       });
-  }, job.everyMs);
+  };
+  const timer = setInterval(tick, job.everyMs);
   timer.unref?.();
+  const first = job.firstRunMs !== undefined ? setTimeout(tick, job.firstRunMs) : undefined;
+  first?.unref?.();
   return {
     name: job.name,
     get running() {
       return inFlight;
     },
-    stop: () => clearInterval(timer),
+    stop: () => {
+      clearInterval(timer);
+      if (first) clearTimeout(first);
+    },
   };
 }
 
@@ -54,6 +69,15 @@ export function startJobs(deps: Deps, onError: JobErrorHandler = defaultOnError)
   return [
     schedule({ name: "outbox", everyMs: OUTBOX_POLL_MS, run: () => dispatchOutbox(deps) }, onError),
     schedule({ name: "hold-sweep", everyMs: HOLD_SWEEP_MS, run: () => expireHolds(deps) }, onError),
+    schedule(
+      {
+        name: "retention",
+        everyMs: RETENTION_INTERVAL_MS,
+        firstRunMs: RETENTION_FIRST_RUN_MS,
+        run: () => purgeInactive(deps.pool, deps.clock.now()),
+      },
+      onError,
+    ),
   ];
 }
 

@@ -1,0 +1,83 @@
+// Patient identity in telemetry (FR-505): never the phone. A masked form for humans (last 4
+// digits) and a keyed pseudonym for correlation that cannot be reversed without the operator's
+// secret (TELEMETRY_HASH_KEY). Without the secret, a random per-process key is used — pseudonyms
+// then change on restart; the service logs a warning at startup (usingRandomPseudonymKey()).
+
+import { createHmac, randomBytes } from "node:crypto";
+
+let key: Buffer | null = null;
+let randomKey = false;
+
+function hashKey(): Buffer {
+  if (key) return key;
+  const configured = process.env.TELEMETRY_HASH_KEY;
+  if (configured && configured.length > 0) {
+    key = Buffer.from(configured, "utf8");
+    randomKey = false;
+  } else {
+    key = randomBytes(32);
+    randomKey = true;
+  }
+  return key;
+}
+
+/** Test seam / key rotation: the next pseudonym re-reads TELEMETRY_HASH_KEY. */
+export function resetPseudonymKey(): void {
+  key = null;
+  randomKey = false;
+}
+
+/** True when no TELEMETRY_HASH_KEY was configured (pseudonyms are per-process only). */
+export function usingRandomPseudonymKey(): boolean {
+  hashKey();
+  return randomKey;
+}
+
+/** `***NNNN` — the last 4 digits; nothing when fewer than 5 digits exist. */
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length > 4 ? `***${digits.slice(-4)}` : "***";
+}
+
+/**
+ * Backstop for free text (error messages, third-party strings): masks every STANDALONE 10–15
+ * digit number. A digit run glued to letters or hyphens is part of an identifier (trace/span
+ * ids, UUIDs, pseudonyms are hex and often contain long digit runs) and is left alone —
+ * masking those would break log↔trace correlation.
+ */
+const STANDALONE_PHONE = /(?<![0-9A-Za-z-])\+?\d{10,15}(?![0-9A-Za-z-])/g;
+// Human-formatted numbers ("+55 11 98765-4321", "(11) 98765-4321", "11 3456-7890"): a separator
+// between the last two groups is required, so plain identifiers never match.
+const FORMATTED_PHONE =
+  /(?<![0-9A-Za-z])(?:\+\d{1,3}[\s.-]?)?\(?\d{2}\)?[\s.-]?\d{4,5}[\s.-]\d{4}(?![0-9A-Za-z])/g;
+
+export function maskPhonesIn(text: string): string {
+  return text
+    .replace(FORMATTED_PHONE, (m) => maskPhone(m))
+    .replace(STANDALONE_PHONE, (m) => maskPhone(m));
+}
+
+/** First 16 hex chars of HMAC-SHA256(phone, key). */
+export function patientPseudonym(phone: string): string {
+  return createHmac("sha256", hashKey()).update(phone).digest("hex").slice(0, 16);
+}
+
+/**
+ * Provider message ids are NOT opaque: a WhatsApp Cloud API `wamid` is base64 that encodes the
+ * sender's phone. Telemetry gets a keyed reference instead (same key as the patient pseudonym).
+ */
+export function messageRef(providerMessageId: string): string {
+  return createHmac("sha256", hashKey())
+    .update(`msg:${providerMessageId}`)
+    .digest("hex")
+    .slice(0, 16);
+}
+
+export interface PatientRef {
+  id: string;
+  phoneMasked: string;
+}
+
+export function patientRef(phone: string): PatientRef {
+  return { id: patientPseudonym(phone), phoneMasked: maskPhone(phone) };
+}

@@ -8,6 +8,17 @@ export interface InboundMessage {
   receivedAt?: Date;
 }
 
+/** Token usage and estimated cost accumulated over one conversation (005 FR-509). */
+export interface ConversationUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+  calls: number;
+  models: string[];
+}
+
 /** Per-phone orchestration state. `offeredSlots`/`activeHoldIds` back the structural guardrails. */
 export interface ConversationState {
   phone: string;
@@ -22,6 +33,7 @@ export interface ConversationState {
   escalatedAt: string | null; // ISO; when the conversation was handed to reception (FR-211)
   handoffNoticeAt: string | null; // ISO; last "a recepção vai continuar" notice (FR-211)
   promptVersion: string | null; // last system prompt version the model was given (FR-409)
+  usage: ConversationUsage; // reset with the conversation; checked against the budget (005 FR-510)
   version: number; // optimistic concurrency; 0 = never persisted (T240)
   updatedAt: Date;
 }

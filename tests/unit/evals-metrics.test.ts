@@ -220,6 +220,24 @@ describe("computeMetrics", () => {
     expect(m.errors).toEqual({ total: 2, byKind: { rate_limit: 1, timeout: 1 } });
     // An execution with an error is never a success, whatever its assertions say.
     expect(s[1].pass).toBe(false);
+    // 005 SC-504: cache hit ratio from the same tokens, and what they would cost uncached.
+    expect(m.cost.cacheHitRatio).toBeCloseTo(5 / 306, 9);
+    expect(m.cost.uncachedPerConversationUsd).toBeNull(); // no pricing given
+    const priced = computeMetrics(s, cases.slice(0, 2), {
+      table: {
+        asOf: "2026-09-25",
+        source: "t",
+        usdPerMTok: {
+          "claude-sonnet-5-5": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 },
+        },
+      },
+      model: "claude-sonnet-5-5",
+    });
+    expect(priced.cost.uncachedPerConversationUsd).toBeCloseTo(
+      (306 * 2 + 30 * 10) / 1_000_000 / 2,
+      12,
+    );
+    expect(computeMetrics([], []).cost.cacheHitRatio).toBeNull();
     // Unknown pricing anywhere → total cost unknown.
     const unknown = computeMetrics([scored(exec("h1"), [], null), s[0]], cases.slice(0, 2));
     expect(unknown.cost.totalUsd).toBeNull();
@@ -242,6 +260,8 @@ describe("compareWithBaseline", () => {
       cost: {
         perConversationUsd: 0.03,
         totalUsd: 1,
+        uncachedPerConversationUsd: null,
+        cacheHitRatio: null,
         tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       },
       errors: { total: 0, byKind: {} },

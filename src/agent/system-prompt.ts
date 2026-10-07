@@ -26,6 +26,8 @@ export interface PromptArtifact {
 export interface SystemPrompt {
   text: string;
   version: string;
+  /** `text.slice(0, cacheablePrefixLength)` is the static block — identical on every turn. */
+  cacheablePrefixLength: number;
 }
 
 const PROMPTS_ROOT = fileURLToPath(new URL("../../prompts/", import.meta.url));
@@ -110,8 +112,10 @@ export function buildSystemPrompt(
   ctx: PromptContext,
   artifact: PromptArtifact = PROMPT_ARTIFACT,
 ): SystemPrompt {
+  const stable = renderStatic(artifact.template);
   return {
-    text: `${renderStatic(artifact.template)}\n\n${datedLine(ctx)}`,
+    text: `${stable}\n\n${datedLine(ctx)}`,
     version: artifact.version,
+    cacheablePrefixLength: stable.length,
   };
 }

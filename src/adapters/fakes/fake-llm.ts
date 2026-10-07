@@ -40,6 +40,8 @@ export function finalTurn(t: string): LlmTurnResult {
  */
 export class FakeLLM implements LLMPort {
   readonly receivedInputs: LlmTurnInput[] = [];
+  readonly model: string = "scripted";
+  readonly provider: string = "fake";
   private index = 0;
 
   constructor(private readonly script: ScriptedTurn[]) {}

@@ -39,8 +39,17 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
+      # Feature 005 (SC-507): the latency budget is measured with tracing ON and a real OTLP
+      # exporter, so telemetry overhead is part of the gate.
+      jaeger:
+        image: jaegertracing/jaeger:2.11.0
+        ports:
+          - 4318:4318
+          - 16686:16686
     env:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://localhost:4318
+      OTEL_SERVICE_NAME: recepia-perf
       PERF_CONVERSATIONS: "40"
       PERF_P95_BUDGET_MS: "1500"
       PERF_MIN_CONFIRMED_RATIO: "0.5"
@@ -52,8 +61,14 @@ jobs:
           node-version: "24"
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Perf smoke (2 repetitions, median p95 reported)
+      - name: Perf smoke (2 repetitions, median p95 reported; tracing exported to Jaeger)
         run: pnpm perf:smoke
+      - name: Spans reached the collector (tracing really was on)
+        run: |
+          sleep 3
+          count=$(curl -s "http://localhost:16686/api/traces?service=recepia-perf&operation=webhook.inbound&limit=5" | jq '.data | length')
+          echo "traces found: ${count}"
+          test "${count}" -gt 0
       - uses: actions/upload-artifact@v4
         if: always()
         with:

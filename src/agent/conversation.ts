@@ -7,8 +7,44 @@ import {
   OFFERED_SLOTS_MAX,
   PROCESSED_IDS_MAX,
 } from "../config";
-import type { LlmMessage } from "../ports/llm-port";
-import type { ConversationState } from "./types";
+import type { LlmMessage, LlmUsage } from "../ports/llm-port";
+import type { ConversationState, ConversationUsage } from "./types";
+
+export function emptyUsage(): ConversationUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0,
+    calls: 0,
+    models: [],
+  };
+}
+
+/** Add one model call's usage and estimated cost (005 FR-509). */
+export function addUsage(
+  s: ConversationState,
+  call: { usage?: LlmUsage; costUsd: number; model?: string },
+  now: Date,
+): ConversationState {
+  const u = s.usage;
+  const models =
+    call.model && !u.models.includes(call.model) ? [...u.models, call.model] : u.models;
+  return {
+    ...s,
+    usage: {
+      inputTokens: u.inputTokens + (call.usage?.inputTokens ?? 0),
+      outputTokens: u.outputTokens + (call.usage?.outputTokens ?? 0),
+      cacheReadTokens: u.cacheReadTokens + (call.usage?.cacheReadTokens ?? 0),
+      cacheWriteTokens: u.cacheWriteTokens + (call.usage?.cacheWriteTokens ?? 0),
+      costUsd: u.costUsd + call.costUsd,
+      calls: u.calls + 1,
+      models,
+    },
+    updatedAt: now,
+  };
+}
 
 export function emptyState(phone: string, now: Date): ConversationState {
   return {
@@ -24,6 +60,7 @@ export function emptyState(phone: string, now: Date): ConversationState {
     escalatedAt: null,
     handoffNoticeAt: null,
     promptVersion: null,
+    usage: emptyUsage(),
     version: 0,
     updatedAt: now,
   };

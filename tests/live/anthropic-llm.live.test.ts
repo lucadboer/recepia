@@ -42,6 +42,7 @@ describe.skipIf(!live)("AnthropicLLM — LIVE smoke test", () => {
     ];
     const first = await llm.turn({
       system: prompt.text,
+      systemCacheablePrefix: prompt.cacheablePrefixLength,
       tools: toolDefs,
       messages: history,
       promptVersion: prompt.version,
@@ -69,14 +70,21 @@ describe.skipIf(!live)("AnthropicLLM — LIVE smoke test", () => {
     // Must not throw: thinking blocks (if any) go back exactly as received.
     const second = await llm.turn({
       system: prompt.text,
+      systemCacheablePrefix: prompt.cacheablePrefixLength,
       tools: toolDefs,
       messages: history,
       promptVersion: prompt.version,
     });
     expect(["tool_use", "end_turn", "max_tokens"]).toContain(second.stopReason);
     expect(second.content.length).toBeGreaterThan(0);
+    // 005 SC-504: the first call writes the cache (tools + static system, ≥ 512 tokens), the
+    // second — same prefix, seconds later — reads it.
+    expect(
+      (first.usage?.cacheWriteTokens ?? 0) + (first.usage?.cacheReadTokens ?? 0),
+    ).toBeGreaterThan(0);
+    expect(second.usage?.cacheReadTokens ?? 0).toBeGreaterThan(0);
     console.info(
-      `[live] ${model}: first=${first.stopReason} thinkingBlocks=${first.content.filter((c) => c.type === "thinking").length} second=${second.stopReason} usage=${JSON.stringify(second.usage)}`,
+      `[live] ${model}: first=${first.stopReason} thinkingBlocks=${first.content.filter((c) => c.type === "thinking").length} firstUsage=${JSON.stringify(first.usage)} second=${second.stopReason} secondUsage=${JSON.stringify(second.usage)}`,
     );
   }, 60_000);
 });

@@ -1,10 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { costUsd, loadPricing, type PricingTable } from "../../evals/lib/pricing";
+import * as evalsPricing from "../../evals/lib/pricing";
+import {
+  assertPriced,
+  costUsd,
+  loadPricing,
+  PRICING_PATH,
+  type PricingTable,
+} from "../../src/llm/pricing";
 
-// T433 — the dated pricing table and the cost arithmetic (estimate, labelled as such).
+// T433 / T509 — the dated pricing table (single source for the runtime budget and the evals) and
+// the cost arithmetic (estimate, labelled as such).
+
+describe("pricing table — single source", () => {
+  it("lives in src/llm and the eval harness re-exports it", () => {
+    expect(PRICING_PATH).toMatch(/src\/llm\/pricing\.json$/);
+    expect(evalsPricing.loadPricing).toBe(loadPricing);
+    expect(evalsPricing.costUsd).toBe(costUsd);
+  });
+
+  it("assertPriced throws for unpriced models, naming them, and accepts dated ids", () => {
+    const table = loadPricing();
+    expect(() =>
+      assertPriced(table, ["claude-sonnet-5-5", "claude-sonnet-5-5-20260901"]),
+    ).not.toThrow();
+    expect(() => assertPriced(table, ["claude-sonnet-5-5", "gpt-mystery", "other-x"])).toThrow(
+      /gpt-mystery.*other-x/,
+    );
+  });
+});
 
 describe("pricing table", () => {
-  it("loads evals/pricing.json with asOf, a source note and the production model", () => {
+  it("loads src/llm/pricing.json with asOf, a source note and the production model", () => {
     const table = loadPricing();
     expect(table.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(table.source.length).toBeGreaterThan(10);

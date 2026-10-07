@@ -10,6 +10,8 @@ import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { AnthropicLLM, DEFAULT_MODEL } from "../src/adapters/llm/anthropic-llm";
+import { OpenAICompatibleLLM } from "../src/adapters/llm/openai-compatible-llm";
+import { fallbackConfig } from "../src/composition";
 import { assertDisposableDatabase } from "../src/db/disposable";
 import { loadEnv } from "../src/db/env";
 import { migrate } from "../src/db/migrate";
@@ -25,7 +27,7 @@ import {
   type Metrics,
   type ScoredExecution,
 } from "./lib/metrics";
-import { costUsd, loadPricing } from "./lib/pricing";
+import { assertPriced, costUsd, loadPricing } from "./lib/pricing";
 import { applyBlock, checkBlock, readLatestLiveReport, renderBlock } from "./lib/readme-block";
 import { type CaseReport, HONESTY_LINE, type RunReport, writeReports } from "./lib/report";
 import {
@@ -55,10 +57,13 @@ export interface Args {
   repetitions: number;
   capUsd: number;
   model?: string;
+  provider: Provider;
   judge: boolean;
   writeBaseline: boolean;
   check: boolean;
 }
+
+export type Provider = "anthropic" | "openai-compatible";
 
 export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
   const envCap = Number(env.EVALS_CAP_USD);
@@ -69,6 +74,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
     verbose: false,
     repetitions: 1,
     capUsd: Number.isFinite(envCap) && envCap > 0 ? envCap : DEFAULT_CAP_USD,
+    provider: "anthropic",
     judge: false,
     writeBaseline: false,
     check: false,
@@ -115,6 +121,14 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
       case "--judge":
         args.judge = true;
         break;
+      case "--provider": {
+        const p = next();
+        if (p !== "anthropic" && p !== "openai-compatible") {
+          throw new Error(`--provider: expected anthropic | openai-compatible, got "${p}"`);
+        }
+        args.provider = p;
+        break;
+      }
       case "--write-baseline":
         args.writeBaseline = true;
         break;
@@ -174,7 +188,21 @@ export interface SuiteOptions {
 }
 
 /** No credential → the live run is skipped explicitly (FR-404: never a silent pass). */
-export function liveSkipReason(env: NodeJS.ProcessEnv): string | null {
+export function liveSkipReason(
+  env: NodeJS.ProcessEnv,
+  provider: Provider = "anthropic",
+): string | null {
+  if (provider === "openai-compatible") {
+    let cfg: ReturnType<typeof fallbackConfig> = null;
+    try {
+      cfg = fallbackConfig(env);
+    } catch {
+      cfg = null;
+    }
+    return cfg
+      ? null
+      : "FALLBACK_LLM_BASE_URL / FALLBACK_LLM_API_KEY / FALLBACK_LLM_MODEL are not all set — live evaluation of the secondary provider skipped (this is not a pass)";
+  }
   return env.ANTHROPIC_API_KEY
     ? null
     : "ANTHROPIC_API_KEY is not set — live evaluation skipped (this is not a pass)";
@@ -346,6 +374,7 @@ export async function judgeExecutions(
 export function buildReport(input: {
   mode: Mode;
   model: string | null;
+  provider: string | null;
   promptVersion: string;
   commit: string;
   date: string;
@@ -397,6 +426,7 @@ export function buildReport(input: {
     schemaVersion: 1,
     mode: input.mode,
     model: input.model,
+    provider: input.provider,
     promptVersion: input.promptVersion,
     commit: input.commit,
     date: input.date,
@@ -463,6 +493,7 @@ async function runCommand(args: Args, io: Io): Promise<number> {
     const report = buildReport({
       mode: "fake",
       model: null,
+      provider: null,
       promptVersion: PROMPT_VERSION,
       commit: currentCommit(io.env),
       date: startedAt.toISOString(),
@@ -495,15 +526,25 @@ async function runCommand(args: Args, io: Io): Promise<number> {
 const fmtPct = (v: number | null): string => (v === null ? "n/a" : `${(v * 100).toFixed(1)}%`);
 
 async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<number> {
-  const skip = liveSkipReason(io.env);
+  const skip = liveSkipReason(io.env, args.provider);
   if (skip) {
     io.log(`evals · live mode skipped: ${skip}`);
     return 0;
   }
   assertDisposableDatabase(io.env.DATABASE_URL, io.env, "EVALS_ALLOW_TRUNCATE", "the eval harness");
   const pricing = loadPricing();
-  const model = args.model ?? (io.env.ANTHROPIC_MODEL || DEFAULT_MODEL);
-  const llm = new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model });
+  const fb = args.provider === "openai-compatible" ? fallbackConfig(io.env) : null;
+  const model = args.model ?? (fb ? fb.model : io.env.ANTHROPIC_MODEL || DEFAULT_MODEL);
+  try {
+    // An unpriced model would make the spend cap inert (005 FR-512).
+    assertPriced(pricing, [model]);
+  } catch (e) {
+    io.error(`evals: ${(e as Error).message}`);
+    return 2;
+  }
+  const llm = fb
+    ? new OpenAICompatibleLLM({ ...fb, model })
+    : new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model });
   let judgeModel: string | null = null;
   let rubric: ReturnType<typeof loadRubric> | null = null;
   if (args.judge) {
@@ -528,7 +569,7 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
   try {
     await migrate(pool);
     io.log(
-      `evals · mode=live · model=${model} · ${cases.length} case(s) × ${args.repetitions} · cap US$ ${args.capUsd.toFixed(2)} · prompt ${promptVersion} · pricing as of ${pricing.asOf}`,
+      `evals · mode=live · model=${model} (${args.provider}) · ${cases.length} case(s) × ${args.repetitions} · cap US$ ${args.capUsd.toFixed(2)} · prompt ${promptVersion} · pricing as of ${pricing.asOf}`,
     );
     const { scored, stopped } = await runSuite(cases, {
       pool,
@@ -537,9 +578,13 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
       llmFor: () => llm,
       costOf: guard.costOf,
       shouldStop: guard.shouldStop,
-      onExecution: (s) => io.log(formatRow(s, args.verbose)),
+      // The owner's credit is small: every live execution shows what it cost (005 R11).
+      onExecution: (s) =>
+        io.log(
+          `${formatRow(s, args.verbose)}\n    est. US$ ${(s.costUsd ?? 0).toFixed(4)} · cache read ${s.execution.llm.usage.cacheReadTokens} tok · running total US$ ${guard.spentUsd().toFixed(4)}`,
+        ),
     });
-    const metrics = computeMetrics(scored, cases);
+    const metrics = computeMetrics(scored, cases, { table: pricing, model });
     const baseline = readBaseline();
     const comparison = baseline
       ? compareWithBaseline(metrics, baseline, 5, { model, promptVersion })
@@ -570,6 +615,7 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
     const report = buildReport({
       mode: "live",
       model,
+      provider: args.provider,
       promptVersion,
       commit,
       date: startedAt.toISOString(),

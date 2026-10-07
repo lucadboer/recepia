@@ -49,6 +49,7 @@ describe("readmeCommand", () => {
       schemaVersion: 1,
       mode: "live",
       model: "claude-sonnet-5-5",
+      provider: "anthropic",
       promptVersion: "v001+c9e9f07",
       commit: "abc1234",
       date: "2026-10-06T12:00:00.000Z",
@@ -69,6 +70,8 @@ describe("readmeCommand", () => {
         cost: {
           perConversationUsd: 0.01,
           totalUsd: 1,
+          uncachedPerConversationUsd: null,
+          cacheHitRatio: null,
           tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         },
         errors: { total: 0, byKind: {} },
