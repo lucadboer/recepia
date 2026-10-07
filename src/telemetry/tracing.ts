@@ -137,8 +137,15 @@ export function startRootSpan(
   };
 }
 
+/** The most specific error class name: the subclass (SDK errors) or a custom `name`. */
+export function errorTypeOf(err: unknown): string {
+  if (!(err instanceof Error)) return typeof err;
+  const ctor = err.constructor?.name;
+  return ctor && ctor !== "Error" ? ctor : err.name || "Error";
+}
+
 export function recordError(span: Span, err: unknown): void {
-  const type = err instanceof Error ? err.constructor.name || err.name : typeof err;
+  const type = errorTypeOf(err);
   span.setAttribute(ATTR.errorType, type);
   if (err instanceof Error) span.recordException({ name: type, message: err.message });
   span.setStatus({ code: SpanStatusCode.ERROR, message: type });

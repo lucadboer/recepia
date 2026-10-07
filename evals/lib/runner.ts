@@ -7,6 +7,8 @@ import { performance } from "node:perf_hooks";
 import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
+import { LlmProviderError } from "../../src/adapters/llm/errors";
+import { FallbackExhaustedError } from "../../src/adapters/llm/fallback-llm";
 import { recordConsent, recordOptOut } from "../../src/agent/consent";
 import { type AgentDeps, handleInbound } from "../../src/agent/orchestrator";
 import { PROMPT_VERSION } from "../../src/agent/system-prompt";
@@ -109,13 +111,20 @@ export class MeasuringLLM implements LLMPort {
 
 /** Provider errors are counted, never scored as success (FR-405 error count). */
 export function classifyError(e: unknown): ExecutionError {
-  const err = e as { name?: string; status?: number; message?: string };
+  // Both providers failed: what matters for the metric is why the primary failed.
+  if (e instanceof FallbackExhaustedError) {
+    return { ...classifyError(e.primary), message: e.message };
+  }
+  const err = e as { name?: string; status?: number | null; message?: string };
   const message = err?.message ?? String(e);
   if (err?.name === "APIConnectionTimeoutError") return { kind: "timeout", message };
   if (err?.name === "APIConnectionError") return { kind: "connection", message };
   if (typeof err?.status === "number") {
     if (err.status === 429) return { kind: "rate_limit", message };
-    if (err.status >= 500) return { kind: "provider", message };
+    if (err.status >= 500 || err.status === 408) return { kind: "provider", message };
+  }
+  if (e instanceof LlmProviderError && e.transient && e.status === null) {
+    return { kind: /timeout/i.test(e.message) ? "timeout" : "connection", message };
   }
   return { kind: "infrastructure", message };
 }

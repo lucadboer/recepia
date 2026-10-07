@@ -49,6 +49,8 @@ export interface RunReport {
   schemaVersion: 1;
   mode: "fake" | "live";
   model: string | null;
+  /** Who served the model calls: "anthropic", "openai-compatible"; null for the scripted stand-in. */
+  provider: string | null;
   promptVersion: string;
   commit: string;
   date: string;
@@ -78,6 +80,7 @@ function orderedRun(run: RunReport): RunReport {
     schemaVersion: run.schemaVersion,
     mode: run.mode,
     model: run.model,
+    provider: run.provider,
     promptVersion: run.promptVersion,
     commit: run.commit,
     date: run.date,
@@ -107,7 +110,9 @@ export function renderMarkdown(run: RunReport): string {
   lines.push("# Evaluation report");
   lines.push("");
   lines.push(`- mode: ${run.mode}`);
-  lines.push(`- model: ${run.model ?? "— (scripted stand-in)"}`);
+  lines.push(
+    `- model: ${run.model ?? "— (scripted stand-in)"}${run.provider ? ` (${run.provider})` : ""}`,
+  );
   lines.push(`- prompt version: ${run.promptVersion}`);
   lines.push(`- commit: ${run.commit}`);
   lines.push(`- date: ${run.date}`);

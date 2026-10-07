@@ -10,7 +10,14 @@ import {
 } from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { escalationMessagePt } from "../messages";
-import { ATTR, linkFromTraceparent, SPAN, setAttributes, withSpan } from "../telemetry/tracing";
+import {
+  ATTR,
+  errorTypeOf,
+  linkFromTraceparent,
+  SPAN,
+  setAttributes,
+  withSpan,
+} from "../telemetry/tracing";
 
 /** Delay before attempt n+1 after the n-th failure (n = 1..). The last value repeats. */
 export const OUTBOX_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000];
@@ -137,7 +144,7 @@ async function dispatchOne(
             o = "retried";
           }
           setAttributes(span, {
-            [ATTR.errorType]: sendErr instanceof Error ? sendErr.constructor.name : "unknown",
+            [ATTR.errorType]: errorTypeOf(sendErr),
           });
         }
         setAttributes(span, { [ATTR.outboxResult]: o });

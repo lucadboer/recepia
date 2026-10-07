@@ -7,6 +7,7 @@
 import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
 import { hasEscalatedFlag } from "../domain/errors";
+import { errorTypeOf } from "../telemetry/tracing";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { getAvailability } from "../tools/get-availability";
@@ -197,7 +198,7 @@ export async function dispatchTool(
     // conversation off instead of letting the model carry on — reception is not notified twice.
     const escalated = hasEscalatedFlag(e);
     if (escalated) state = markEscalated(state, now);
-    const errorType = e instanceof Error ? e.constructor.name || e.name : "unknown";
+    const errorType = errorTypeOf(e);
     return result(state, errorReply(e), true, { escalated, errorType });
   }
 }

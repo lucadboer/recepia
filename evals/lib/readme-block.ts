@@ -32,7 +32,7 @@ export function renderBlock(report: RunReport | null): string {
     const m = report.metrics;
     const day = report.date.slice(0, 10);
     lines.push(
-      `**Latest live evaluation** — ${day} · model \`${report.model ?? "—"}\` · prompt \`${report.promptVersion}\` · commit \`${report.commit}\` · ${report.summary.cases} cases × ${report.repetitions} executions per case${report.partial ? " · ⚠️ **partial run** (stopped by the spend cap)" : ""}`,
+      `**Latest live evaluation** — ${day} · model \`${report.model ?? "—"}\`${report.provider ? ` (${report.provider})` : ""} · prompt \`${report.promptVersion}\` · commit \`${report.commit}\` · ${report.summary.cases} cases × ${report.repetitions} executions per case${report.partial ? " · ⚠️ **partial run** (stopped by the spend cap)" : ""}`,
     );
     lines.push("");
     lines.push("| Metric | Value |");

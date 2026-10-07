@@ -16,6 +16,7 @@ function liveReport(): RunReport {
     schemaVersion: 1,
     mode: "live",
     model: "claude-sonnet-5-5",
+    provider: "anthropic",
     promptVersion: "v001+c9e9f07",
     commit: "abc1234",
     date: "2026-10-06T12:00:00.000Z",

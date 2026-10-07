@@ -31,7 +31,7 @@ Format: API + Guarantees + Required Tests (tests first, constitution I).
 - **Tests**: stubbed client asserts the request shape; live check (one conversation) shows cache reads > 0.
 
 ## `OpenAICompatibleLLM` / `FallbackLLM`
-- **Guarantees**: mapping in research R7; transient errors (timeout, 408/429/5xx, connection) → secondary; refusal/4xx/auth → never; both fail → the primary's error is rethrown with the secondary's as cause; served provider/model on the result.
+- **Guarantees**: mapping in research R7; transient errors (timeout, 408/429/5xx, connection) → secondary; refusal/4xx/auth → never; both fail → `FallbackExhaustedError` carrying both errors (cause = primary; classified by the primary's failure); served provider/model on the result.
 - **Tests**: local HTTP stub — request body shape, tool_calls round trip, finish reasons, usage with cached tokens, error statuses, timeout; fallback matrix.
 
 ## Retention (`purgeInactive`, `pnpm retention:purge`)

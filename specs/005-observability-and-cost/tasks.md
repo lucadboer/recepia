@@ -77,11 +77,11 @@ description: "Task list for 005-observability-and-cost"
 
 ## Phase 6: User Story 4 — Fallback provider (P2)
 
-- [ ] T531 [P] [US4] Unit test `tests/unit/openai-compatible-llm.test.ts` against a local `node:http` stub: request body (model, messages mapping incl. tool_calls/tool role, tools, no thinking), auth header, finish reasons → stopReason, unparsable arguments → `{}`, usage with cached tokens, 429/5xx → transient `LlmProviderError`, 400/401 → non-transient, timeout → transient, `NotConfigured` without config — must FAIL
-- [ ] T532 [US4] Implement `src/adapters/llm/openai-compatible-llm.ts` and `src/adapters/llm/errors.ts` (`LlmProviderError`, `isTransientLlmError`) — make T531 pass
-- [ ] T533 [P] [US4] Unit test `tests/unit/fallback-llm.test.ts`: transient matrix → secondary used and result tagged; refusal / 400 / 401 → secondary never called; both fail → primary error rethrown with cause; span event recorded — must FAIL
-- [ ] T534 [US4] Implement `src/adapters/llm/fallback-llm.ts`; wire in `src/composition.ts` when `FALLBACK_LLM_*` are set; `evals/lib/runner.ts` `classifyError` reuses `isTransientLlmError` — make T533 pass
-- [ ] T535 [US4] Evals `--provider anthropic|openai-compatible` in `evals/run.ts`; report `provider` field; tests in `tests/unit/evals-live.test.ts`
+- [x] T531 [P] [US4] Unit test `tests/unit/openai-compatible-llm.test.ts` against a local `node:http` stub: request body (model, messages mapping incl. tool_calls/tool role, tools, no thinking), auth header, finish reasons → stopReason, unparsable arguments → `{}`, usage with cached tokens, 429/5xx → transient `LlmProviderError`, 400/401 → non-transient, timeout → transient, `NotConfigured` without config — must FAIL
+- [x] T532 [US4] Implement `src/adapters/llm/openai-compatible-llm.ts` and `src/adapters/llm/errors.ts` (`LlmProviderError`, `isTransientLlmError`) — make T531 pass
+- [x] T533 [P] [US4] Unit test `tests/unit/fallback-llm.test.ts`: transient matrix → secondary used and result tagged; refusal / 400 / 401 → secondary never called; both fail → primary error rethrown with cause; span event recorded — must FAIL
+- [x] T534 [US4] Implement `src/adapters/llm/fallback-llm.ts`; wire in `src/composition.ts` when `FALLBACK_LLM_*` are set; `evals/lib/runner.ts` `classifyError` reuses `isTransientLlmError` — make T533 pass
+- [x] T535 [US4] Evals `--provider anthropic|openai-compatible` in `evals/run.ts`; report `provider` field; tests in `tests/unit/evals-live.test.ts`
 
 ---
 

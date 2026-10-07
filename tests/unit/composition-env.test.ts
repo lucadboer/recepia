@@ -48,3 +48,39 @@ describe("pricedModels — every configured model needs a price (005 FR-512)", (
     expect(() => assertConfiguredModelsPriced({})).not.toThrow();
   });
 });
+
+describe("fallback provider wiring (005 FR-513)", () => {
+  const FULL = {
+    ANTHROPIC_API_KEY: "sk-ant-test",
+    FALLBACK_LLM_BASE_URL: "https://example.test/v1",
+    FALLBACK_LLM_API_KEY: "k",
+    FALLBACK_LLM_MODEL: "claude-haiku-4-5",
+  };
+
+  it("fallbackConfig: all three → config, none → null, partial → fail fast", async () => {
+    const { fallbackConfig } = await import("../../src/composition");
+    expect(fallbackConfig({})).toBeNull();
+    expect(fallbackConfig(FULL)).toEqual({
+      baseUrl: FULL.FALLBACK_LLM_BASE_URL,
+      apiKey: "k",
+      model: "claude-haiku-4-5",
+    });
+    expect(() => fallbackConfig({ FALLBACK_LLM_BASE_URL: "x" })).toThrow(/FALLBACK_LLM_/);
+  });
+
+  it("buildLlm wraps the primary in FallbackLLM only when configured; pricedModels includes the fallback model", async () => {
+    const { buildLlm, pricedModels, assertConfiguredModelsPriced } = await import(
+      "../../src/composition"
+    );
+    const { FallbackLLM } = await import("../../src/adapters/llm/fallback-llm");
+    const { AnthropicLLM } = await import("../../src/adapters/llm/anthropic-llm");
+    expect(buildLlm({ ANTHROPIC_API_KEY: "sk-ant-test" })).toBeInstanceOf(AnthropicLLM);
+    const wrapped = buildLlm(FULL);
+    expect(wrapped).toBeInstanceOf(FallbackLLM);
+    expect(wrapped.model).toBe("claude-sonnet-5-5");
+    expect(pricedModels(FULL)).toEqual(["claude-sonnet-5-5", "claude-haiku-4-5"]);
+    expect(() =>
+      assertConfiguredModelsPriced({ ...FULL, FALLBACK_LLM_MODEL: "gpt-unpriced" }),
+    ).toThrow(/gpt-unpriced/);
+  });
+});
