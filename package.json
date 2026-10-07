@@ -32,8 +32,15 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
+    "@opentelemetry/instrumentation": "^0.223.0",
+    "@opentelemetry/instrumentation-pg": "^0.75.0",
+    "@opentelemetry/resources": "^2.12.0",
+    "@opentelemetry/sdk-trace-node": "^2.12.0",
     "googleapis": "^183.0.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",

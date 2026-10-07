@@ -15,3 +15,13 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # Local trace viewer (feature 005): `docker compose --profile observability up -d`, then
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 and the UI at http://localhost:16686.
+  jaeger:
+    image: jaegertracing/jaeger:2.11.0
+    container_name: recepia-jaeger
+    profiles: ["observability"]
+    ports:
+      - "16686:16686" # UI
+      - "4318:4318" # OTLP/HTTP

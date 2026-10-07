@@ -134,7 +134,7 @@ Two modes share everything except the model port:
 Per run the report ([`evals/reports/latest.md`](evals/reports/)) carries task success per category,
 tool-call accuracy, escalation precision/recall for the regex triage alone **and** for the full
 agent, injection resistance, latency p50/p95 per turn and per conversation, tokens and estimated cost
-from a [dated pricing table](evals/pricing.json), error counts, the model id, the prompt version and
+from a [dated pricing table](src/llm/pricing.json), error counts, the model id, the prompt version and
 the commit.
 
 <!-- evals:start -->
