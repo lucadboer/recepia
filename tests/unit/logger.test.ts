@@ -1,5 +1,5 @@
 import { Writable } from "node:stream";
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { configureLogger, log } from "../../src/telemetry/logger";
 import { startTestTelemetry, type TestTelemetry } from "../helpers/telemetry";
@@ -57,6 +57,18 @@ describe("logger", () => {
       expect(lines[0]).toMatchObject({ trace_id: ctx.traceId, span_id: ctx.spanId });
       span.end();
     });
+  });
+
+  it("never masks trace or span ids, even when they contain long digit runs", () => {
+    const sc = {
+      traceId: "a1234567890123456789012345678901",
+      spanId: "ff12345678901234",
+      traceFlags: 1,
+    };
+    context.with(trace.setSpan(context.active(), trace.wrapSpanContext(sc)), () => {
+      log.info({ event: "x" }, "ids");
+    });
+    expect(lines[0]).toMatchObject({ trace_id: sc.traceId, span_id: sc.spanId });
   });
 
   it("masks phone numbers anywhere: message, nested fields, arrays and errors", () => {

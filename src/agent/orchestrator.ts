@@ -11,7 +11,7 @@ import { costUsd, loadPricing, type PricingTable } from "../llm/pricing";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
 import { log } from "../telemetry/logger";
-import { maskPhonesIn, patientRef } from "../telemetry/pseudonym";
+import { maskPhone, patientRef } from "../telemetry/pseudonym";
 import { ATTR, type MaybeAttributes, SPAN, setAttributes, withSpan } from "../telemetry/tracing";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
@@ -90,7 +90,9 @@ function textOf(content: LlmContent[]): string {
 
 /** Tool names come from the model: keep them identifier-shaped and phone-free for telemetry. */
 function telemetryToolName(name: string): string {
-  return maskPhonesIn(name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64)) || "unknown";
+  const shaped = name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64);
+  // Any long digit run in a model-chosen name is treated as a possible phone, glued or not.
+  return shaped.replace(/\d{8,}/g, (m) => maskPhone(m)) || "unknown";
 }
 
 /** Only non-personal, validated tool arguments reach telemetry (FR-503). */

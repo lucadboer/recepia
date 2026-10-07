@@ -43,6 +43,26 @@ describe("maskPhonesIn (backstop for free text)", () => {
   });
 });
 
+describe("maskPhonesIn — never corrupts identifiers (found by a flaky test, 2026-10-07)", () => {
+  it.each([
+    "0af7651916cd43dd8448eb211c80319c", // trace id
+    "a1234567890123456789012345678901", // trace id with a long digit run inside
+    "1234567890123456abcdef0123456789",
+    "123e4567-e89b-12d3-a456-426614174000", // uuid whose last group is all digits
+    "b7ad6b7169203331", // span id
+    "ff12345678901234", // span id ending in digits
+    "2026-10-07T12:00:00.000Z",
+  ])("leaves %s untouched", (id) => {
+    expect(maskPhonesIn(id)).toBe(id);
+  });
+
+  it("still masks standalone numbers next to punctuation, @ and underscores", () => {
+    expect(maskPhonesIn("(+5531900000101)")).toBe("(***0101)");
+    expect(maskPhonesIn("call_5531900000155")).toBe("call_***0155");
+    expect(maskPhonesIn("to=5531900000101,")).toBe("to=***0101,");
+  });
+});
+
 describe("patientPseudonym", () => {
   it("is stable for the same key, differs across keys and never contains the phone", () => {
     vi.stubEnv("TELEMETRY_HASH_KEY", "key-a");

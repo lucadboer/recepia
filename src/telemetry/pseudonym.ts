@@ -39,9 +39,16 @@ export function maskPhone(phone: string): string {
   return digits.length > 4 ? `***${digits.slice(-4)}` : "***";
 }
 
-/** Backstop for free text (error messages, third-party strings): masks every 10–15 digit run. */
+/**
+ * Backstop for free text (error messages, third-party strings): masks every STANDALONE 10–15
+ * digit number. A digit run glued to letters or hyphens is part of an identifier (trace/span
+ * ids, UUIDs, pseudonyms are hex and often contain long digit runs) and is left alone —
+ * masking those would break log↔trace correlation.
+ */
+const STANDALONE_PHONE = /(?<![0-9A-Za-z-])\+?\d{10,15}(?![0-9A-Za-z-])/g;
+
 export function maskPhonesIn(text: string): string {
-  return text.replace(/\+?\d{10,15}/g, (m) => maskPhone(m));
+  return text.replace(STANDALONE_PHONE, (m) => maskPhone(m));
 }
 
 /** First 16 hex chars of HMAC-SHA256(phone, key). */
