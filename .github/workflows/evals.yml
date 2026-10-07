@@ -70,7 +70,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -149,7 +149,7 @@ jobs:
           fi
       - uses: pnpm/action-setup@v4
         if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
