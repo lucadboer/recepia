@@ -94,7 +94,7 @@ jobs:
           fi
       - name: Upload report (90 days)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: evals-fake-${{ github.sha }}
           path: evals/reports/fake/latest.*
@@ -176,7 +176,7 @@ jobs:
           fi
       - name: Upload report (90 days)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: evals-live-${{ github.run_id }}
           path: evals/reports/latest.*
