@@ -70,7 +70,7 @@ description: "Task list for 005-observability-and-cost"
 - [ ] T526 [US3] Implement caching in `src/adapters/llm/anthropic-llm.ts` and `cacheablePrefixLength` in `src/agent/system-prompt.ts`; `LlmTurnInput.systemCacheablePrefix`, `LlmTurnResult.model/provider` in `src/ports/llm-port.ts` — make T523/T524 pass
 - [ ] T527 [US3] Implement usage accumulation + budget gate (`src/agent/orchestrator.ts`, `src/agent/conversation.ts`, `src/agent/types.ts`, `src/db/repositories/conversation-repo.ts`, `src/config.ts` `DEFAULT_AGENT_BUDGET_USD`) — make T525 pass
 - [ ] T528 [US3] `src/composition.ts`: `AGENT_BUDGET_USD` parsing (invalid → fail fast), `assertPriced` for the primary (and fallback) model at startup, `ANTHROPIC_TIMEOUT_MS`; unit test in `tests/unit/composition-env.test.ts`
-- [ ] T529 [US3] Evals: `cost.cacheHitRatio` in `evals/lib/metrics.ts`, report + README block row, live rows print per-execution estimated cost and running total (`evals/run.ts`); tests in `tests/unit/evals-metrics.test.ts`, `evals-report.test.ts`, `evals-readme-block.test.ts`
+- [ ] T529 [US3] Evals: `cost.cacheHitRatio` and `cost.uncachedEquivalentUsd` (same tokens priced as plain input — SC-504 without an extra paid run) in `evals/lib/metrics.ts`, report + README block rows, live rows print per-execution estimated cost and running total (`evals/run.ts`); tests in `tests/unit/evals-metrics.test.ts`, `evals-report.test.ts`, `evals-readme-block.test.ts`
 - [ ] T530 [US3] Live caching check (≤ US$ 0.02): one round trip with `LIVE_LLM=1` shows `cacheReadTokens > 0` on the second call; record the numbers in `research.md` R5
 
 ---

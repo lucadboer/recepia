@@ -154,7 +154,7 @@ As the data controller, I want conversation state and delivered/terminal message
 - **SC-501**: For a booking conversation sent through the webhook, 100 % of inbound messages produce exactly one trace containing the receipt, the turn, every model call, every tool call and the linked delivery; demonstrated once with a captured trace image in the documentation.
 - **SC-502**: Zero full phone numbers and zero patient message texts appear in the logs and traces captured while running the full automated suite and the deterministic evaluation (checked automatically).
 - **SC-503**: 100 % of conversations whose accumulated cost reaches the budget are handed off before the next model call (scripted test), and in the live evaluation no conversation exceeds the budget by more than one model call.
-- **SC-504**: In the live evaluation, every conversation with two or more model calls reports cache-read tokens greater than zero, and the estimated cost per conversation drops versus the uncached measurement (both numbers in the report).
+- **SC-504**: In the live evaluation, every conversation with two or more model calls reports cache-read tokens greater than zero, and the report shows both the estimated cost and what the same tokens would have cost without caching (computed from the same run — no extra paid run).
 - **SC-505**: With the primary failing transiently (simulated), 100 % of turns complete through the secondary; with refusals or invalid requests, 0 calls reach the secondary.
 - **SC-506**: The retention job removes 100 % of eligible rows and 0 pending messages, consent rows or audit rows (test), and the dry run deletes nothing.
 - **SC-507**: The performance smoke's p95 with telemetry enabled stays within the existing budget (+10 %).
