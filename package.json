@@ -14,6 +14,7 @@
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
     "conversation:release": "tsx src/cli/conversation-release.ts",
+    "retention:purge": "node --import tsx src/cli/retention-purge.ts",
     "start": "node --import tsx --import ./src/telemetry/register.ts src/server.ts",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",

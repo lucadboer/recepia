@@ -87,8 +87,8 @@ description: "Task list for 005-observability-and-cost"
 
 ## Phase 7: User Story 5 — Retention (P2)
 
-- [ ] T536 [P] [US5] Integration test `tests/integration/retention.test.ts`: old/new conversation states and outbox rows of every status → exact deletions, pending/consent/audit untouched, one `retention_purged` row with counts; dry run deletes nothing; `--days` override; scheduler lists `retention` — must FAIL
-- [ ] T537 [US5] Implement `src/jobs/retention.ts`, `src/cli/retention-purge.ts` (`pnpm retention:purge`), audit action in `src/db/repositories/audit-repo.ts`, daily job in `src/jobs/scheduler.ts` (`RETENTION_INTERVAL_MS`) — make T536 pass
+- [x] T536 [P] [US5] Integration test `tests/integration/retention.test.ts`: old/new conversation states and outbox rows of every status → exact deletions, pending/consent/audit untouched, one `retention_purged` row with counts; dry run deletes nothing; `--days` override; scheduler lists `retention` — must FAIL
+- [x] T537 [US5] Implement `src/jobs/retention.ts`, `src/cli/retention-purge.ts` (`pnpm retention:purge`), audit action in `src/db/repositories/audit-repo.ts`, daily job in `src/jobs/scheduler.ts` (`RETENTION_INTERVAL_MS`) — make T536 pass
 
 ---
 

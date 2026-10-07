@@ -47,6 +47,10 @@ export const SHUTDOWN_TIMEOUT_MS = 15_000; // budget to drain in-flight turns on
 // poller only catches retries and anything a crashed turn left behind.
 export const OUTBOX_POLL_MS = 15_000;
 export const HOLD_SWEEP_MS = 60_000;
+// LGPD retention purge (005 FR-515): daily, first run shortly after start so a frequently
+// restarted process still purges.
+export const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const RETENTION_FIRST_RUN_MS = 60_000;
 
 export const ROUTINE_TYPES = ["evaluation", "cleaning", "follow_up", "consultation"] as const;
 export type AppointmentType = (typeof ROUTINE_TYPES)[number];

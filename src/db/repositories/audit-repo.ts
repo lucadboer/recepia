@@ -11,7 +11,8 @@ export type AuditAction =
   | "consent_revoked"
   | "outbox_dead_letter"
   | "outbox_cancelled"
-  | "conversation_released";
+  | "conversation_released"
+  | "retention_purged";
 
 export interface AuditEntry {
   entity: string;
