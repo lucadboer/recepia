@@ -43,6 +43,29 @@ export interface WebhookServerOptions {
   queue?: PerKeyQueue;
   /** Request bodies above this size are refused with 413. Default: WEBHOOK_MAX_BODY_BYTES. */
   maxBodyBytes?: number;
+  /** Readiness probe for GET /readyz (e.g. `SELECT 1`). Absent = always ready. */
+  ready?: () => Promise<boolean>;
+}
+
+const READY_TIMEOUT_MS = 1_000;
+
+function sendJson(res: ServerResponse, status: number, body: unknown, head: boolean): void {
+  res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  res.end(head ? undefined : JSON.stringify(body));
+}
+
+/** True only when the probe resolves true within the timeout; a throw or a hang is "not ready". */
+async function probeReady(ready: (() => Promise<boolean>) | undefined): Promise<boolean> {
+  if (!ready) return true;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), READY_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([ready().catch(() => false), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function defaultLogStatus(s: CloudStatus): void {
@@ -147,6 +170,23 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
       return;
     }
     const { pathname, searchParams } = parsed;
+
+    // --- Health (FR-508): exact paths, no auth, no configuration revealed, not logged ---
+    if (pathname === "/healthz" || pathname === "/readyz") {
+      const head = req.method === "HEAD";
+      if (req.method !== "GET" && !head) {
+        res.writeHead(405, { allow: "GET, HEAD" }).end();
+        return;
+      }
+      if (pathname === "/healthz") {
+        sendJson(res, 200, { status: "ok" }, head);
+        return;
+      }
+      void probeReady(opts.ready).then((ok) =>
+        sendJson(res, ok ? 200 : 503, { status: ok ? "ready" : "not_ready" }, head),
+      );
+      return;
+    }
 
     // --- Cloud API path (only when configured; exact match) ---
     if (cloud && pathname === cloudBase) {

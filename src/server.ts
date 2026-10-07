@@ -40,6 +40,11 @@ const server = createWebhookServer({
   onInbound: (msg) => handleInbound(deps, msg),
   cloud,
   queue,
+  // Readiness = the database answers (liveness needs nothing).
+  ready: async () => {
+    await deps.pool.query("SELECT 1");
+    return true;
+  },
 });
 // Background jobs: outbox delivery (retries) + hold-expiry sweep (T245).
 const jobs = startJobs(deps);

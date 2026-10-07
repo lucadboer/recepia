@@ -55,10 +55,10 @@ description: "Task list for 005-observability-and-cost"
 
 ## Phase 4: User Story 2 — Safe, correlated logs + health (P1)
 
-- [ ] T519 [P] [US2] Integration test `tests/integration/health.test.ts`: `/healthz` 200; `/readyz` 200 / 503 on false, throw and > 1 s; POST → 405; unrelated paths unchanged — must FAIL
-- [ ] T520 [US2] `src/webhook/server.ts` health routes + `ready` option; `src/server.ts` wires `SELECT 1` — make T519 pass
-- [ ] T521 [US2] Replace `console.*` on the service path (`server.ts`, `webhook/server.ts`, `webhook/shutdown.ts`, `agent/orchestrator.ts`, `jobs/scheduler.ts`) with `log` + pseudonym fields; test in `tests/unit/logger.test.ts` that the webhook inbound/handled lines carry pseudonym + masked phone and never the phone
-- [ ] T522 [US2] SC-502 automated scan: `tests/integration/pii-scan.test.ts` runs a booking + an escalation with debug logs captured and an in-memory exporter, and asserts no fixture phone/message text in any line or attribute; `evals.yml` fake job runs `LOG_LEVEL=debug pnpm evals:fake` and fails on a full `+55…` phone in the output
+- [x] T519 [P] [US2] Integration test `tests/integration/health.test.ts`: `/healthz` 200; `/readyz` 200 / 503 on false, throw and > 1 s; POST → 405; unrelated paths unchanged — must FAIL
+- [x] T520 [US2] `src/webhook/server.ts` health routes + `ready` option; `src/server.ts` wires `SELECT 1` — make T519 pass
+- [x] T521 [US2] Replace `console.*` on the service path (`server.ts`, `webhook/server.ts`, `webhook/shutdown.ts`, `agent/orchestrator.ts`, `jobs/scheduler.ts`) with `log` + pseudonym fields; test in `tests/unit/logger.test.ts` that the webhook inbound/handled lines carry pseudonym + masked phone and never the phone
+- [x] T522 [US2] SC-502 automated scan: `tests/integration/pii-scan.test.ts` runs a booking + an escalation with debug logs captured and an in-memory exporter, and asserts no fixture phone/message text in any line or attribute; `evals.yml` fake job runs `LOG_LEVEL=debug pnpm evals:fake` and fails on a full `+55…` phone in the output
 
 ---
 

@@ -5,7 +5,7 @@ import { dispatchOutbox } from "../jobs/dispatch-outbox";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
 import { log } from "../telemetry/logger";
-import { maskPhonesIn } from "../telemetry/pseudonym";
+import { maskPhonesIn, patientRef } from "../telemetry/pseudonym";
 import { ATTR, type MaybeAttributes, SPAN, setAttributes, withSpan } from "../telemetry/tracing";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
@@ -105,6 +105,17 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
       [ATTR.conversationStatus]: seen.conversationStatus,
       [ATTR.promptVersion]: seen.promptVersion,
     });
+    log.debug(
+      {
+        event: "turn.done",
+        messageId: msg.providerMessageId,
+        patient: patientRef(msg.phone),
+        status: result.status,
+        conversationStatus: seen.conversationStatus,
+        promptVersion: seen.promptVersion,
+      },
+      "turn finished",
+    );
     return result;
   });
 }
