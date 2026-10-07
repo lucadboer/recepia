@@ -1,6 +1,12 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
-  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
   "linter": {
     "enabled": true
   },
@@ -11,6 +17,13 @@
     "lineWidth": 100
   },
   "files": {
-    "includes": ["src/**", "tests/**", "scripts/**", "evals/**"]
+    "includes": [
+      "src/**",
+      "tests/**",
+      "scripts/**",
+      "evals/**",
+      "!evals/reports",
+      "!evals/baseline.json"
+    ]
   }
 }
