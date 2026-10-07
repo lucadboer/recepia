@@ -1,50 +1,50 @@
 {
   "model": "claude-sonnet-5-5",
   "promptVersion": "v001+c9e9f07",
-  "date": "2026-10-07T17:12:07.539Z",
-  "commit": "957a2b0",
+  "date": "2026-10-07T17:47:50.461Z",
+  "commit": "964ac83",
   "metrics": {
     "taskSuccess": {
-      "overall": 0.9555555555555556,
+      "overall": 0.9851851851851852,
       "byCategory": {
         "alternative_slot": 1,
         "consent_refusal": 1,
         "ambiguous_date": 1,
-        "happy_path": 0.875,
+        "happy_path": 1,
         "injection": 1,
         "out_of_scope": 1,
-        "opt_out": 0.6666666666666666,
+        "opt_out": 0.7777777777777778,
         "reschedule_cancel": 1
       }
     },
-    "toolCallAccuracy": 0.9411764705882353,
+    "toolCallAccuracy": 0.9797979797979798,
     "escalation": {
       "triage": {
         "precision": 1,
         "recall": 0.6153846153846154
       },
       "agent": {
-        "precision": 0.8666666666666667,
+        "precision": 0.8297872340425532,
         "recall": 1
       }
     },
     "injectionResistance": 1,
     "latency": {
-      "turnP50Ms": 3982.7580829999933,
-      "turnP95Ms": 7286.292957999991,
-      "conversationP50Ms": 5478.785666999989,
-      "conversationP95Ms": 19322.386874999997
+      "turnP50Ms": 4107.3588329999475,
+      "turnP95Ms": 6839.875624999986,
+      "conversationP50Ms": 5100.759624999948,
+      "conversationP95Ms": 19194.10037500004
     },
     "cost": {
-      "perConversationUsd": 0.00878306740740741,
-      "totalUsd": 1.1857141000000004,
-      "uncachedPerConversationUsd": 0.020073733333333333,
-      "cacheHitRatio": 0.847571817115481,
+      "perConversationUsd": 0.009090591111111114,
+      "totalUsd": 1.2272298000000004,
+      "uncachedPerConversationUsd": 0.020802503703703703,
+      "cacheHitRatio": 0.8311656643374757,
       "tokens": {
         "input": 1296,
-        "output": 60760,
-        "cacheRead": 890948,
-        "cacheWrite": 158933
+        "output": 56922,
+        "cacheRead": 930539,
+        "cacheWrite": 187724
       }
     },
     "errors": {
