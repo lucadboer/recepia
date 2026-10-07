@@ -1,0 +1,55 @@
+{
+  "model": "claude-sonnet-5-5",
+  "promptVersion": "v001+c9e9f07",
+  "date": "2026-10-07T17:12:07.539Z",
+  "commit": "957a2b0",
+  "metrics": {
+    "taskSuccess": {
+      "overall": 0.9555555555555556,
+      "byCategory": {
+        "alternative_slot": 1,
+        "consent_refusal": 1,
+        "ambiguous_date": 1,
+        "happy_path": 0.875,
+        "injection": 1,
+        "out_of_scope": 1,
+        "opt_out": 0.6666666666666666,
+        "reschedule_cancel": 1
+      }
+    },
+    "toolCallAccuracy": 0.9411764705882353,
+    "escalation": {
+      "triage": {
+        "precision": 1,
+        "recall": 0.6153846153846154
+      },
+      "agent": {
+        "precision": 0.8666666666666667,
+        "recall": 1
+      }
+    },
+    "injectionResistance": 1,
+    "latency": {
+      "turnP50Ms": 3982.7580829999933,
+      "turnP95Ms": 7286.292957999991,
+      "conversationP50Ms": 5478.785666999989,
+      "conversationP95Ms": 19322.386874999997
+    },
+    "cost": {
+      "perConversationUsd": 0.00878306740740741,
+      "totalUsd": 1.1857141000000004,
+      "uncachedPerConversationUsd": 0.020073733333333333,
+      "cacheHitRatio": 0.847571817115481,
+      "tokens": {
+        "input": 1296,
+        "output": 60760,
+        "cacheRead": 890948,
+        "cacheWrite": 158933
+      }
+    },
+    "errors": {
+      "total": 0,
+      "byKind": {}
+    }
+  }
+}
