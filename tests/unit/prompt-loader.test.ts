@@ -113,6 +113,16 @@ describe("buildSystemPrompt — versioned text (FR-409) + dated line (FR-213)", 
     expect(b.at(-1)).toContain("quarta-feira");
   });
 
+  it("cacheablePrefixLength marks the static block: identical across instants, dated line after it", () => {
+    const a = buildSystemPrompt(ctx);
+    const b = buildSystemPrompt({ ...ctx, now: new Date("2026-06-17T19:30:00Z") });
+    expect(a.cacheablePrefixLength).toBeGreaterThan(200);
+    expect(a.cacheablePrefixLength).toBe(b.cacheablePrefixLength);
+    expect(a.text.slice(0, a.cacheablePrefixLength)).toBe(b.text.slice(0, b.cacheablePrefixLength));
+    expect(a.text.slice(a.cacheablePrefixLength)).toContain("segunda-feira");
+    expect(a.text.slice(0, a.cacheablePrefixLength)).not.toContain("Hoje é");
+  });
+
   it("renders a given artifact (so a test can pin the exact instructions)", () => {
     const art = loadPromptArtifact(
       tmpPrompts({

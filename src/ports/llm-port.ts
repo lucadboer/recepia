@@ -31,6 +31,11 @@ export interface LlmTurnInput {
   messages: LlmMessage[];
   /** Version id of the system prompt artifact in effect (FR-409). Never sent to the provider. */
   promptVersion?: string;
+  /**
+   * Length of the stable prefix of `system` (static instructions). Adapters that support it
+   * mark that prefix as cacheable; the rest (the dated line) changes per turn (005 FR-511).
+   */
+  systemCacheablePrefix?: number;
 }
 
 /** Token accounting as reported by the provider; fakes report zeros. */

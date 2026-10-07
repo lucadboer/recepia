@@ -1,12 +1,14 @@
 import { GoogleCalendar } from "./adapters/calendar/google-calendar";
-import { AnthropicLLM } from "./adapters/llm/anthropic-llm";
+import { AnthropicLLM, DEFAULT_MODEL } from "./adapters/llm/anthropic-llm";
 import { CloudApiMessaging } from "./adapters/messaging/cloud-api-messaging";
 import { EvolutionMessaging } from "./adapters/messaging/evolution-messaging";
 import type { AgentDeps } from "./agent/orchestrator";
+import { DEFAULT_AGENT_BUDGET_USD } from "./config";
 import { loadEnv } from "./db/env";
 import { makePool } from "./db/pool";
 import { DbConversationStore } from "./db/repositories/conversation-repo";
 import { NotConfigured } from "./domain/errors";
+import { assertPriced, loadPricing } from "./llm/pricing";
 import { systemClock } from "./ports/clock";
 import type { MessagingPort } from "./ports/messaging-port";
 
@@ -32,6 +34,9 @@ export function buildAgentDeps(): AgentDeps {
   if (!receptionPhone) {
     throw new NotConfigured("RECEPTION_PHONE not set (NEEDS-USER)");
   }
+  // Fail fast before opening anything: an unpriced model would make the budget unenforceable.
+  const pricing = assertConfiguredModelsPriced();
+  const budgetUsd = agentBudgetUsd();
   const pool = makePool();
   return {
     pool,
@@ -42,7 +47,31 @@ export function buildAgentDeps(): AgentDeps {
     llm: new AnthropicLLM(),
     conversations: new DbConversationStore(pool),
     handoffAutoReleaseMs: handoffAutoReleaseMs(),
+    budgetUsd,
+    pricing,
   };
+}
+
+/** AGENT_BUDGET_USD (005 FR-510): unset/empty → default; anything but a positive number fails fast. */
+export function agentBudgetUsd(raw = process.env.AGENT_BUDGET_USD): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_AGENT_BUDGET_USD;
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (!/^\d+(\.\d+)?$/.test(trimmed) || !Number.isFinite(value) || value <= 0) {
+    throw new Error(`AGENT_BUDGET_USD must be a positive number of US dollars, got "${raw}"`);
+  }
+  return value;
+}
+
+/** The models this process may call — each must have a price (005 FR-512). */
+export function pricedModels(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [env.ANTHROPIC_MODEL || DEFAULT_MODEL];
+}
+
+export function assertConfiguredModelsPriced(env: NodeJS.ProcessEnv = process.env) {
+  const pricing = loadPricing();
+  assertPriced(pricing, pricedModels(env));
+  return pricing;
 }
 
 /** HANDOFF_AUTO_RELEASE_HOURS (optional): unset/invalid/<= 0 → never auto-release (FR-211). */

@@ -41,6 +41,8 @@ function liveReport(): RunReport {
       cost: {
         perConversationUsd: 0.0238,
         totalUsd: 3.21,
+        uncachedPerConversationUsd: null,
+        cacheHitRatio: null,
         tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
       },
       errors: { total: 1, byKind: { rate_limit: 1 } },
@@ -65,6 +67,7 @@ describe("renderBlock", () => {
       "61.5 %", // triage recall
       "5.0 s", // conversation p50
       "US$ 0.0238",
+      "Prompt cache hit ratio",
       "3 executions per case",
       HONESTY_LINE,
     ]) {

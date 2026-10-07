@@ -37,6 +37,8 @@ function sampleRun(): RunReport {
       cost: {
         perConversationUsd: null,
         totalUsd: null,
+        uncachedPerConversationUsd: null,
+        cacheHitRatio: null,
         tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       },
       errors: { total: 0, byKind: {} },
@@ -133,6 +135,8 @@ describe("renderReport", () => {
       "happy_path",
       "100.0 %",
       "Injection resistance",
+      "Prompt cache hit ratio",
+      "without caching",
       "| happy-01 |",
       "| inj-01 |",
       "writes.bookings",

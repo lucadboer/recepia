@@ -160,6 +160,10 @@ export function renderMarkdown(run: RunReport): string {
     `| Estimated cost per conversation / total | ${usd(m.cost.perConversationUsd)} / ${usd(m.cost.totalUsd)} |`,
   );
   lines.push(
+    `| Estimated cost per conversation without caching (same tokens) | ${usd(m.cost.uncachedPerConversationUsd)} |`,
+  );
+  lines.push(`| Prompt cache hit ratio | ${pct(m.cost.cacheHitRatio)} |`);
+  lines.push(
     `| Errors | ${m.errors.total}${
       m.errors.total
         ? ` (${Object.entries(m.errors.byKind)

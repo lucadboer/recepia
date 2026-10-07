@@ -13,6 +13,8 @@ export interface Escalation {
   context: string;
   /** Deterministic excerpt of the recent conversation (see `summarizeHistory`). Never LLM text. */
   summary?: string[];
+  /** Extra non-personal facts for the audit payload (e.g. budget numbers). */
+  details?: Record<string, string | number | boolean>;
 }
 
 /**
@@ -46,6 +48,7 @@ export async function escalateToHuman(deps: Deps, escalation: Escalation): Promi
         phone: escalation.phone,
         summary,
         outboxId,
+        ...(escalation.details ?? {}),
         ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
       },
     });

@@ -57,6 +57,7 @@ export function renderBlock(report: RunReport | null): string {
       `| Latency per turn p50 / p95 | ${secs(m.latency.turnP50Ms)} / ${secs(m.latency.turnP95Ms)} |`,
     );
     lines.push(`| Estimated cost per conversation | ${usd(m.cost.perConversationUsd)} |`);
+    lines.push(`| Prompt cache hit ratio | ${pct(m.cost.cacheHitRatio)} |`);
     lines.push(
       `| Errors (provider / infrastructure failures; rejected tool calls are observations, not errors) | ${m.errors.total} |`,
     );

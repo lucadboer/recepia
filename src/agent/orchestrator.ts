@@ -1,7 +1,13 @@
 import { SpanKind } from "@opentelemetry/api";
-import { AGENT_MAX_ITERATIONS, CLINIC_TIMEZONE, isRoutineType } from "../config";
+import {
+  AGENT_MAX_ITERATIONS,
+  CLINIC_TIMEZONE,
+  DEFAULT_AGENT_BUDGET_USD,
+  isRoutineType,
+} from "../config";
 import type { Deps } from "../deps";
 import { dispatchOutbox } from "../jobs/dispatch-outbox";
+import { costUsd, loadPricing, type PricingTable } from "../llm/pricing";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
 import { log } from "../telemetry/logger";
@@ -10,6 +16,7 @@ import { ATTR, type MaybeAttributes, SPAN, setAttributes, withSpan } from "../te
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
 import {
+  addUsage,
   appendMessage,
   appendUserText,
   boundState,
@@ -43,6 +50,29 @@ export interface AgentDeps extends Deps {
    * this long if reception never released it. Unset = never (release is explicit).
    */
   handoffAutoReleaseMs?: number;
+  /** Per-conversation estimated-cost budget in USD (005 FR-510). Default DEFAULT_AGENT_BUDGET_USD. */
+  budgetUsd?: number;
+  /** Pricing table for the budget. Default: src/llm/pricing.json. */
+  pricing?: PricingTable;
+}
+
+let defaultPricing: PricingTable | null = null;
+function pricingOf(deps: AgentDeps): PricingTable {
+  if (deps.pricing) return deps.pricing;
+  defaultPricing ??= loadPricing();
+  return defaultPricing;
+}
+
+/** Estimated USD of one model call; zero-usage calls (fakes) are free and never priced. */
+function callCost(deps: AgentDeps, r: LlmTurnResult): number {
+  const u = r.usage;
+  if (!u || u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens === 0) return 0;
+  const model = r.model ?? deps.llm.model ?? "unknown";
+  return (
+    costUsd(pricingOf(deps), model, u, (m) =>
+      log.warn({ event: "pricing.unknown_model", model }, m),
+    ) ?? 0
+  );
 }
 
 type ToolUseBlock = { type: "tool_use"; id: string; name: string; input: unknown };
@@ -88,6 +118,7 @@ interface ToolRun {
 interface TurnObservation {
   conversationStatus?: string;
   promptVersion?: string;
+  conversationCostUsd?: number;
 }
 
 /**
@@ -104,6 +135,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
       [ATTR.turnStatus]: result.status,
       [ATTR.conversationStatus]: seen.conversationStatus,
       [ATTR.promptVersion]: seen.promptVersion,
+      [ATTR.conversationCostUsd]: seen.conversationCostUsd,
     });
     log.debug(
       {
@@ -149,6 +181,7 @@ async function runTurn(
   const persist = async (s: ConversationState): Promise<ConversationState> => {
     const saved = await deps.conversations.save(stripThinking(boundState(s, now)));
     seen.conversationStatus = saved.status;
+    seen.conversationCostUsd = saved.usage.costUsd;
     return saved;
   };
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
@@ -231,7 +264,14 @@ async function runTurn(
       },
       async (span) => {
         const r = await deps.llm.turn(input);
+        const cost = callCost(deps, r);
+        state = addUsage(
+          state,
+          { usage: r.usage, costUsd: cost, model: r.model ?? deps.llm.model },
+          now,
+        );
         setAttributes(span, {
+          [ATTR.llmCostUsd]: cost,
           [ATTR.genAiResponseModel]: r.model,
           [ATTR.genAiProvider]: r.provider ?? deps.llm.provider,
           [ATTR.genAiInputTokens]: r.usage?.inputTokens,
@@ -245,12 +285,17 @@ async function runTurn(
       },
       { kind: SpanKind.CLIENT },
     );
-  const handOffModelTurn = async (reason: string, context: string): Promise<LoopResult> => {
+  const handOffModelTurn = async (
+    reason: string,
+    context: string,
+    details?: Record<string, string | number | boolean>,
+  ): Promise<LoopResult> => {
     await escalateToHuman(turnDeps, {
       reason,
       phone: msg.phone,
       context,
       summary: summarizeHistory(state.history),
+      details,
     });
     state = markEscalated(state, now);
     state = await persist(state);
@@ -265,10 +310,36 @@ async function runTurn(
   // retried by the outbox). Role-based flag from the tool, not a phone match (T235).
   let confirmationEnqueued = false;
   let iterations = 0;
+  const budgetUsd = deps.budgetUsd ?? DEFAULT_AGENT_BUDGET_USD;
   while (iterations < AGENT_MAX_ITERATIONS) {
+    // Budget gate (FR-510), before every model call — the overrun is bounded by one call.
+    if (state.usage.costUsd >= budgetUsd) {
+      log.warn(
+        {
+          event: "budget.reached",
+          costUsd: state.usage.costUsd,
+          budgetUsd,
+          calls: state.usage.calls,
+        },
+        "conversation budget reached",
+      );
+      if (confirmationEnqueued) {
+        // The booking is done and its confirmation owns the reply: finish without the closing
+        // model text instead of handing a completed conversation to reception.
+        state = await persist(state);
+        await flushOutbox();
+        return { status: "replied" };
+      }
+      return handOffModelTurn(
+        "budget_exceeded",
+        `Conversa atingiu o limite de custo estimado (US$ ${state.usage.costUsd.toFixed(4)} de US$ ${budgetUsd.toFixed(2)}).`,
+        { costUsd: Number(state.usage.costUsd.toFixed(6)), budgetUsd },
+      );
+    }
     iterations++;
     const turn = await callModel({
       system: prompt.text,
+      systemCacheablePrefix: prompt.cacheablePrefixLength,
       tools: toolDefs,
       messages: state.history,
       promptVersion: prompt.version,

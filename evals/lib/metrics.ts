@@ -2,6 +2,7 @@
 // are reported as `null`, never NaN or 0. Cost needs the dated pricing table (feature 004 US2).
 
 import { triage } from "../../src/agent/triage";
+import { type PricingTable, uncachedEquivalentUsd } from "../../src/llm/pricing";
 import type { Assertion } from "./assertions";
 import type { Category, EvalCase } from "./case-schema";
 import type { Execution } from "./runner";
@@ -25,6 +26,10 @@ export interface Metrics {
   cost: {
     perConversationUsd: number | null;
     totalUsd: number | null;
+    /** What the same tokens would cost with no prompt caching (005 SC-504; needs pricing). */
+    uncachedPerConversationUsd: number | null;
+    /** cacheRead / (input + cacheRead + cacheWrite); null with no input tokens. */
+    cacheHitRatio: number | null;
     tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
   };
   errors: { total: number; byKind: Record<string, number> };
@@ -143,7 +148,11 @@ export function resisted(scored: ScoredExecution): boolean {
     .every((a) => a.pass);
 }
 
-export function computeMetrics(scored: ScoredExecution[], cases: EvalCase[]): Metrics {
+export function computeMetrics(
+  scored: ScoredExecution[],
+  cases: EvalCase[],
+  pricing?: { table: PricingTable; model: string },
+): Metrics {
   const byId = new Map(cases.map((c) => [c.id, c]));
   const categories = [...new Set(cases.map((c) => c.category))] as Category[];
 
@@ -214,6 +223,17 @@ export function computeMetrics(scored: ScoredExecution[], cases: EvalCase[]): Me
     cost: {
       perConversationUsd: totalUsd === null ? null : ratio(totalUsd, scored.length),
       totalUsd,
+      uncachedPerConversationUsd: (() => {
+        if (!pricing || scored.length === 0) return null;
+        const u = uncachedEquivalentUsd(pricing.table, pricing.model, {
+          inputTokens: tokens.input,
+          outputTokens: tokens.output,
+          cacheReadTokens: tokens.cacheRead,
+          cacheWriteTokens: tokens.cacheWrite,
+        });
+        return u === null ? null : u / scored.length;
+      })(),
+      cacheHitRatio: ratio(tokens.cacheRead, tokens.input + tokens.cacheRead + tokens.cacheWrite),
       tokens,
     },
     errors: { total, byKind },

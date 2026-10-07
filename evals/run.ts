@@ -537,9 +537,13 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
       llmFor: () => llm,
       costOf: guard.costOf,
       shouldStop: guard.shouldStop,
-      onExecution: (s) => io.log(formatRow(s, args.verbose)),
+      // The owner's credit is small: every live execution shows what it cost (005 R11).
+      onExecution: (s) =>
+        io.log(
+          `${formatRow(s, args.verbose)}\n    est. US$ ${(s.costUsd ?? 0).toFixed(4)} · cache read ${s.execution.llm.usage.cacheReadTokens} tok · running total US$ ${guard.spentUsd().toFixed(4)}`,
+        ),
     });
-    const metrics = computeMetrics(scored, cases);
+    const metrics = computeMetrics(scored, cases, { table: pricing, model });
     const baseline = readBaseline();
     const comparison = baseline
       ? compareWithBaseline(metrics, baseline, 5, { model, promptVersion })

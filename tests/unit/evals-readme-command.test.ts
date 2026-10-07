@@ -69,6 +69,8 @@ describe("readmeCommand", () => {
         cost: {
           perConversationUsd: 0.01,
           totalUsd: 1,
+          uncachedPerConversationUsd: null,
+          cacheHitRatio: null,
           tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
         },
         errors: { total: 0, byKind: {} },

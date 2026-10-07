@@ -16,8 +16,11 @@ export const CALENDAR_MAX_ATTEMPTS = 3;
 export const CALENDAR_RETRY_BASE_MS = 25;
 
 // Safety cap on the LLM tool-use loop (final, T225): one booking needs 3 tool calls; 8 leaves
-// room for one alternative slot plus recovery. A cost budget per conversation comes with 005.
+// room for one alternative slot plus recovery. The cost bound is DEFAULT_AGENT_BUDGET_USD below.
 export const AGENT_MAX_ITERATIONS = 8;
+// Per-conversation estimated-cost budget (005 FR-510, decided 2026-10-07): ≈ 8× a full booking
+// conversation (~US$ 0.03). Reaching it hands the patient to reception. Override: AGENT_BUDGET_USD.
+export const DEFAULT_AGENT_BUDGET_USD = 0.25;
 
 // Bounds on per-phone ConversationState (T239). One inbound message produces at most
 // 1 + 2*AGENT_MAX_ITERATIONS history messages, so 40 keeps >= 2 full turns of context.
