@@ -49,24 +49,30 @@ const server = createWebhookServer({
 // Background jobs: outbox delivery (retries) + hold-expiry sweep (T245).
 const jobs = startJobs(deps);
 // Graceful shutdown (T246): stop jobs, stop accepting, drain in-flight turns, close the pool.
-const shutdown = createShutdown({
-  server,
-  jobs,
-  queue,
-  // Pool first, then flush the spans the last turns produced.
-  close: async () => {
-    await closeAgentDeps(deps);
-    await shutdownTelemetry();
-  },
-});
+const shutdown = createShutdown({ server, jobs, queue, close: () => closeAgentDeps(deps) });
+
+/**
+ * Flush telemetry AFTER the drain settles, whatever its outcome, on its own short budget: the
+ * spans of turns that got stuck are exactly the ones worth keeping, and a timed-out drain must
+ * not skip the flush.
+ */
+const TELEMETRY_FLUSH_MS = 3_000;
+async function flushTelemetryAndExit(code: number): Promise<never> {
+  await Promise.race([
+    shutdownTelemetry(),
+    new Promise<void>((resolve) => setTimeout(resolve, TELEMETRY_FLUSH_MS).unref()),
+  ]);
+  process.exit(code);
+}
+
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     log.info({ event: "signal", signal }, "shutdown requested");
     shutdown().then(
-      (clean) => process.exit(clean ? 0 : 1),
+      (clean) => flushTelemetryAndExit(clean ? 0 : 1),
       (err) => {
         log.error({ event: "shutdown.failed", err }, "shutdown failed");
-        process.exit(1);
+        return flushTelemetryAndExit(1);
       },
     );
   });
