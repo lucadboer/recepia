@@ -45,6 +45,7 @@ pnpm test:coverage        # same suite, v8 coverage with thresholds (fails below
 pnpm perf:smoke           # webhook load smoke with fakes: zero overbooking + p95 budget
 pnpm evals:fake           # golden set through the real orchestrator with the scripted stand-in (CI gate)
 pnpm evals:readme --check # README evaluation block equals the latest live report
+pnpm retention:purge --dry-run  # LGPD retention: what the daily purge would delete (counts only)
 pnpm audit --audit-level=high
 ```
 
@@ -97,6 +98,19 @@ pnpm evals:readme [--check]                       # regenerate / verify the READ
   commit to run the checks. Reports are kept as 90-day artifacts; only `latest.*` lives in git.
 - The harness **truncates** the database it points at and refuses non-local hosts unless
   `EVALS_ALLOW_TRUNCATE=1`.
+
+### Telemetry and logs (feature 005)
+
+- Business code imports only `@opentelemetry/api` (via `src/telemetry/tracing.ts`) and the `log`
+  facade (`src/telemetry/logger.ts`) — never the SDK, never `console.*` on the service path (CLIs
+  that talk to a human may print).
+- **Never put message text, model output, names or phones in a span attribute or a log field.**
+  Identify a patient with `patientRef(phone)`. Tests that touch telemetry use
+  `tests/helpers/telemetry.ts` (in-memory exporter) and the PII scans must stay green.
+- Local viewer: `docker compose --profile observability up -d`, then
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`. See [docs/observability.md](docs/observability.md).
+- Live model calls cost the owner's credit: estimate first, use the smallest run
+  (`--repetitions 1`, `--case`, a low `--cap-usd`).
 
 ### Scripts
 

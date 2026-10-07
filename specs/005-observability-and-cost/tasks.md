@@ -94,10 +94,10 @@ description: "Task list for 005-observability-and-cost"
 
 ## Phase 8: Polish
 
-- [ ] T538 `.github/workflows/perf.yml`: Jaeger service + OTLP endpoint so the p95 budget is measured with a real exporter (SC-507)
-- [ ] T539 [P] `docs/observability.md` (collector, span catalogue, log fields, pseudonym, budget, fallback, retention) and `docs/img/trace-booking.png` captured from Jaeger; README "Observability" section + guarantee rows; CONTRIBUTING env/commands
-- [ ] T540 [P] ADR `docs/adr/0008-telemetry-api-only-and-pii.md` (OTel API in business code, SDK at the edge, pseudonym + masking, no content in telemetry)
-- [ ] T541 Coverage: new modules inside thresholds (`register.ts` excluded like other process entrypoints, with a comment)
+- [x] T538 `.github/workflows/perf.yml`: Jaeger service + OTLP endpoint so the p95 budget is measured with a real exporter (SC-507)
+- [x] T539 [P] `docs/observability.md` (collector, span catalogue, log fields, pseudonym, budget, fallback, retention) and `docs/img/trace-booking.png` captured from Jaeger; README "Observability" section + guarantee rows; CONTRIBUTING env/commands
+- [x] T540 [P] ADR `docs/adr/0008-telemetry-api-only-and-pii.md` (OTel API in business code, SDK at the edge, pseudonym + masking, no content in telemetry)
+- [x] T541 Coverage: new modules inside thresholds (`register.ts` excluded like other process entrypoints, with a comment)
 - [ ] T542 Self-review + Codex review; fix findings; update checkboxes
 
 ## Dependencies

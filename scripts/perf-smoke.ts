@@ -27,6 +27,7 @@ import { DbConversationStore } from "../src/db/repositories/conversation-repo";
 import { ConversationConflictError } from "../src/domain/errors";
 import { systemClock } from "../src/ports/clock";
 import type { LLMPort, LlmTurnInput, LlmTurnResult } from "../src/ports/llm-port";
+import { shutdownTelemetry } from "../src/telemetry/register";
 import { PerKeyQueue } from "../src/webhook/per-key-queue";
 import { createWebhookServer } from "../src/webhook/server";
 
@@ -49,6 +50,9 @@ const SECRET = "perf-smoke-secret";
 // still colliding on popular ones).
 // ---------------------------------------------------------------------------
 export class BookingScriptLLM implements LLMPort {
+  readonly model = "scripted-booking";
+  readonly provider = "fake";
+
   async turn(input: LlmTurnInput): Promise<LlmTurnResult> {
     const first = input.messages[0]?.content.find((c) => c.type === "text");
     const idx = first && first.type === "text" ? Number(/#(\d+)/.exec(first.text)?.[1] ?? 0) : 0;
@@ -400,6 +404,8 @@ async function main(): Promise<void> {
   if (!verdict.withinBudget) {
     console.error(`FAIL: median turn p95 ${medianP95} ms > ${P95_BUDGET_MS} ms × ${TOLERANCE}`);
   }
+  // Flush the spans of the last turns before exiting (no-op when tracing is off).
+  await shutdownTelemetry();
   if (!verdict.pass) process.exit(1);
 }
 

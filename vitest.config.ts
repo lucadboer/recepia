@@ -21,12 +21,14 @@ export default defineConfig({
       exclude: [
         "src/server.ts", // process entrypoint — smoke-tested via `pnpm start` + SIGTERM, not unit-testable
         "src/db/seed.ts", // dev-only CLI
+        "src/telemetry/register.ts", // process bootstrap loaded with --import; exercised by perf.yml (spans checked in Jaeger)
+        "src/cli/retention-purge.ts", // thin CLI over purgeInactive (tested); arg parsing is unit-tested
         "src/adapters/calendar/google-calendar.ts", // live-only adapter (tests/live, needs credentials)
       ],
       reporter: ["text-summary", "json-summary", "lcov"],
       // Thresholds are the measured baseline minus a small margin (see CONTRIBUTING.md); ratchet up,
       // never down. CI fails below them.
-      thresholds: { lines: 90, statements: 90, functions: 85, branches: 84 },
+      thresholds: { lines: 93, statements: 92, functions: 90, branches: 86 },
     },
   },
 });
