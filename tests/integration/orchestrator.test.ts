@@ -591,3 +591,198 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(new Date(rows[0].start_ts).toISOString()).toBe("2026-06-15T14:30:00.000Z");
   });
 });
+
+describe("orchestrator — production model migration (004 R1): refusal, truncation, thinking", () => {
+  const availabilityTurn = toolUseTurn(
+    toolUse(TOOL_NAMES.availability, {
+      from: AGENT_NOW.toISOString(),
+      to: DAY_END,
+      type: "cleaning",
+    }),
+  );
+
+  async function escalationReason(): Promise<string | undefined> {
+    const { rows } = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = 'escalated' ORDER BY created_at DESC LIMIT 1",
+    );
+    return rows[0]?.payload?.reason;
+  }
+
+  it("a model refusal escalates with reason model_refusal and a pt-BR hand-off — never an empty reply", async () => {
+    const llm = new FakeLLM([{ stopReason: "refusal", content: [] }]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("escalated");
+    expect(llm.callCount).toBe(1); // the loop does not call the model again
+    expect(await countAudit(pool, "escalated")).toBe(1);
+    expect(await escalationReason()).toBe("model_refusal");
+    const toPatient = h.messaging.sent.filter((m) => m.to === PHONE);
+    expect(toPatient).toHaveLength(1);
+    expect(toPatient[0].body).toBe(reply.escalatedToReception());
+    expect(h.messaging.sent.filter((m) => m.to === RECEPTION)).toHaveLength(1);
+    expect((await h.conversations.load(PHONE))?.status).toBe("escalated");
+    expect(await bookingCount()).toBe(0);
+  });
+
+  it("a refusal that still carries tool_use blocks runs NO tool (the turn is discarded)", async () => {
+    const llm = new FakeLLM([{ stopReason: "refusal", content: availabilityTurn.content }]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("escalated");
+    expect(await escalationReason()).toBe("model_refusal");
+    expect((await h.conversations.load(PHONE))?.offeredSlots).toHaveLength(0); // tool never ran
+  });
+
+  it("a max_tokens turn with tool_use (truncated input) runs NO tool and escalates model_truncated", async () => {
+    const llm = new FakeLLM([{ stopReason: "max_tokens", content: availabilityTurn.content }]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("escalated");
+    expect(llm.callCount).toBe(1);
+    expect(await escalationReason()).toBe("model_truncated");
+    expect((await h.conversations.load(PHONE))?.offeredSlots).toHaveLength(0);
+    expect(h.messaging.sent.filter((m) => m.to === PHONE).map((m) => m.body)).toEqual([
+      reply.escalatedToReception(),
+    ]);
+  });
+
+  it("a max_tokens turn with only text is still delivered as the reply (no tools involved)", async () => {
+    const llm = new FakeLLM([
+      { stopReason: "max_tokens", content: [{ type: "text", text: "Posso ajudar com" }] },
+    ]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("oi"));
+
+    expect(r.status).toBe("replied");
+    expect(await countAudit(pool, "escalated")).toBe(0);
+  });
+
+  it("replays thinking blocks UNCHANGED within the turn and strips them from the persisted state", async () => {
+    const thinking = { type: "thinking", thinking: "consultar agenda", signature: "sig" };
+    const llm = new FakeLLM([
+      {
+        stopReason: "tool_use",
+        content: [{ type: "thinking", raw: thinking }, ...availabilityTurn.content],
+      },
+      (i) => {
+        // Second call of the SAME inbound turn: the assistant message must carry the block back.
+        const assistant = i.messages.at(-2);
+        expect(assistant?.role).toBe("assistant");
+        expect(assistant?.content[0]).toEqual({ type: "thinking", raw: thinking });
+        return finalTurn("Tenho estes horários…");
+      },
+    ]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("replied");
+    expect(llm.callCount).toBe(2);
+    const saved = await h.conversations.load(PHONE);
+    const blocks = saved?.history.flatMap((m) => m.content) ?? [];
+    expect(blocks.some((b) => b.type === "thinking")).toBe(false);
+    expect(blocks.some((b) => b.type === "tool_use")).toBe(true); // the rest of the turn is kept
+    // The next inbound turn therefore replays NO thinking block (history was edited: dated line).
+    const llm2 = new FakeLLM([
+      (i) => {
+        expect(i.messages.flatMap((m) => m.content).some((b) => b.type === "thinking")).toBe(false);
+        return finalTurn("ok");
+      },
+    ]);
+    const h2 = makeAgent(pool, llm2);
+    h2.conversations.map.set(PHONE, saved as NonNullable<typeof saved>);
+    await handleInbound(h2.deps, inbound("qual o primeiro?", "m2"));
+    expect(llm2.callCount).toBe(1);
+  });
+
+  it("records the prompt version on every model call (FR-409)", async () => {
+    const llm = new FakeLLM([finalTurn("oi")]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("oi"));
+    expect(llm.receivedInputs[0].promptVersion).toMatch(/^v\d{3}\+[0-9a-f]{7}$/);
+  });
+
+  it("FakeLLM reports zero usage so metrics code sees the same shape as the real adapter", async () => {
+    const llm = new FakeLLM([finalTurn("oi")]);
+    const res = await llm.turn({ system: "s", tools: [], messages: [] });
+    expect(res.usage).toEqual({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+    });
+  });
+});
+
+describe("orchestrator — prompt version traceability (004 US3, FR-409 / SC-407)", () => {
+  async function payloadsOf(action: string): Promise<Record<string, unknown>[]> {
+    const { rows } = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = $1 ORDER BY created_at",
+      [action],
+    );
+    return rows.map((r) => r.payload as Record<string, unknown>);
+  }
+
+  it("hold_created and booking_confirmed carry the prompt version the model was given; the state records it", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(
+        toolUse(TOOL_NAMES.availability, {
+          from: AGENT_NOW.toISOString(),
+          to: DAY_END,
+          type: "cleaning",
+        }),
+      ),
+      toolUseTurn(toolUse(TOOL_NAMES.hold, { start: FIRST_SLOT, type: "cleaning" })),
+      (i) =>
+        toolUseTurn(
+          toolUse(TOOL_NAMES.confirm, { hold_id: lastHoldId(i.messages), patient_name: "João" }),
+        ),
+      finalTurn("Confirmado!"),
+    ]);
+    const h = makeAgent(pool, llm);
+    await recordConsent(h.deps, PHONE);
+
+    await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    const version = llm.receivedInputs[0].promptVersion;
+    expect(version).toMatch(/^v\d{3}\+[0-9a-f]{7}$/);
+    expect((await payloadsOf("hold_created"))[0].promptVersion).toBe(version);
+    expect((await payloadsOf("booking_confirmed"))[0].promptVersion).toBe(version);
+    expect((await h.conversations.load(PHONE))?.promptVersion).toBe(version);
+  });
+
+  it("an escalation the MODEL initiated carries the prompt version; a triage escalation does not (no model involved)", async () => {
+    const llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.escalate, { reason: "model_decided", context: "x" })),
+    ]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("quero remarcar"));
+    const [modelEscalation] = await payloadsOf("escalated");
+    expect(modelEscalation.reason).toBe("model_decided");
+    expect(modelEscalation.promptVersion).toBe(llm.receivedInputs[0].promptVersion);
+
+    await resetDb(pool);
+    const h2 = makeAgent(pool, new FakeLLM([]));
+    await handleInbound(h2.deps, inbound("estou com muita dor", "m2"));
+    const [triaged] = await payloadsOf("escalated");
+    expect(triaged.reason).toBe("urgency");
+    expect(triaged.promptVersion).toBeUndefined();
+    expect((await h2.conversations.load(PHONE))?.promptVersion).toBeNull();
+  });
+
+  it("a refusal / max-iterations hand-off records the prompt version in effect", async () => {
+    const llm = new FakeLLM([{ stopReason: "refusal", content: [] }]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("quero marcar"));
+    const [refusal] = await payloadsOf("escalated");
+    expect(refusal.reason).toBe("model_refusal");
+    expect(refusal.promptVersion).toBe(llm.receivedInputs[0].promptVersion);
+  });
+});

@@ -19,6 +19,7 @@ import { recordConsent } from "../src/agent/consent";
 import { type AgentDeps, handleInbound } from "../src/agent/orchestrator";
 import { TOOL_NAMES } from "../src/agent/tool-schemas";
 import type { InboundMessage } from "../src/agent/types";
+import { assertDisposableDatabase } from "../src/db/disposable";
 import { loadEnv } from "../src/db/env";
 import { migrate } from "../src/db/migrate";
 import { makePool } from "../src/db/pool";
@@ -143,29 +144,9 @@ interface RunResult {
   overbookedSlots: number;
 }
 
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-
-/**
- * The smoke TRUNCATEs every mutable table. Refuse anything that does not look like a disposable
- * database: a local host, a CI runner, or an explicit PERF_ALLOW_TRUNCATE=1.
- */
-export function assertDisposableDatabase(
-  databaseUrl: string | undefined,
-  env: NodeJS.ProcessEnv = process.env,
-): void {
-  if (env.PERF_ALLOW_TRUNCATE === "1" || env.CI === "true") return;
-  let host = "";
-  try {
-    host = new URL(databaseUrl ?? "").hostname;
-  } catch {
-    host = "";
-  }
-  if (!LOCAL_HOSTS.has(host)) {
-    throw new Error(
-      `refusing to TRUNCATE tables on non-local database host "${host || "?"}" — the perf smoke wipes data; set PERF_ALLOW_TRUNCATE=1 only for a disposable database`,
-    );
-  }
-}
+// The smoke TRUNCATEs every mutable table; the guard lives in src/db/disposable.ts (shared with
+// the eval harness) and is re-exported here for the unit tests.
+export { assertDisposableDatabase };
 
 async function runOnce(rep: number): Promise<RunResult> {
   loadEnv();

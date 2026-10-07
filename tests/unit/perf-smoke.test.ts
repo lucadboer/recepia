@@ -85,9 +85,11 @@ describe("perf smoke — database safety guard", () => {
       /refusing to TRUNCATE/,
     );
     expect(() => assertDisposableDatabase(undefined, strict)).toThrow(/refusing to TRUNCATE/);
+    // No CI bypass: a CI database is a local service anyway, and an exported CI=true elsewhere
+    // must not widen the hole.
     expect(() =>
       assertDisposableDatabase("postgres://u:p@db.prod.example.com/db", { CI: "true" }),
-    ).not.toThrow();
+    ).toThrow(/refusing to TRUNCATE/);
     expect(() =>
       assertDisposableDatabase("postgres://u:p@db.prod.example.com/db", {
         PERF_ALLOW_TRUNCATE: "1",

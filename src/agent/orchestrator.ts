@@ -17,7 +17,9 @@ import {
   markProcessed,
   resetConversation,
   setAwaitingConsent,
+  setPromptVersion,
   shouldSendHandoffNotice,
+  stripThinking,
 } from "./conversation";
 import { classifyIntent, isAffirmative } from "./intent";
 import { reply } from "./reply";
@@ -78,8 +80,10 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // save() is a compare-and-swap on state.version (T240): the returned state carries the
   // new version so later saves in this turn chain correctly; a stale save throws
   // ConversationConflictError and the turn fails loudly (no retry, no patient message).
+  // Provider reasoning blocks are replayed only within this turn and never persisted (004 R1):
+  // the history is edited between inbound turns, which would invalidate their signatures.
   const persist = (s: ConversationState): Promise<ConversationState> =>
-    deps.conversations.save(boundState(s, now));
+    deps.conversations.save(stripThinking(boundState(s, now)));
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
   // our own patient-facing reply — only THIS conversation's rows (its confirmation and the
   // reception notice about it), so a slow provider never makes this patient wait on other
@@ -141,8 +145,25 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
 
-  // 4. Bounded LLM tool-use loop.
-  const system = buildSystemPrompt({ now, timezone: CLINIC_TIMEZONE });
+  // 4. Bounded LLM tool-use loop. The prompt version in effect is recorded on every call
+  //    (FR-409) and, through the tools' audit payloads, on every model-initiated write.
+  const prompt = buildSystemPrompt({ now, timezone: CLINIC_TIMEZONE });
+  // Every write the model initiates from here on is audited with this prompt version.
+  const turnDeps: AgentDeps = { ...deps, promptVersion: prompt.version };
+  state = setPromptVersion(state, prompt.version, now);
+  const handOffModelTurn = async (reason: string, context: string): Promise<LoopResult> => {
+    await escalateToHuman(turnDeps, {
+      reason,
+      phone: msg.phone,
+      context,
+      summary: summarizeHistory(state.history),
+    });
+    state = markEscalated(state, now);
+    state = await persist(state);
+    await flushOutbox();
+    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    return { status: "escalated", reply: reply.escalatedToReception() };
+  };
   let finalText: string | null = null;
   // A fresh confirm_booking commits the patient's confirmation into the outbox. That
   // deterministic message OWNS the patient reply for this turn (T227): the orchestrator
@@ -152,10 +173,32 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   let iterations = 0;
   while (iterations < AGENT_MAX_ITERATIONS) {
     iterations++;
-    const turn = await deps.llm.turn({ system, tools: toolDefs, messages: state.history });
+    const turn = await deps.llm.turn({
+      system: prompt.text,
+      tools: toolDefs,
+      messages: state.history,
+      promptVersion: prompt.version,
+    });
     state = appendMessage(state, { role: "assistant", content: turn.content }, now);
 
     const toolUses = toolUsesOf(turn.content);
+    // The provider declined (safety layer): the turn is discarded — no tool from it may run
+    // and the patient must not get an empty reply. Reception takes over (004 R1).
+    if (turn.stopReason === "refusal") {
+      const category = turn.stopDetails?.category ? `, categoria ${turn.stopDetails.category}` : "";
+      return handOffModelTurn(
+        "model_refusal",
+        `O modelo recusou a solicitação (stop_reason=refusal${category}).`,
+      );
+    }
+    // Output cut by the token budget while calling a tool: the input may be truncated, so it
+    // is never executed. A cut-off TEXT answer is still a reply (handled below).
+    if (turn.stopReason === "max_tokens" && toolUses.length > 0) {
+      return handOffModelTurn(
+        "model_truncated",
+        "A resposta do modelo foi cortada (stop_reason=max_tokens) no meio de uma chamada de ferramenta.",
+      );
+    }
     if (toolUses.length === 0) {
       finalText = textOf(turn.content);
       break;
@@ -187,7 +230,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
         });
         continue;
       }
-      const ctx: ToolContext = { deps, phone: msg.phone, state, now };
+      const ctx: ToolContext = { deps: turnDeps, phone: msg.phone, state, now };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
       confirmationEnqueued ||= dispatched.patientNotified;
@@ -217,7 +260,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 
   // 5. Loop exhausted without a final reply → escalate + pt-BR fallback.
   if (finalText === null) {
-    await escalateToHuman(deps, {
+    await escalateToHuman(turnDeps, {
       reason: "max_iterations",
       phone: msg.phone,
       context: `Conversa excedeu ${AGENT_MAX_ITERATIONS} iterações sem resposta final.`,

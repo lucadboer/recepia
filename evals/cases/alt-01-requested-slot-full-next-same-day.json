@@ -1,0 +1,188 @@
+{
+  "id": "alt-01-requested-slot-full-next-same-day",
+  "category": "alternative_slot",
+  "title": "9h cheio → 9h30 no mesmo dia",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in",
+    "bookings": [
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000190",
+        "status": "confirmed",
+        "seat": 0
+      },
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000191",
+        "status": "confirmed",
+        "seat": 1
+      }
+    ]
+  },
+  "patient": {
+    "phone": "+5531900000111"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza amanhã às 9h."
+    },
+    {
+      "text": "09:30 então. Diego Teste."
+    },
+    {
+      "text": "SIM"
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Às 09:00 está cheio. Tenho 09:30 ou 10:00 amanhã."
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei 09:30 para Diego Teste. Posso confirmar?"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Diego Teste"
+        }
+      },
+      {
+        "text": "Confirmado!"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "2026-06-16T12:30:00.000Z",
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Diego Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 3,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-16T11:00:00Z", "2026-06-16T15:00:00Z"]
+            },
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Diego Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  }
+}

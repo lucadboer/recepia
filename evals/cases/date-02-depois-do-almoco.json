@@ -1,0 +1,103 @@
+{
+  "id": "date-02-depois-do-almoco",
+  "category": "ambiguous_date",
+  "title": "\"depois do almoço\" → hoje a partir das 13h",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000132"
+  },
+  "turns": [
+    {
+      "text": "Tem horário hoje depois do almoço? É pra uma avaliação."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-15T16:00:00Z",
+          "to": "2026-06-15T21:00:00Z",
+          "type": "evaluation"
+        }
+      },
+      {
+        "text": "Hoje à tarde tenho 13:00, 13:30 e 14:00."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "from": "2026-06-15T16:00:00Z",
+            "to": "2026-06-15T21:00:00Z",
+            "type": "evaluation"
+          }
+        }
+      ],
+      "mustNotInclude": ["hold_slot", "confirm_booking", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 1,
+    "llmCalls": 2
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["confirm_booking"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    }
+  }
+}

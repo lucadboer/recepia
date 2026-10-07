@@ -1,0 +1,174 @@
+{
+  "id": "happy-01-cleaning-tomorrow-morning",
+  "category": "happy_path",
+  "title": "Limpeza amanhã de manhã",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000101"
+  },
+  "turns": [
+    {
+      "text": "Oi! Quero marcar uma limpeza amanhã de manhã."
+    },
+    {
+      "text": "O das 9h. Meu nome é Ana Teste."
+    },
+    {
+      "text": "SIM"
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Tenho amanhã às 09:00, 09:30 ou 10:00. Qual prefere?"
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei o horário para Ana Teste. Posso confirmar? (responda SIM)"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Ana Teste"
+        }
+      },
+      {
+        "text": "Confirmado! Até lá."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "2026-06-16T12:00:00.000Z",
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Ana Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 3,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-16T11:00:00Z", "2026-06-16T15:00:00Z"]
+            },
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Ana Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  }
+}

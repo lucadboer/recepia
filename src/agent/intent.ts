@@ -44,8 +44,14 @@ const AFFIRMATIVE = [
   /\bisso\b/,
 ];
 
+// A negation anywhere in the reply wins: "não autorizo" / "nem pensar, claro que não" must never
+// be read as consent (found by the golden set, feature 004). Conservative by design: a reply
+// like "não, pode sim" is treated as not-yet-consented and the agent asks again.
+const NEGATION = [/\bnao\b/, /\bnem\b/, /\bjamais\b/, /\bnunca\b/, /\brecuso\b/];
+
 /** Used only to capture an opt-in reply when the orchestrator is awaiting consent. */
 export function isAffirmative(text: string): boolean {
   const n = normalize(text);
+  if (NEGATION.some((p) => p.test(n))) return false;
   return AFFIRMATIVE.some((p) => p.test(n));
 }

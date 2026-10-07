@@ -129,7 +129,12 @@ export async function confirmBooking(
         entityId: flipped.id,
         action: "booking_confirmed",
         actor: "ai",
-        payload: { eventId, start: flipped.start.toISOString(), outboxId },
+        payload: {
+          eventId,
+          start: flipped.start.toISOString(),
+          outboxId,
+          ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+        },
       });
       await client.query("COMMIT");
       confirmed = flipped; // only once the COMMIT has actually succeeded (T232)

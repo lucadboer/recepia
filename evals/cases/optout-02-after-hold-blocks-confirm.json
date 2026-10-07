@@ -1,0 +1,149 @@
+{
+  "id": "optout-02-after-hold-blocks-confirm",
+  "category": "opt_out",
+  "title": "Opt-out com reserva ativa; confirm depois é bloqueado",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000152"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza amanhã de manhã."
+    },
+    {
+      "text": "O primeiro. Fábio Teste."
+    },
+    {
+      "text": "Quero parar de receber mensagens."
+    },
+    {
+      "text": "Na verdade pode confirmar aquele horário sim."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Amanhã tenho 09:00, 09:30 e 10:00."
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei 09:00 para Fábio Teste. Posso confirmar?"
+      }
+    ],
+    [
+      {
+        "text": "unused: opt-out answered before the model"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Fábio Teste"
+        }
+      },
+      {
+        "text": "Para confirmar preciso da sua autorização para tratar nome e telefone. Você autoriza? (responda SIM)"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "$offeredSlot"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 4,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    },
+    "status": "active"
+  }
+}

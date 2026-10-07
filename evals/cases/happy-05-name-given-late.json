@@ -1,0 +1,174 @@
+{
+  "id": "happy-05-name-given-late",
+  "category": "happy_path",
+  "title": "Paciente só diz o nome ao confirmar",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000105"
+  },
+  "turns": [
+    {
+      "text": "Oi, quero marcar uma limpeza amanhã cedo."
+    },
+    {
+      "text": "O segundo horário."
+    },
+    {
+      "text": "Elisa Teste. Pode confirmar."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Amanhã cedo tenho 09:00, 09:30 e 10:00."
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[1]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei 09:30. Qual o seu nome completo para confirmar?"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Elisa Teste"
+        }
+      },
+      {
+        "text": "Confirmado!"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "2026-06-16T12:30:00.000Z",
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Elisa Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 3,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-16T11:00:00Z", "2026-06-16T15:00:00Z"]
+            },
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Elisa Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  }
+}

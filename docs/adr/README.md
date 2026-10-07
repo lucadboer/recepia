@@ -11,3 +11,4 @@ the specs (`specs/*/spec.md`); these are the technical ones a reviewer would ask
 | [0004](0004-transactional-outbox.md) | Patient/reception messages go through a transactional outbox with retries and dead-letter |
 | [0005](0005-optimistic-concurrency-conversation-state.md) | Conversation state uses compare-and-swap (`version`) plus per-phone in-process serialization |
 | [0006](0006-pooled-capacity.md) | Capacity is a pooled counter per slot; patients do not choose a dentist in the MVP |
+| [0007](0007-production-model-sonnet-5-5.md) | Production model `claude-sonnet-5-5` with the lowest thinking setting; reasoning blocks never persisted; refusals and truncated tool calls hand off to reception |

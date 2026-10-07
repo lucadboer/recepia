@@ -15,12 +15,13 @@ export default defineConfig({
     hookTimeout: 20000,
     coverage: {
       provider: "v8",
-      include: ["src/**/*.ts"], // not the .sql migrations (the v8 remapper would try to parse them)
+      // src/ and the evaluation harness library — not the .sql migrations (the v8 remapper would try
+      // to parse them) and not the CLI entrypoint (exercised by `pnpm evals:fake` in CI).
+      include: ["src/**/*.ts", "evals/lib/**/*.ts"],
       exclude: [
         "src/server.ts", // process entrypoint — smoke-tested via `pnpm start` + SIGTERM, not unit-testable
         "src/db/seed.ts", // dev-only CLI
         "src/adapters/calendar/google-calendar.ts", // live-only adapter (tests/live, needs credentials)
-        "src/adapters/llm/anthropic-llm.ts", // live-only adapter (tests/live, needs credentials)
       ],
       reporter: ["text-summary", "json-summary", "lcov"],
       // Thresholds are the measured baseline minus a small margin (see CONTRIBUTING.md); ratchet up,

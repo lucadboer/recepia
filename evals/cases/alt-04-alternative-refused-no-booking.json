@@ -1,0 +1,129 @@
+{
+  "id": "alt-04-alternative-refused-no-booking",
+  "category": "alternative_slot",
+  "title": "9h cheio, paciente recusa alternativa",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in",
+    "bookings": [
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000190",
+        "status": "confirmed",
+        "seat": 0
+      },
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000191",
+        "status": "confirmed",
+        "seat": 1
+      }
+    ]
+  },
+  "patient": {
+    "phone": "+5531900000114"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza amanhã às 9h."
+    },
+    {
+      "text": "Não, só às 9h serve. Deixa pra lá."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Às 09:00 está cheio. Tenho 09:30 ou 10:00 amanhã."
+      }
+    ],
+    [
+      {
+        "text": "Tudo bem! Se quiser, é só chamar que verifico outros dias."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        }
+      ],
+      "mustNotInclude": ["hold_slot", "confirm_booking", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 2,
+    "llmCalls": 3
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "cleaning"
+          }
+        }
+      ],
+      "mustNotInclude": ["confirm_booking"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    },
+    "status": "active"
+  }
+}

@@ -46,6 +46,7 @@ export async function escalateToHuman(deps: Deps, escalation: Escalation): Promi
         phone: escalation.phone,
         summary,
         outboxId,
+        ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
       },
     });
     await client.query("COMMIT");

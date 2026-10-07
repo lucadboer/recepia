@@ -110,7 +110,13 @@ export async function holdSlot(deps: Deps, slot: SlotRequest, patient: PatientRe
       entityId: booking.id,
       action: "hold_created",
       actor: "ai",
-      payload: { start: start.toISOString(), phone: patient.phone, type: slot.type, seat },
+      payload: {
+        start: start.toISOString(),
+        phone: patient.phone,
+        type: slot.type,
+        seat,
+        ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+      },
     });
     await client.query("COMMIT");
     return toHold(booking);

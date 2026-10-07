@@ -11,7 +11,14 @@ export interface LlmToolDef {
 export type LlmContent =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; toolUseId: string; content: string; isError?: boolean };
+  | { type: "tool_result"; toolUseId: string; content: string; isError?: boolean }
+  /**
+   * An opaque provider reasoning block (`thinking` / `redacted_thinking`). It is replayed
+   * UNCHANGED within the inbound turn that produced it (the provider verifies its signature
+   * against an unedited prefix) and stripped before the conversation state is persisted,
+   * because the history is edited between inbound turns (dated prompt line, trimming).
+   */
+  | { type: "thinking"; raw: unknown };
 
 export interface LlmMessage {
   role: "user" | "assistant";
@@ -22,11 +29,28 @@ export interface LlmTurnInput {
   system: string;
   tools: LlmToolDef[];
   messages: LlmMessage[];
+  /** Version id of the system prompt artifact in effect (FR-409). Never sent to the provider. */
+  promptVersion?: string;
+}
+
+/** Token accounting as reported by the provider; fakes report zeros. */
+export interface LlmUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
 }
 
 export interface LlmTurnResult {
-  stopReason: "tool_use" | "end_turn" | "max_tokens";
+  /**
+   * `refusal`: the provider's safety layer declined; any tool_use in `content` must NOT run.
+   * `max_tokens`: output was cut; a tool_use in `content` may carry a truncated input.
+   */
+  stopReason: "tool_use" | "end_turn" | "max_tokens" | "refusal";
   content: LlmContent[];
+  usage?: LlmUsage;
+  /** Provider detail for a refusal (category / explanation), when reported. */
+  stopDetails?: { category: string | null; explanation: string | null };
 }
 
 export interface LLMPort {

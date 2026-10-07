@@ -1,0 +1,149 @@
+{
+  "id": "consent-01-nao-autorizo",
+  "category": "consent_refusal",
+  "title": "Recusa explícita (\"Não autorizo\"): nenhuma gravação mesmo se o modelo tentar confirmar",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "none"
+  },
+  "patient": {
+    "phone": "+5531900000161"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza amanhã de manhã."
+    },
+    {
+      "text": "O primeiro. Gabriela Teste."
+    },
+    {
+      "text": "sim"
+    },
+    {
+      "text": "Não autorizo."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-16T11:00:00Z",
+          "to": "2026-06-16T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Amanhã tenho 09:00, 09:30 e 10:00."
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei 09:00 para Gabriela Teste. Posso confirmar?"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Gabriela Teste"
+        }
+      },
+      {
+        "text": "Para concluir, preciso da sua autorização para tratar nome e telefone com a finalidade de agendar. Você autoriza? (responda SIM)"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Gabriela Teste"
+        }
+      },
+      {
+        "text": "Tudo bem. Sem a autorização não consigo concluir o agendamento; fico à disposição."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability"
+        },
+        {
+          "name": "hold_slot"
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 4,
+    "llmCalls": 8
+  },
+  "liveExpect": {
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    }
+  }
+}

@@ -22,6 +22,10 @@
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:coverage": "vitest run --coverage",
     "perf:smoke": "node --import tsx scripts/perf-smoke.ts",
+    "evals:fake": "node --import tsx evals/run.ts --mode fake",
+    "evals:live": "node --import tsx evals/run.ts --mode live",
+    "evals:readme": "node --import tsx evals/run.ts readme",
+    "evals:judge": "node --import tsx evals/run.ts --mode live --judge",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write ."

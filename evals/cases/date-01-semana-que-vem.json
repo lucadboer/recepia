@@ -1,0 +1,102 @@
+{
+  "id": "date-01-semana-que-vem",
+  "category": "ambiguous_date",
+  "title": "\"semana que vem\" → consulta a semana seguinte",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000131"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma limpeza semana que vem."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-22T12:00:00Z",
+          "to": "2026-06-26T21:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Na semana que vem tenho segunda 09:00, 09:30… Qual dia prefere?"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "from": "2026-06-22T12:00:00Z",
+            "type": "cleaning"
+          }
+        }
+      ],
+      "mustNotInclude": ["hold_slot", "confirm_booking", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 1,
+    "llmCalls": 2
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["confirm_booking"]
+    },
+    "writes": {
+      "bookings": 0,
+      "calendarEvents": 0
+    }
+  }
+}

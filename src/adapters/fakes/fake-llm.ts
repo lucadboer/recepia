@@ -1,4 +1,18 @@
-import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../../ports/llm-port";
+import type {
+  LLMPort,
+  LlmContent,
+  LlmTurnInput,
+  LlmTurnResult,
+  LlmUsage,
+} from "../../ports/llm-port";
+
+/** Fakes cost nothing; the shape matches the real adapter so metrics code has one path. */
+export const ZERO_USAGE: LlmUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+};
 
 /** A scripted turn: a fixed result, or a function that branches on the turn input. */
 export type ScriptedTurn = LlmTurnResult | ((input: LlmTurnInput) => LlmTurnResult);
@@ -36,7 +50,8 @@ export class FakeLLM implements LLMPort {
     if (next === undefined) {
       throw new Error(`FakeLLM: script exhausted after ${this.index - 1} turn(s)`);
     }
-    return typeof next === "function" ? next(input) : next;
+    const result = typeof next === "function" ? next(input) : next;
+    return { usage: ZERO_USAGE, ...result };
   }
 
   get callCount(): number {

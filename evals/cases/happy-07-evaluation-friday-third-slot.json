@@ -1,0 +1,174 @@
+{
+  "id": "happy-07-evaluation-friday-third-slot",
+  "category": "happy_path",
+  "title": "Avaliação sexta de manhã, terceiro horário",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000107"
+  },
+  "turns": [
+    {
+      "text": "Quero marcar uma avaliação na sexta de manhã."
+    },
+    {
+      "text": "O terceiro horário, Gabriela Teste."
+    },
+    {
+      "text": "Pode sim"
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-19T11:00:00Z",
+          "to": "2026-06-19T15:00:00Z",
+          "type": "evaluation"
+        }
+      },
+      {
+        "text": "Sexta de manhã tenho 09:00, 09:30 e 10:00."
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[2]",
+          "type": "evaluation"
+        }
+      },
+      {
+        "text": "Reservei o horário para Gabriela Teste. Posso confirmar? (responda SIM)"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Gabriela Teste"
+        }
+      },
+      {
+        "text": "Confirmado! Até lá."
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "evaluation"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "2026-06-19T13:00:00.000Z",
+            "type": "evaluation"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Gabriela Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 3,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": {
+            "type": "evaluation"
+          }
+        },
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": {
+              "$between": ["2026-06-19T11:00:00Z", "2026-06-19T15:00:00Z"]
+            },
+            "type": "evaluation"
+          }
+        },
+        {
+          "name": "confirm_booking",
+          "input": {
+            "hold_id": "$ownHoldId",
+            "patient_name": "Gabriela Teste"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  }
+}

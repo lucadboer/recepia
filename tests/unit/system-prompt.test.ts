@@ -8,7 +8,7 @@ const WEDNESDAY = new Date("2026-06-17T19:30:00Z"); // quarta-feira 16:30 em Sã
 
 describe("buildSystemPrompt — dated, timezone-aware (FR-213)", () => {
   it("tells the model today's weekday, date, time, timezone and ISO offset", () => {
-    const prompt = buildSystemPrompt({ now: MONDAY, timezone: CLINIC_TIMEZONE });
+    const prompt = buildSystemPrompt({ now: MONDAY, timezone: CLINIC_TIMEZONE }).text;
     expect(prompt).toContain("segunda-feira");
     expect(prompt).toContain("15/06/2026");
     expect(prompt).toContain("09:00");
@@ -17,8 +17,8 @@ describe("buildSystemPrompt — dated, timezone-aware (FR-213)", () => {
   });
 
   it("changes only the dated line between two instants (static block stays identical)", () => {
-    const a = buildSystemPrompt({ now: MONDAY, timezone: CLINIC_TIMEZONE }).split("\n");
-    const b = buildSystemPrompt({ now: WEDNESDAY, timezone: CLINIC_TIMEZONE }).split("\n");
+    const a = buildSystemPrompt({ now: MONDAY, timezone: CLINIC_TIMEZONE }).text.split("\n");
+    const b = buildSystemPrompt({ now: WEDNESDAY, timezone: CLINIC_TIMEZONE }).text.split("\n");
     expect(a.length).toBe(b.length);
     expect(a.slice(0, -1)).toEqual(b.slice(0, -1)); // cache-friendly: static part first
     expect(a.at(-1)).not.toEqual(b.at(-1));
@@ -28,7 +28,7 @@ describe("buildSystemPrompt — dated, timezone-aware (FR-213)", () => {
   });
 
   it("lists exactly the allowlisted tools", () => {
-    const prompt = buildSystemPrompt({ now: MONDAY, timezone: CLINIC_TIMEZONE });
+    const prompt = buildSystemPrompt({ now: MONDAY, timezone: CLINIC_TIMEZONE }).text;
     for (const name of Object.values(TOOL_NAMES)) expect(prompt).toContain(name);
   });
 });
