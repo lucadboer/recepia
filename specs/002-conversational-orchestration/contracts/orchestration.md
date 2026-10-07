@@ -34,7 +34,7 @@ Format: API + Guarantees + Required Tests (tests written BEFORE impl, behavioral
 - **Tests**: same-key ordering; cross-key overlap; rejection isolation; drain.
 
 ## `tool-registry` (the structural gates)
-- **Guarantees**: closed map name→{schema,validate,handler}; `type` arg is enum of `ROUTINE_TYPES`; ISO→Date parse+validate; rejects unknown tools; enforces offered-slots + in-conversation-hold gates; wraps unchanged 001 tools.
+- **Guarantees**: closed map name→{schema,validate,handler}; `type` arg is enum of `ROUTINE_TYPES`; ISO→Date parse+validate; results show the model clinic-local times with offset + a pt-BR label (FR-213, amended 2026-10-07); rejects unknown tools; enforces offered-slots + in-conversation-hold gates; wraps unchanged 001 tools.
 - **Tests**: non-offered slot rejected (0 booking); foreign holdId rejected (0 event); unknown tool rejected.
 
 ## consent (`hasConsent` / `recordConsent` / `recordOptOut`)

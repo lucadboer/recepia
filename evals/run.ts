@@ -410,7 +410,11 @@ export function buildReport(input: {
         failedAssertions: s.assertions.filter((a) => !a.pass).map((a) => a.name),
         assertions: s.assertions,
         errors: s.execution.errors,
-        latencyMs: { total: s.execution.latency.totalMs, perTurn: s.execution.latency.perTurnMs },
+        // Whole milliseconds: sub-ms precision is noise and bloats the committed report.
+        latencyMs: {
+          total: Math.round(s.execution.latency.totalMs),
+          perTurn: s.execution.latency.perTurnMs.map((ms) => Math.round(ms)),
+        },
         llmCalls: s.execution.llm.calls,
         usage: s.execution.llm.usage,
         costUsd: s.costUsd,
