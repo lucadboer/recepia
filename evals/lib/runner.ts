@@ -385,7 +385,11 @@ function offeredFromHistory(llm: MeasuringLLM, history: LlmMessage[]): string[] 
         seen.add(b.toolUseId);
         try {
           const parsed = JSON.parse(b.content) as { slots?: { start: string }[] };
-          for (const s of parsed.slots ?? []) starts.push(s.start);
+          // Canonical UTC instants (the tool shows the model clinic-local times, 002 FR-213).
+          for (const s of parsed.slots ?? []) {
+            const t = new Date(s.start);
+            starts.push(Number.isNaN(t.getTime()) ? s.start : t.toISOString());
+          }
         } catch {
           // not JSON → nothing offered
         }

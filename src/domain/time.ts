@@ -145,3 +145,26 @@ export function bookingWindow(now: Date): { from: Date; to: Date } {
     to: new Date(now.getTime() + HORIZON_DAYS * DAY_MS),
   };
 }
+
+/**
+ * The instant as clinic-local ISO 8601 with its offset, e.g. "2026-06-18T12:00:00-03:00" — the
+ * same instant as its UTC form. Tool results handed to the model use this so it never converts UTC
+ * in front of the patient (002 FR-213; found by the 004 live baseline).
+ */
+export function toLocalIso(instant: Date, tz: string = CLINIC_TIMEZONE): string {
+  const shifted = new Date(instant.getTime() + utcOffsetMinutes(instant, tz) * 60_000);
+  return `${shifted.toISOString().slice(0, 19)}${formatOffset(instant, tz)}`;
+}
+
+const weekdayShortPt = new Map<string, Intl.DateTimeFormat>();
+
+/** Short pt-BR label for a slot, e.g. "qui., 18/06 às 12:00". */
+export function slotLabelPt(instant: Date, tz: string = CLINIC_TIMEZONE): string {
+  let f = weekdayShortPt.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "short" });
+    weekdayShortPt.set(tz, f);
+  }
+  const { date, time } = formatLocalPt(instant, tz);
+  return `${f.format(instant)}, ${date.slice(0, 5)} às ${time}`;
+}

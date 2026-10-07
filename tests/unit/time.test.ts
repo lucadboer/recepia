@@ -105,3 +105,24 @@ describe("time — genuinely timezone-aware (IANA, DST-safe) — FR-213", () => 
     );
   });
 });
+
+describe("time — clinic-local strings for the model (002 FR-213, found by the 004 live baseline)", async () => {
+  const { slotLabelPt, toLocalIso } = await import("../../src/domain/time");
+  it("toLocalIso renders the instant in the clinic zone with its offset (same instant)", () => {
+    const at = new Date("2026-06-15T14:00:00Z");
+    expect(toLocalIso(at)).toBe("2026-06-15T11:00:00-03:00");
+    expect(new Date(toLocalIso(at)).getTime()).toBe(at.getTime());
+    expect(toLocalIso(new Date("2026-06-16T02:30:15Z"))).toBe("2026-06-15T23:30:15-03:00"); // midnight rollover
+    expect(toLocalIso(new Date("2026-07-15T13:00:00Z"), "America/New_York")).toBe(
+      "2026-07-15T09:00:00-04:00",
+    ); // DST
+    expect(toLocalIso(new Date("2026-01-15T14:00:00Z"), "America/New_York")).toBe(
+      "2026-01-15T09:00:00-05:00",
+    );
+  });
+
+  it("slotLabelPt is the short pt-BR label the patient reads", () => {
+    expect(slotLabelPt(new Date("2026-06-15T14:00:00Z"))).toBe("seg., 15/06 às 11:00");
+    expect(slotLabelPt(new Date("2026-06-18T15:30:00Z"))).toBe("qui., 18/06 às 12:30");
+  });
+});

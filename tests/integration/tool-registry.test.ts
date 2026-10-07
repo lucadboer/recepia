@@ -222,11 +222,21 @@ describe("tool-registry × state bounds (T239)", () => {
       to: "2026-06-20T00:00:00Z", // the whole business week: 5 × 18 = 90 free slots
       type: "cleaning",
     });
-    const payload = JSON.parse(r.content) as { slots: { start: string }[]; truncated: boolean };
+    const payload = JSON.parse(r.content) as {
+      slots: { start: string; end: string; label: string }[];
+      truncated: boolean;
+    };
     expect(payload.truncated).toBe(true);
     expect(payload.slots).toHaveLength(AVAILABILITY_MAX_SLOTS);
-    expect(payload.slots[0].start).toBe("2026-06-15T14:00:00.000Z"); // the EARLIEST are kept
-    expect(r.state.offeredSlots).toEqual(payload.slots.map((s) => s.start));
+    // The EARLIEST are kept, shown in clinic-local time with a pt-BR label (002 FR-213): the
+    // model never has to convert UTC in front of the patient (found by the 004 live baseline).
+    expect(payload.slots[0]).toMatchObject({
+      start: "2026-06-15T11:00:00-03:00",
+      end: "2026-06-15T11:30:00-03:00",
+      label: "seg., 15/06 às 11:00",
+    });
+    expect(JSON.stringify(payload)).not.toContain('Z"');
+    expect(r.state.offeredSlots).toEqual(payload.slots.map((s) => new Date(s.start).toISOString()));
     // Every slot the model can quote survives the state bound (the cap is below OFFERED_SLOTS_MAX).
     expect(AVAILABILITY_MAX_SLOTS).toBeLessThanOrEqual(OFFERED_SLOTS_MAX);
     const bounded = boundState(r.state, NOW);
@@ -323,5 +333,40 @@ describe("tool-registry — rejectedBy names the guardrail (005 FR-503)", () => 
     });
     expect(r.isError).toBe(true);
     expect(r.rejectedBy).toBeUndefined();
+  });
+});
+
+describe("tool-registry — clinic-local times end to end (002 FR-213)", () => {
+  it("a slot quoted back in local time is holdable, and hold/confirm results are local too", async () => {
+    const c = ctx();
+    const offered = await dispatchTool(c, TOOL_NAMES.availability, {
+      from: NOW.toISOString(),
+      to: "2026-06-15T18:00:00Z",
+      type: "cleaning",
+    });
+    const first = (JSON.parse(offered.content) as { slots: { start: string }[] }).slots[0].start;
+    expect(first).toBe("2026-06-15T11:00:00-03:00");
+    const held = await dispatchTool({ ...c, state: offered.state }, TOOL_NAMES.hold, {
+      start: first,
+      type: "cleaning",
+    });
+    expect(held.isError).toBe(false);
+    const hold = JSON.parse(held.content) as {
+      holdId: string;
+      start: string;
+      label: string;
+      expiresAt: string;
+    };
+    expect(hold).toMatchObject({
+      start: "2026-06-15T11:00:00-03:00",
+      label: "seg., 15/06 às 11:00",
+    });
+    expect(hold.expiresAt).toMatch(/-03:00$/);
+    // The UTC spelling of the same instant is the same offered slot (gate compares instants).
+    const again = await dispatchTool({ ...c, state: held.state }, TOOL_NAMES.hold, {
+      start: "2026-06-15T14:00:00.000Z",
+      type: "cleaning",
+    });
+    expect(again.isError).toBe(false);
   });
 });

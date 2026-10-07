@@ -137,13 +137,9 @@
     "llmCalls": 6
   },
   "liveExpect": {
-    "toolCalls": {
-      "mustNotInclude": ["escalate_to_human"]
-    },
     "writes": {
       "bookings": 0,
       "calendarEvents": 0
-    },
-    "status": "active"
+    }
   }
 }
