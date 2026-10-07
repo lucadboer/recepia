@@ -16,21 +16,21 @@ description: "Task list for 005-observability-and-cost"
 
 ## Phase 1: Setup
 
-- [ ] T501 Add runtime deps with `pnpm add` (latest passing the release-age gate): `@opentelemetry/api`, `@opentelemetry/sdk-trace-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/instrumentation`, `@opentelemetry/instrumentation-pg`, `@opentelemetry/resources`, `pino`; `pnpm audit` with no HIGH/CRITICAL; note any `minimumReleaseAgeExclude` needed in `pnpm-workspace.yaml`
-- [ ] T502 [P] `docker-compose.yml` profile `observability` (Jaeger, OTLP 4318, UI 16686); `.env.example` gains `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `LOG_LEVEL`, `TELEMETRY_HASH_KEY`, `AGENT_BUDGET_USD`, `ANTHROPIC_TIMEOUT_MS`, `FALLBACK_LLM_BASE_URL/API_KEY/MODEL/TIMEOUT_MS`; `tests/setup.ts` sets `LOG_LEVEL=silent` unless provided
+- [x] T501 Add runtime deps with `pnpm add` (latest passing the release-age gate): `@opentelemetry/api`, `@opentelemetry/sdk-trace-node`, `@opentelemetry/exporter-trace-otlp-http`, `@opentelemetry/instrumentation`, `@opentelemetry/instrumentation-pg`, `@opentelemetry/resources`, `pino`; `pnpm audit` with no HIGH/CRITICAL; note any `minimumReleaseAgeExclude` needed in `pnpm-workspace.yaml`
+- [x] T502 [P] `docker-compose.yml` profile `observability` (Jaeger, OTLP 4318, UI 16686); `.env.example` gains `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`, `LOG_LEVEL`, `TELEMETRY_HASH_KEY`, `AGENT_BUDGET_USD`, `ANTHROPIC_TIMEOUT_MS`, `FALLBACK_LLM_BASE_URL/API_KEY/MODEL/TIMEOUT_MS`; `tests/setup.ts` sets `LOG_LEVEL=silent` unless provided
 
 ---
 
 ## Phase 2: Foundational
 
-- [ ] T503 [P] Unit test `tests/unit/pseudonym.test.ts`: `maskPhone` keeps the last 4 digits (short/odd inputs), `patientPseudonym` stable per key, differs across keys, never contains the phone or its digits run, random key when `TELEMETRY_HASH_KEY` is absent (warns once) — must FAIL
-- [ ] T504 [P] Implement `src/telemetry/pseudonym.ts` — make T503 pass
-- [ ] T505 [P] Unit test `tests/unit/logger.test.ts`: JSON lines with level/time/msg; `trace_id`/`span_id` inside an active span only; phone patterns masked in nested strings and error messages; `text/body/content/patient_name` removed; `child` bindings; `configureLogger` level — must FAIL
-- [ ] T506 Implement `src/telemetry/logger.ts` (pino facade + `configureLogger`) — make T505 pass
-- [ ] T507 [P] Unit test `tests/unit/tracing.test.ts` + helper `tests/helpers/telemetry.ts` (in-memory exporter, async-hooks context, W3C propagator): `withSpan` records attributes, nests, records exceptions (`error.type`, status ERROR) and rethrows; no-op when nothing is registered; `injectTraceparent`/`linkFromTraceparent` round trip, invalid input → no link — must FAIL
-- [ ] T508 Implement `src/telemetry/tracing.ts` (tracer, `withSpan`, attribute constants, traceparent helpers) and `src/telemetry/register.ts` (provider + OTLP exporter + pg instrumentation when an endpoint is set; `shutdownTelemetry()`) — make T507 pass
-- [ ] T509 [P] Unit test `tests/unit/pricing.test.ts` (moved from `evals-pricing`): table at `src/llm/pricing.json`, `assertPriced` throws for an unpriced model and lists it; evals re-export still works — must FAIL
-- [ ] T510 Move the table to `src/llm/pricing.{json,ts}`, re-export from `evals/lib/pricing.ts`, update README/CONTRIBUTING links — make T509 pass
+- [x] T503 [P] Unit test `tests/unit/pseudonym.test.ts`: `maskPhone` keeps the last 4 digits (short/odd inputs), `patientPseudonym` stable per key, differs across keys, never contains the phone or its digits run, random key when `TELEMETRY_HASH_KEY` is absent (warns once) — must FAIL
+- [x] T504 [P] Implement `src/telemetry/pseudonym.ts` — make T503 pass
+- [x] T505 [P] Unit test `tests/unit/logger.test.ts`: JSON lines with level/time/msg; `trace_id`/`span_id` inside an active span only; phone patterns masked in nested strings and error messages; `text/body/content/patient_name` removed; `child` bindings; `configureLogger` level — must FAIL
+- [x] T506 Implement `src/telemetry/logger.ts` (pino facade + `configureLogger`) — make T505 pass
+- [x] T507 [P] Unit test `tests/unit/tracing.test.ts` + helper `tests/helpers/telemetry.ts` (in-memory exporter, async-hooks context, W3C propagator): `withSpan` records attributes, nests, records exceptions (`error.type`, status ERROR) and rethrows; no-op when nothing is registered; `injectTraceparent`/`linkFromTraceparent` round trip, invalid input → no link — must FAIL
+- [x] T508 Implement `src/telemetry/tracing.ts` (tracer, `withSpan`, attribute constants, traceparent helpers) and `src/telemetry/register.ts` (provider + OTLP exporter + pg instrumentation when an endpoint is set; `shutdownTelemetry()`) — make T507 pass
+- [x] T509 [P] Unit test `tests/unit/pricing.test.ts` (moved from `evals-pricing`): table at `src/llm/pricing.json`, `assertPriced` throws for an unpriced model and lists it; evals re-export still works — must FAIL
+- [x] T510 Move the table to `src/llm/pricing.{json,ts}`, re-export from `evals/lib/pricing.ts`, update README/CONTRIBUTING links — make T509 pass
 
 **Checkpoint**: pseudonym, logger, tracing helpers and pricing ready; nothing wired yet.
 
@@ -40,14 +40,14 @@ description: "Task list for 005-observability-and-cost"
 
 **Independent Test**: a booking conversation through the webhook with an in-memory exporter yields one trace per message with the expected tree and no PII.
 
-- [ ] T511 [P] [US1] Integration test `tests/integration/tracing.test.ts`: booking via `createWebhookServer` → per message one `webhook.inbound` root → `agent.turn` → `chat …` (GenAI attrs, prompt version) / `execute_tool …` (outcome) and `outbox.dispatch` linked; triage message has no `chat` span; hostile script records `rejected_by` = `not_offered`, `foreign_hold`, `unknown_tool`, `consent`; PII scan of every attribute/event finds no fixture phone and no message text — must FAIL
-- [ ] T512 [P] [US1] Unit/integration test additions in `tests/integration/tool-registry.test.ts`: `rejectedBy` per gate and `invalid_args` — must FAIL
-- [ ] T513 [P] [US1] Integration test in `tests/integration/outbox.test.ts`: enqueue inside a span stores a valid traceparent; outside → NULL; dispatch creates `outbox.dispatch` linked to it (also on retry/dead-letter) — must FAIL
-- [ ] T514 [US1] `src/agent/tool-registry.ts`: `ToolDispatchResult.rejectedBy` — make T512 pass
-- [ ] T515 [US1] Migration `src/db/migrations/010_outbox_trace_context.sql`; `enqueueOutbox` stores the traceparent, `claimDue` returns it; `src/jobs/dispatch-outbox.ts` spans with links — make T513 pass
-- [ ] T516 [US1] `src/agent/orchestrator.ts`: `agent.turn` span, `chat` span per model call (usage, finish reason, provider, model, prompt version, cost), `execute_tool` span per tool (consent / after-handoff rejections included)
-- [ ] T517 [US1] `src/webhook/server.ts`: `webhook.inbound` root span per accepted message (both channels) wrapping the queued turn; `src/jobs/scheduler.ts`: `job.<name>` root spans — make T511 pass
-- [ ] T518 [US1] `package.json` `start` and `perf:smoke` load `--import ./src/telemetry/register.ts`; graceful shutdown flushes telemetry (`src/server.ts`, `src/webhook/shutdown.ts`)
+- [x] T511 [P] [US1] Integration test `tests/integration/tracing.test.ts`: booking via `createWebhookServer` → per message one `webhook.inbound` root → `agent.turn` → `chat …` (GenAI attrs, prompt version) / `execute_tool …` (outcome) and `outbox.dispatch` linked; triage message has no `chat` span; hostile script records `rejected_by` = `not_offered`, `foreign_hold`, `unknown_tool`, `consent`; PII scan of every attribute/event finds no fixture phone and no message text — must FAIL
+- [x] T512 [P] [US1] Unit/integration test additions in `tests/integration/tool-registry.test.ts`: `rejectedBy` per gate and `invalid_args` — must FAIL
+- [x] T513 [P] [US1] Integration test in `tests/integration/outbox.test.ts`: enqueue inside a span stores a valid traceparent; outside → NULL; dispatch creates `outbox.dispatch` linked to it (also on retry/dead-letter) — must FAIL
+- [x] T514 [US1] `src/agent/tool-registry.ts`: `ToolDispatchResult.rejectedBy` — make T512 pass
+- [x] T515 [US1] Migration `src/db/migrations/010_outbox_trace_context.sql`; `enqueueOutbox` stores the traceparent, `claimDue` returns it; `src/jobs/dispatch-outbox.ts` spans with links — make T513 pass
+- [x] T516 [US1] `src/agent/orchestrator.ts`: `agent.turn` span, `chat` span per model call (usage, finish reason, provider, model, prompt version, cost), `execute_tool` span per tool (consent / after-handoff rejections included)
+- [x] T517 [US1] `src/webhook/server.ts`: `webhook.inbound` root span per accepted message (both channels) wrapping the queued turn; `job.<name>` root spans only for the daily retention job (periodic polling jobs would flood the viewer; `outbox.dispatch` spans are roots linked to their turn) — make T511 pass
+- [x] T518 [US1] `package.json` `start` and `perf:smoke` load `--import ./src/telemetry/register.ts`; graceful shutdown flushes telemetry (`src/server.ts`, `src/webhook/shutdown.ts`)
 
 **Checkpoint**: traces complete and PII-free.
 

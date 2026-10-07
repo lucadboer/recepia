@@ -1,8 +1,12 @@
-import { AGENT_MAX_ITERATIONS, CLINIC_TIMEZONE } from "../config";
+import { SpanKind } from "@opentelemetry/api";
+import { AGENT_MAX_ITERATIONS, CLINIC_TIMEZONE, isRoutineType } from "../config";
 import type { Deps } from "../deps";
 import { dispatchOutbox } from "../jobs/dispatch-outbox";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
-import type { LLMPort, LlmContent } from "../ports/llm-port";
+import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
+import { log } from "../telemetry/logger";
+import { maskPhonesIn } from "../telemetry/pseudonym";
+import { ATTR, type MaybeAttributes, SPAN, setAttributes, withSpan } from "../telemetry/tracing";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
 import {
@@ -25,7 +29,7 @@ import { classifyIntent, isAffirmative } from "./intent";
 import { reply } from "./reply";
 import { summarizeHistory } from "./summary";
 import { buildSystemPrompt } from "./system-prompt";
-import { dispatchTool, type ToolContext } from "./tool-registry";
+import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas";
 import { triage } from "./triage";
 import type { ConversationState, InboundMessage, LoopResult } from "./types";
@@ -54,6 +58,38 @@ function textOf(content: LlmContent[]): string {
     .join("\n");
 }
 
+/** Tool names come from the model: keep them identifier-shaped and phone-free for telemetry. */
+function telemetryToolName(name: string): string {
+  return maskPhonesIn(name.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 64)) || "unknown";
+}
+
+/** Only non-personal, validated tool arguments reach telemetry (FR-503). */
+function telemetryToolArgs(input: unknown): MaybeAttributes {
+  const i = (input ?? {}) as Record<string, unknown>;
+  const start = typeof i.start === "string" ? new Date(i.start) : null;
+  return {
+    [ATTR.toolType]: typeof i.type === "string" && isRoutineType(i.type) ? i.type : undefined,
+    [ATTR.toolSlotStart]: start && !Number.isNaN(start.getTime()) ? start.toISOString() : undefined,
+  };
+}
+
+type ToolOutcome = "ok" | "rejected" | "error";
+type ToolRejection = NonNullable<ToolDispatchResult["rejectedBy"]> | "consent" | "after_handoff";
+
+interface ToolRun {
+  content: string;
+  isError: boolean;
+  outcome: ToolOutcome;
+  rejectedBy?: ToolRejection;
+  errorType?: string;
+}
+
+/** Observed facts about a turn, set as it runs and copied onto the `agent.turn` span. */
+interface TurnObservation {
+  conversationStatus?: string;
+  promptVersion?: string;
+}
+
 /**
  * Drive one inbound patient message to a reply or an escalation. The LLM proposes;
  * only the deterministic tools write. Structural guardrails live in tool-registry;
@@ -61,6 +97,23 @@ function textOf(content: LlmContent[]): string {
  * the consent gate before confirm, and the bounded loop.
  */
 export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promise<LoopResult> {
+  return withSpan(SPAN.turn, { [ATTR.messageId]: msg.providerMessageId }, async (span) => {
+    const seen: TurnObservation = {};
+    const result = await runTurn(deps, msg, seen);
+    setAttributes(span, {
+      [ATTR.turnStatus]: result.status,
+      [ATTR.conversationStatus]: seen.conversationStatus,
+      [ATTR.promptVersion]: seen.promptVersion,
+    });
+    return result;
+  });
+}
+
+async function runTurn(
+  deps: AgentDeps,
+  msg: InboundMessage,
+  seen: TurnObservation,
+): Promise<LoopResult> {
   const now = deps.clock.now();
   // Bound the state on the way in (stale offered slots, oversized history) and on the
   // way out, so neither the LLM context nor the JSONB row grows without limit (T239).
@@ -82,8 +135,11 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // ConversationConflictError and the turn fails loudly (no retry, no patient message).
   // Provider reasoning blocks are replayed only within this turn and never persisted (004 R1):
   // the history is edited between inbound turns, which would invalidate their signatures.
-  const persist = (s: ConversationState): Promise<ConversationState> =>
-    deps.conversations.save(stripThinking(boundState(s, now)));
+  const persist = async (s: ConversationState): Promise<ConversationState> => {
+    const saved = await deps.conversations.save(stripThinking(boundState(s, now)));
+    seen.conversationStatus = saved.status;
+    return saved;
+  };
   // Deliver what the tools committed (confirmation / escalation rows in the outbox) BEFORE
   // our own patient-facing reply — only THIS conversation's rows (its confirmation and the
   // reception notice about it), so a slow provider never makes this patient wait on other
@@ -91,7 +147,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // successful compare-and-swap: a turn that lost the race delivers nothing (FR-214).
   const flushOutbox = async (): Promise<void> => {
     await dispatchOutbox(deps, { conversationPhone: msg.phone }).catch((err) => {
-      console.error("[orchestrator] outbox dispatch failed", err);
+      log.error({ event: "outbox.flush_failed", err }, "outbox dispatch failed inside a turn");
     });
   };
 
@@ -151,6 +207,33 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   // Every write the model initiates from here on is audited with this prompt version.
   const turnDeps: AgentDeps = { ...deps, promptVersion: prompt.version };
   state = setPromptVersion(state, prompt.version, now);
+  seen.promptVersion = prompt.version;
+  // One `chat` span per model call with the GenAI attributes (FR-502); never content.
+  const callModel = (input: LlmTurnInput): Promise<LlmTurnResult> =>
+    withSpan(
+      SPAN.chat(deps.llm.model ?? "unknown"),
+      {
+        [ATTR.genAiOperation]: "chat",
+        [ATTR.genAiProvider]: deps.llm.provider,
+        [ATTR.genAiRequestModel]: deps.llm.model,
+        [ATTR.promptVersion]: prompt.version,
+      },
+      async (span) => {
+        const r = await deps.llm.turn(input);
+        setAttributes(span, {
+          [ATTR.genAiResponseModel]: r.model,
+          [ATTR.genAiProvider]: r.provider ?? deps.llm.provider,
+          [ATTR.genAiInputTokens]: r.usage?.inputTokens,
+          [ATTR.genAiOutputTokens]: r.usage?.outputTokens,
+          [ATTR.genAiCacheReadTokens]: r.usage?.cacheReadTokens,
+          [ATTR.genAiCacheWriteTokens]: r.usage?.cacheWriteTokens,
+          [ATTR.genAiFinishReasons]: [r.stopReason],
+        });
+        if (r.model && r.model !== deps.llm.model) span.updateName(SPAN.chat(r.model));
+        return r;
+      },
+      { kind: SpanKind.CLIENT },
+    );
   const handOffModelTurn = async (reason: string, context: string): Promise<LoopResult> => {
     await escalateToHuman(turnDeps, {
       reason,
@@ -173,7 +256,7 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   let iterations = 0;
   while (iterations < AGENT_MAX_ITERATIONS) {
     iterations++;
-    const turn = await deps.llm.turn({
+    const turn = await callModel({
       system: prompt.text,
       tools: toolDefs,
       messages: state.history,
@@ -206,40 +289,65 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 
     const toolResults: LlmContent[] = [];
     let escalatedThisTurn = false;
-    for (const tu of toolUses) {
+    const runTool = async (tu: ToolUseBlock): Promise<ToolRun> => {
       // Once a tool handed the conversation off, nothing else in this response may run: a
       // confirm_booking after escalate_to_human would flip the status back to completed.
       if (escalatedThisTurn) {
-        toolResults.push({
-          type: "tool_result",
-          toolUseId: tu.id,
+        return {
           content: reply.toolCancelledAfterHandoff(),
           isError: true,
-        });
-        continue;
+          outcome: "rejected",
+          rejectedBy: "after_handoff",
+        };
       }
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
       if (tu.name === TOOL_NAMES.confirm && !(await hasConsent(deps, msg.phone))) {
         state = setAwaitingConsent(state, true, now);
-        toolResults.push({
-          type: "tool_result",
-          toolUseId: tu.id,
+        return {
           content: reply.askConsent(),
           isError: true,
-        });
-        continue;
+          outcome: "rejected",
+          rejectedBy: "consent",
+        };
       }
       const ctx: ToolContext = { deps: turnDeps, phone: msg.phone, state, now };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
       confirmationEnqueued ||= dispatched.patientNotified;
       escalatedThisTurn ||= dispatched.escalated;
+      return {
+        content: dispatched.content,
+        isError: dispatched.isError,
+        outcome: dispatched.rejectedBy ? "rejected" : dispatched.isError ? "error" : "ok",
+        rejectedBy: dispatched.rejectedBy,
+        errorType: dispatched.errorType,
+      };
+    };
+    for (const tu of toolUses) {
+      const toolName = telemetryToolName(tu.name);
+      const run = await withSpan(
+        SPAN.tool(toolName),
+        {
+          [ATTR.genAiOperation]: "execute_tool",
+          [ATTR.genAiToolName]: toolName,
+          ...telemetryToolArgs(tu.input),
+        },
+        async (span) => {
+          const r = await runTool(tu);
+          setAttributes(span, {
+            [ATTR.toolOutcome]: r.outcome,
+            [ATTR.toolRejectedBy]: r.rejectedBy,
+            [ATTR.errorType]: r.errorType,
+          });
+          return r;
+        },
+      );
       toolResults.push({
         type: "tool_result",
         toolUseId: tu.id,
-        content: dispatched.content,
-        isError: dispatched.isError,
+        content: run.content,
+        isError: run.isError,
       });
     }
     state = appendMessage(state, { role: "user", content: toolResults }, now);

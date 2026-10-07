@@ -51,8 +51,15 @@ export interface LlmTurnResult {
   usage?: LlmUsage;
   /** Provider detail for a refusal (category / explanation), when reported. */
   stopDetails?: { category: string | null; explanation: string | null };
+  /** The model that actually answered (may differ from the requested one after a fallback). */
+  model?: string;
+  /** Who served the call: "anthropic", "openai-compatible", "fake", … */
+  provider?: string;
 }
 
 export interface LLMPort {
   turn(input: LlmTurnInput): Promise<LlmTurnResult>;
+  /** Requested model, when the adapter knows it (telemetry span name, budget pricing). */
+  readonly model?: string;
+  readonly provider?: string;
 }

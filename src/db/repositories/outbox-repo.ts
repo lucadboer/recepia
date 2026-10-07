@@ -1,3 +1,4 @@
+import { currentTraceparent } from "../../telemetry/tracing";
 import type { Pool, PoolClient } from "../pool";
 
 type Queryable = Pool | PoolClient;
@@ -14,6 +15,8 @@ export interface OutboxRow {
   conversationPhone: string | null;
   body: string;
   attempts: number;
+  /** W3C traceparent of the turn that enqueued it (null when tracing was off). */
+  traceContext: string | null;
 }
 
 export interface EnqueueOutboxInput {
@@ -38,8 +41,8 @@ export async function enqueueOutbox(
   input: EnqueueOutboxInput,
 ): Promise<string | null> {
   const { rows } = await q.query(
-    `INSERT INTO outbox_message (kind, to_phone, conversation_phone, body, dedupe_key, next_attempt_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO outbox_message (kind, to_phone, conversation_phone, body, dedupe_key, next_attempt_at, trace_context)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (dedupe_key) DO NOTHING
      RETURNING id`,
     [
@@ -49,6 +52,7 @@ export async function enqueueOutbox(
       input.body,
       input.dedupeKey ?? null,
       input.now,
+      currentTraceparent(), // FR-504: links the later delivery to this turn's trace
     ],
   );
   return rows[0] ? (rows[0].id as string) : null;
@@ -64,7 +68,7 @@ export async function claimDue(
   conversationPhone?: string,
 ): Promise<OutboxRow | null> {
   const { rows } = await client.query(
-    `SELECT id, kind, to_phone, conversation_phone, body, attempts
+    `SELECT id, kind, to_phone, conversation_phone, body, attempts, trace_context
      FROM outbox_message
      WHERE status = 'pending' AND next_attempt_at <= $1
        AND ($2::text IS NULL OR conversation_phone = $2::text)
@@ -82,6 +86,7 @@ export async function claimDue(
     conversationPhone: r.conversation_phone,
     body: r.body,
     attempts: r.attempts,
+    traceContext: r.trace_context ?? null,
   };
 }
 

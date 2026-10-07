@@ -68,7 +68,8 @@ export function requestTuningFor(model: string): RequestTuning {
  */
 export class AnthropicLLM implements LLMPort {
   private readonly client: MessagesClient;
-  private readonly model: string;
+  readonly model: string;
+  readonly provider = "anthropic";
 
   constructor(opts: AnthropicLLMOptions = {}) {
     const apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY;
@@ -102,6 +103,8 @@ export class AnthropicLLM implements LLMPort {
       stopReason: mapStopReason(response.stop_reason),
       content: fromResponseContent(response.content),
       usage: mapUsage(response.usage),
+      model: response.model ?? this.model,
+      provider: this.provider,
       ...(stopDetails ? { stopDetails } : {}),
     };
   }

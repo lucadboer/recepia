@@ -1,5 +1,6 @@
 import { HOLD_SWEEP_MS, OUTBOX_POLL_MS } from "../config";
 import type { Deps } from "../deps";
+import { log } from "../telemetry/logger";
 import { dispatchOutbox } from "./dispatch-outbox";
 import { expireHolds } from "./expire-holds";
 
@@ -19,7 +20,7 @@ export interface JobHandle {
 export type JobErrorHandler = (name: string, err: unknown) => void;
 
 const defaultOnError: JobErrorHandler = (name, err) => {
-  console.error(`[jobs] ${name} failed`, err);
+  log.error({ event: "job.failed", job: name, err }, "background job failed");
 };
 
 /**

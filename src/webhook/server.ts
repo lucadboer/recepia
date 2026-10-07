@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { SpanKind } from "@opentelemetry/api";
 import type { CloudStatus } from "../adapters/messaging/inbound/cloud-api-parser";
 import type { InboundMessage } from "../agent/types";
 import {
@@ -6,6 +7,9 @@ import {
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_REQUEST_TIMEOUT_MS,
 } from "../config";
+import { log } from "../telemetry/logger";
+import { patientRef } from "../telemetry/pseudonym";
+import { ATTR, SPAN, startRootSpan } from "../telemetry/tracing";
 import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
 import { parseAndAccept, RecentIds } from "./dispatch";
 import { PerKeyQueue } from "./per-key-queue";
@@ -43,8 +47,36 @@ export interface WebhookServerOptions {
 
 function defaultLogStatus(s: CloudStatus): void {
   const e = s.errors?.[0];
-  console.log(
-    `[webhook][cloud][status] id=${s.id} status=${s.status}${e ? ` error=${e.code}${e.title ? ` (${e.title})` : ""}` : ""}`,
+  log.info(
+    {
+      event: "webhook.cloud.status",
+      messageId: s.id,
+      status: s.status,
+      errorCode: e?.code,
+      errorTitle: e?.title,
+    },
+    "cloud delivery status",
+  );
+}
+
+/**
+ * One root span per accepted patient message (FR-501), started on acceptance so the queue wait
+ * is inside it; the turn runs as its child. Patient identified by pseudonym + masked phone.
+ */
+function traceInbound(
+  channel: "evolution" | "cloud",
+  msg: { phone: string; providerMessageId: string },
+) {
+  const patient = patientRef(msg.phone);
+  return startRootSpan(
+    SPAN.inbound,
+    {
+      [ATTR.channel]: channel,
+      [ATTR.messageId]: msg.providerMessageId,
+      [ATTR.patientId]: patient.id,
+      [ATTR.patientPhoneMasked]: patient.phoneMasked,
+    },
+    SpanKind.CONSUMER,
   );
 }
 
@@ -94,7 +126,9 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const basePath = opts.basePath ?? "/webhook/evolution";
   const recent = opts.recent ?? new RecentIds();
   const onError =
-    opts.onError ?? ((err: unknown) => console.error("[webhook] inbound processing failed", err));
+    opts.onError ??
+    ((err: unknown) =>
+      log.error({ event: "webhook.inbound_failed", err }, "inbound processing failed"));
   const maxBodyBytes = opts.maxBodyBytes ?? WEBHOOK_MAX_BODY_BYTES;
   // Messages from the same phone are processed one at a time (T240); different phones overlap.
   const queue = opts.queue ?? new PerKeyQueue();
@@ -142,16 +176,31 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
           res.writeHead(result.status).end();
           for (const s of result.statuses) logStatus(s); // statuses: log only
           for (const m of result.msgs) {
-            // Observability: phone masked (LGPD — last 4 digits); never logs message text.
-            console.log(
-              `[webhook][cloud][inbound] from=***${m.phone.slice(-4)} id=${m.providerMessageId}`,
+            // Observability: pseudonym + masked phone (LGPD); never the message text.
+            const traced = traceInbound("cloud", m);
+            log.info(
+              {
+                event: "webhook.inbound",
+                channel: "cloud",
+                messageId: m.providerMessageId,
+                patient: patientRef(m.phone),
+              },
+              "inbound message accepted",
             );
             void queue
-              .run(m.phone, () => cloud.onInbound(m)) // messages → orchestrator
+              .run(m.phone, () => traced.run(() => cloud.onInbound(m))) // messages → orchestrator
               .then((r) => {
                 cloudRecent.add(m.providerMessageId); // dedupe only a SUCCESSFUL turn (T230)
                 const status = (r as { status?: string } | null)?.status ?? "done";
-                console.log(`[webhook][cloud][handled] id=${m.providerMessageId} status=${status}`);
+                log.info(
+                  {
+                    event: "webhook.handled",
+                    channel: "cloud",
+                    messageId: m.providerMessageId,
+                    status,
+                  },
+                  "inbound message handled",
+                );
               })
               .catch(onError);
           }
@@ -185,9 +234,31 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
       res.writeHead(result.status).end();
       const msg = result.msg;
       if (msg) {
+        const traced = traceInbound("evolution", msg);
+        log.info(
+          {
+            event: "webhook.inbound",
+            channel: "evolution",
+            messageId: msg.providerMessageId,
+            patient: patientRef(msg.phone),
+          },
+          "inbound message accepted",
+        );
         void queue
-          .run(msg.phone, () => opts.onInbound(msg))
-          .then(() => recent.add(msg.providerMessageId)) // dedupe only a SUCCESSFUL turn (T230)
+          .run(msg.phone, () => traced.run(() => opts.onInbound(msg)))
+          .then((r) => {
+            recent.add(msg.providerMessageId); // dedupe only a SUCCESSFUL turn (T230)
+            const status = (r as { status?: string } | null)?.status ?? "done";
+            log.info(
+              {
+                event: "webhook.handled",
+                channel: "evolution",
+                messageId: msg.providerMessageId,
+                status,
+              },
+              "inbound message handled",
+            );
+          })
           .catch(onError);
       }
     });

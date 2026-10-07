@@ -43,13 +43,21 @@ export interface ToolDispatchResult {
    * closing reply so the patient gets exactly one message (T227).
    */
   patientNotified: boolean;
+  /** Which structural guardrail refused the call (telemetry, 005 FR-503). */
+  rejectedBy?: RejectedBy;
+  /** Error class of a tool that failed (not a guardrail rejection). */
+  errorType?: string;
 }
+
+export type RejectedBy = "unknown_tool" | "not_offered" | "foreign_hold" | "invalid_args";
 
 function result(
   state: ConversationState,
   content: string,
   isError: boolean,
-  flags: Partial<Pick<ToolDispatchResult, "escalated" | "patientNotified">> = {},
+  flags: Partial<
+    Pick<ToolDispatchResult, "escalated" | "patientNotified" | "rejectedBy" | "errorType">
+  > = {},
 ): ToolDispatchResult {
   return {
     content,
@@ -57,8 +65,12 @@ function result(
     state,
     escalated: flags.escalated ?? false,
     patientNotified: flags.patientNotified ?? false,
+    ...(flags.rejectedBy ? { rejectedBy: flags.rejectedBy } : {}),
+    ...(flags.errorType ? { errorType: flags.errorType } : {}),
   };
 }
+
+const INVALID = { rejectedBy: "invalid_args" } as const;
 
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -80,7 +92,7 @@ export async function dispatchTool(
         const to = asString(input.to);
         const type = asString(input.type);
         if (!from || !to || !type) {
-          return result(state, "Argumentos inválidos para get_availability.", true);
+          return result(state, "Argumentos inválidos para get_availability.", true, INVALID);
         }
         const all = await getAvailability(deps, { from: new Date(from), to: new Date(to) }, type);
         // Expose at most AVAILABILITY_MAX_SLOTS (the earliest). What the model sees is EXACTLY
@@ -106,13 +118,16 @@ export async function dispatchTool(
       case TOOL_NAMES.hold: {
         const start = asString(input.start);
         const type = asString(input.type);
-        if (!start || !type) return result(state, "Argumentos inválidos para hold_slot.", true);
+        if (!start || !type) {
+          return result(state, "Argumentos inválidos para hold_slot.", true, INVALID);
+        }
         // GUARDRAIL 2: the slot must have been offered by get_availability in this conversation.
         if (!isOfferedSlot(state, new Date(start).toISOString())) {
           return result(
             state,
             "Esse horário não foi oferecido nesta conversa; consulte a disponibilidade primeiro.",
             true,
+            { rejectedBy: "not_offered" },
           );
         }
         const hold = await holdSlot(deps, { start: new Date(start), type }, { phone });
@@ -132,11 +147,13 @@ export async function dispatchTool(
         const holdId = asString(input.hold_id);
         const patientName = asString(input.patient_name);
         if (!holdId || !patientName) {
-          return result(state, "Argumentos inválidos para confirm_booking.", true);
+          return result(state, "Argumentos inválidos para confirm_booking.", true, INVALID);
         }
         // GUARDRAIL 3: only confirm a hold created in THIS conversation.
         if (!hasActiveHold(state, holdId)) {
-          return result(state, "Reserva não reconhecida nesta conversa.", true);
+          return result(state, "Reserva não reconhecida nesta conversa.", true, {
+            rejectedBy: "foreign_hold",
+          });
         }
         const { booking, outcome } = await confirmBooking(deps, holdId, {
           phone,
@@ -170,7 +187,9 @@ export async function dispatchTool(
 
       default:
         // GUARDRAIL 1: closed allowlist — the LLM cannot invoke anything else.
-        return result(state, `Ferramenta desconhecida: ${name}`, true);
+        return result(state, `Ferramenta desconhecida: ${name}`, true, {
+          rejectedBy: "unknown_tool",
+        });
     }
   } catch (e) {
     // A tool may have escalated internally BEFORE failing (confirm_booking on persistent
@@ -178,6 +197,7 @@ export async function dispatchTool(
     // conversation off instead of letting the model carry on — reception is not notified twice.
     const escalated = hasEscalatedFlag(e);
     if (escalated) state = markEscalated(state, now);
-    return result(state, errorReply(e), true, { escalated });
+    const errorType = e instanceof Error ? e.constructor.name || e.name : "unknown";
+    return result(state, errorReply(e), true, { escalated, errorType });
   }
 }

@@ -10,6 +10,7 @@ import {
 } from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { escalationMessagePt } from "../messages";
+import { ATTR, linkFromTraceparent, SPAN, setAttributes, withSpan } from "../telemetry/tracing";
 
 /** Delay before attempt n+1 after the n-th failure (n = 1..). The last value repeats. */
 export const OUTBOX_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000];
@@ -111,25 +112,39 @@ async function dispatchOne(
       return null;
     }
     const attempts = row.attempts + 1;
-    let outcome: Outcome;
-    try {
-      await withTimeout(deps.messaging.sendMessage(row.toPhone, row.body), timeoutMs);
-      await markSent(client, row.id, attempts, deps.clock.now());
-      outcome = "sent";
-    } catch (sendErr) {
-      const message = errorMessage(sendErr);
-      // Backoff counts from the moment the send FAILED, not from the claim: a send that took
-      // longer than the backoff must not come due again inside the same batch.
-      const failedAt = deps.clock.now();
-      if (attempts >= OUTBOX_MAX_ATTEMPTS) {
-        await deadLetter(deps, client, row, attempts, message, failedAt);
-        outcome = "failed";
-      } else {
-        const nextAt = new Date(failedAt.getTime() + backoffFor(attempts));
-        await markRetry(client, row.id, attempts, nextAt, message);
-        outcome = "retried";
-      }
-    }
+    const link = linkFromTraceparent(row.traceContext);
+    // FR-504: one span per delivery attempt, linked to the turn that committed the message.
+    const outcome = await withSpan(
+      SPAN.outboxDispatch,
+      { [ATTR.outboxKind]: row.kind, [ATTR.outboxAttempt]: attempts },
+      async (span): Promise<Outcome> => {
+        let o: Outcome;
+        try {
+          await withTimeout(deps.messaging.sendMessage(row.toPhone, row.body), timeoutMs);
+          await markSent(client, row.id, attempts, deps.clock.now());
+          o = "sent";
+        } catch (sendErr) {
+          const message = errorMessage(sendErr);
+          // Backoff counts from the moment the send FAILED, not from the claim: a send that took
+          // longer than the backoff must not come due again inside the same batch.
+          const failedAt = deps.clock.now();
+          if (attempts >= OUTBOX_MAX_ATTEMPTS) {
+            await deadLetter(deps, client, row, attempts, message, failedAt);
+            o = "failed";
+          } else {
+            const nextAt = new Date(failedAt.getTime() + backoffFor(attempts));
+            await markRetry(client, row.id, attempts, nextAt, message);
+            o = "retried";
+          }
+          setAttributes(span, {
+            [ATTR.errorType]: sendErr instanceof Error ? sendErr.constructor.name : "unknown",
+          });
+        }
+        setAttributes(span, { [ATTR.outboxResult]: o });
+        return o;
+      },
+      { links: link ? [link] : [] },
+    );
     await client.query("COMMIT");
     return outcome;
   } catch (err) {

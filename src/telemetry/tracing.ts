@@ -108,6 +108,35 @@ export async function withSpan<T>(
   );
 }
 
+/**
+ * Start a root span now (e.g. when a webhook accepts a message) and run work in it later
+ * (after a queue wait); the span ends when the work settles.
+ */
+export function startRootSpan(
+  name: string,
+  attributes: MaybeAttributes,
+  kind?: SpanKind,
+): { span: Span; run<T>(fn: () => Promise<T>): Promise<T> } {
+  const span = tracer().startSpan(
+    name,
+    { kind, root: true, attributes: defined(attributes) },
+    ROOT_CONTEXT,
+  );
+  return {
+    span,
+    async run<T>(fn: () => Promise<T>): Promise<T> {
+      try {
+        return await context.with(trace.setSpan(ROOT_CONTEXT, span), fn);
+      } catch (err) {
+        recordError(span, err);
+        throw err;
+      } finally {
+        span.end();
+      }
+    },
+  };
+}
+
 export function recordError(span: Span, err: unknown): void {
   const type = err instanceof Error ? err.constructor.name || err.name : typeof err;
   span.setAttribute(ATTR.errorType, type);

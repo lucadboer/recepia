@@ -1,5 +1,6 @@
 import { SHUTDOWN_TIMEOUT_MS } from "../config";
 import { type JobHandle, stopJobs } from "../jobs/scheduler";
+import { log as defaultLog } from "../telemetry/logger";
 import type { PerKeyQueue } from "./per-key-queue";
 
 export interface ShutdownOptions {
@@ -20,7 +21,7 @@ export interface ShutdownOptions {
  */
 export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
   const timeoutMs = opts.timeoutMs ?? SHUTDOWN_TIMEOUT_MS;
-  const log = opts.log ?? ((m: string) => console.log(m));
+  const log = opts.log ?? ((m: string) => defaultLog.info({ event: "shutdown" }, m));
   let inProgress: Promise<boolean> | null = null;
 
   async function run(): Promise<boolean> {
