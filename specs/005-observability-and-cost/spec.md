@@ -16,6 +16,7 @@
 
 - Q: What estimated-cost budget per conversation triggers the hand-off to reception? → A: US$ 0.25 per conversation (≈ 8× a full booking conversation), configurable.
 - Q: Which secondary (fallback) model provider? → A: Ship a generic adapter for the open chat-completions protocol plus the fallback logic, tested with simulated providers; it stays off until the owner configures a provider and credential (no spend now).
+- Q: The audit log is kept forever (T222) and escalation rows carry the raw patient text (`context`) and a short excerpt (`summary`) — minimise them? → A: Keep as is (owner, 2026-10-07, raised in the PR #9 review). The 90-day purge covers conversation state and delivered messages only.
 - Q: How is the patient identified in traces and logs without the phone? → A: A keyed pseudonym (one-way hash of the phone with an operator secret) for correlation plus the masked phone (last 4 digits) for humans; without the secret, a random per-process secret is used and a warning is logged (pseudonyms then change on restart).
 
 ## User Scenarios & Testing *(mandatory)*
