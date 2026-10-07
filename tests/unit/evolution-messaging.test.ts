@@ -70,3 +70,19 @@ describe("EvolutionMessaging", () => {
     await expect(m.sendMessage("+5531999998888", "x")).rejects.toThrow(/upstream down/);
   });
 });
+
+describe("review fix H3 — provider bodies are masked in the error message", () => {
+  it("an echoed number / JID never reaches MessagingSendError.message", async () => {
+    const body = JSON.stringify({
+      response: {
+        message: [{ exists: false, jid: "5531999998888@s.whatsapp.net", number: "5531999998888" }],
+      },
+    });
+    const { fetchFn } = recorder({ ok: false, status: 400, text: body });
+    const m = new EvolutionMessaging("https://evo.example.com", "k", "i", fetchFn);
+    const err = await m.sendMessage("+5531999998888", "x").catch((e) => e);
+    expect(err.message).toMatch(/HTTP 400/);
+    expect(err.message).not.toContain("5531999998888");
+    expect(err.message).toContain("***8888");
+  });
+});

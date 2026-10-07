@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   maskPhone,
   maskPhonesIn,
+  messageRef,
   patientPseudonym,
   patientRef,
   resetPseudonymKey,
@@ -60,6 +61,31 @@ describe("maskPhonesIn — never corrupts identifiers (found by a flaky test, 20
     expect(maskPhonesIn("(+5531900000101)")).toBe("(***0101)");
     expect(maskPhonesIn("call_5531900000155")).toBe("call_***0155");
     expect(maskPhonesIn("to=5531900000101,")).toBe("to=***0101,");
+  });
+});
+
+describe("review fix H4 — messageRef (a wamid encodes the phone)", () => {
+  it("is a stable keyed 16-hex reference that never contains the id or the phone", () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", "key-a");
+    resetPseudonymKey();
+    // Meta's documented sample: base64 of a payload containing the sender's number.
+    const wamid = "wamid.HBgLMTY1MDUwNzY1MjAVAgARGBI5QTNDQTVCM0Q0Q0Q2RTY3RTcA";
+    const ref = messageRef(wamid);
+    expect(ref).toMatch(/^[0-9a-f]{16}$/);
+    expect(ref).toBe(messageRef(wamid));
+    expect(ref).not.toBe(messageRef("wamid.other"));
+    expect(ref).not.toBe(patientPseudonym(wamid)); // namespaced: never equal to a patient id
+  });
+});
+
+describe("review fix L3 — human-formatted phone numbers are masked too", () => {
+  it.each([
+    ["+55 11 98765-4321", "***4321"],
+    ["(11) 98765-4321", "***4321"],
+    ["11 3456-7890", "***7890"],
+    ["+55 (31) 99999-8888", "***8888"],
+  ])("%s → %s", (raw, masked) => {
+    expect(maskPhonesIn(`ligar para ${raw} amanhã`)).toBe(`ligar para ${masked} amanhã`);
   });
 });
 

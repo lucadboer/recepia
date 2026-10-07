@@ -71,3 +71,16 @@ describe("classifyError — fallback-era provider errors (005)", async () => {
     );
   });
 });
+
+describe("review fix H1 — evals classify real SDK errors", async () => {
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  it("timeout and connection errors are not 'infrastructure'", () => {
+    expect(classifyError(new Anthropic.APIConnectionTimeoutError()).kind).toBe("timeout");
+    expect(classifyError(new Anthropic.APIConnectionError({ message: "x" })).kind).toBe(
+      "connection",
+    );
+    expect(classifyError(new Anthropic.RateLimitError(429, {}, "r", new Headers())).kind).toBe(
+      "rate_limit",
+    );
+  });
+});

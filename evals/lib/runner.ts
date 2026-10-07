@@ -4,6 +4,7 @@
 // an infrastructure throw is recorded as an error and ends the execution.
 
 import { performance } from "node:perf_hooks";
+import Anthropic from "@anthropic-ai/sdk";
 import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
@@ -117,8 +118,16 @@ export function classifyError(e: unknown): ExecutionError {
   }
   const err = e as { name?: string; status?: number | null; message?: string };
   const message = err?.message ?? String(e);
-  if (err?.name === "APIConnectionTimeoutError") return { kind: "timeout", message };
-  if (err?.name === "APIConnectionError") return { kind: "connection", message };
+  // The Anthropic SDK leaves `name` as "Error": classify by class first.
+  if (
+    e instanceof Anthropic.APIConnectionTimeoutError ||
+    err?.name === "APIConnectionTimeoutError"
+  ) {
+    return { kind: "timeout", message };
+  }
+  if (e instanceof Anthropic.APIConnectionError || err?.name === "APIConnectionError") {
+    return { kind: "connection", message };
+  }
   if (typeof err?.status === "number") {
     if (err.status === 429) return { kind: "rate_limit", message };
     if (err.status >= 500 || err.status === 408) return { kind: "provider", message };

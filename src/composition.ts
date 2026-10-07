@@ -88,11 +88,13 @@ export function fallbackConfig(env: NodeJS.ProcessEnv = process.env): FallbackCo
 
 /** Primary Anthropic model, wrapped in FallbackLLM when a secondary provider is configured. */
 export function buildLlm(env: NodeJS.ProcessEnv = process.env): AnthropicLLM | FallbackLLM {
+  const fb = fallbackConfig(env);
   const primary = new AnthropicLLM({
     apiKey: env.ANTHROPIC_API_KEY,
     model: env.ANTHROPIC_MODEL || undefined,
+    // With a fallback, fail over at once instead of after the SDK's retries (~3 × timeout + backoff).
+    ...(fb ? { maxRetries: 0 } : {}),
   });
-  const fb = fallbackConfig(env);
   if (!fb) return primary;
   const timeout = Number(env.FALLBACK_LLM_TIMEOUT_MS);
   const secondary = new OpenAICompatibleLLM({

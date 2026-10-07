@@ -46,14 +46,31 @@ export function maskPhone(phone: string): string {
  * masking those would break log↔trace correlation.
  */
 const STANDALONE_PHONE = /(?<![0-9A-Za-z-])\+?\d{10,15}(?![0-9A-Za-z-])/g;
+// Human-formatted numbers ("+55 11 98765-4321", "(11) 98765-4321", "11 3456-7890"): a separator
+// between the last two groups is required, so plain identifiers never match.
+const FORMATTED_PHONE =
+  /(?<![0-9A-Za-z])(?:\+\d{1,3}[\s.-]?)?\(?\d{2}\)?[\s.-]?\d{4,5}[\s.-]\d{4}(?![0-9A-Za-z])/g;
 
 export function maskPhonesIn(text: string): string {
-  return text.replace(STANDALONE_PHONE, (m) => maskPhone(m));
+  return text
+    .replace(FORMATTED_PHONE, (m) => maskPhone(m))
+    .replace(STANDALONE_PHONE, (m) => maskPhone(m));
 }
 
 /** First 16 hex chars of HMAC-SHA256(phone, key). */
 export function patientPseudonym(phone: string): string {
   return createHmac("sha256", hashKey()).update(phone).digest("hex").slice(0, 16);
+}
+
+/**
+ * Provider message ids are NOT opaque: a WhatsApp Cloud API `wamid` is base64 that encodes the
+ * sender's phone. Telemetry gets a keyed reference instead (same key as the patient pseudonym).
+ */
+export function messageRef(providerMessageId: string): string {
+  return createHmac("sha256", hashKey())
+    .update(`msg:${providerMessageId}`)
+    .digest("hex")
+    .slice(0, 16);
 }
 
 export interface PatientRef {

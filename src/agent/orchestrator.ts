@@ -6,13 +6,21 @@ import {
   isRoutineType,
 } from "../config";
 import type { Deps } from "../deps";
+import { ConversationConflictError } from "../domain/errors";
 import { dispatchOutbox } from "../jobs/dispatch-outbox";
-import { costUsd, loadPricing, type PricingTable } from "../llm/pricing";
+import { costUsdFailClosed, loadPricing, type PricingTable } from "../llm/pricing";
 import type { ConversationStorePort } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
 import { log } from "../telemetry/logger";
-import { maskPhone, patientRef } from "../telemetry/pseudonym";
-import { ATTR, type MaybeAttributes, SPAN, setAttributes, withSpan } from "../telemetry/tracing";
+import { maskPhone, messageRef, patientRef } from "../telemetry/pseudonym";
+import {
+  ATTR,
+  type MaybeAttributes,
+  markSpanFailed,
+  SPAN,
+  setAttributes,
+  withSpan,
+} from "../telemetry/tracing";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
 import {
@@ -63,15 +71,15 @@ function pricingOf(deps: AgentDeps): PricingTable {
   return defaultPricing;
 }
 
-/** Estimated USD of one model call; zero-usage calls (fakes) are free and never priced. */
+/**
+ * Estimated USD of one model call; zero-usage calls (fakes) are free and never priced. Priced by
+ * the served model, then the requested one, else at the table's highest rate (fail closed).
+ */
 function callCost(deps: AgentDeps, r: LlmTurnResult): number {
   const u = r.usage;
   if (!u || u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheWriteTokens === 0) return 0;
-  const model = r.model ?? deps.llm.model ?? "unknown";
-  return (
-    costUsd(pricingOf(deps), model, u, (m) =>
-      log.warn({ event: "pricing.unknown_model", model }, m),
-    ) ?? 0
+  return costUsdFailClosed(pricingOf(deps), [r.model, deps.llm.model], u, (m) =>
+    log.warn({ event: "pricing.unknown_model", served: r.model, requested: deps.llm.model }, m),
   );
 }
 
@@ -130,28 +138,32 @@ interface TurnObservation {
  * the consent gate before confirm, and the bounded loop.
  */
 export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promise<LoopResult> {
-  return withSpan(SPAN.turn, { [ATTR.messageId]: msg.providerMessageId }, async (span) => {
-    const seen: TurnObservation = {};
-    const result = await runTurn(deps, msg, seen);
-    setAttributes(span, {
-      [ATTR.turnStatus]: result.status,
-      [ATTR.conversationStatus]: seen.conversationStatus,
-      [ATTR.promptVersion]: seen.promptVersion,
-      [ATTR.conversationCostUsd]: seen.conversationCostUsd,
-    });
-    log.debug(
-      {
-        event: "turn.done",
-        messageId: msg.providerMessageId,
-        patient: patientRef(msg.phone),
-        status: result.status,
-        conversationStatus: seen.conversationStatus,
-        promptVersion: seen.promptVersion,
-      },
-      "turn finished",
-    );
-    return result;
-  });
+  return withSpan(
+    SPAN.turn,
+    { [ATTR.messageRef]: messageRef(msg.providerMessageId) },
+    async (span) => {
+      const seen: TurnObservation = {};
+      const result = await runTurn(deps, msg, seen);
+      setAttributes(span, {
+        [ATTR.turnStatus]: result.status,
+        [ATTR.conversationStatus]: seen.conversationStatus,
+        [ATTR.promptVersion]: seen.promptVersion,
+        [ATTR.conversationCostUsd]: seen.conversationCostUsd,
+      });
+      log.debug(
+        {
+          event: "turn.done",
+          messageRef: messageRef(msg.providerMessageId),
+          patient: patientRef(msg.phone),
+          status: result.status,
+          conversationStatus: seen.conversationStatus,
+          promptVersion: seen.promptVersion,
+        },
+        "turn finished",
+      );
+      return result;
+    },
+  );
 }
 
 async function runTurn(
@@ -197,6 +209,7 @@ async function runTurn(
     });
   };
 
+  const loaded = state; // before this message touches it (see recordSpendOnFailure)
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
   state = markProcessed(state, msg.providerMessageId, now);
@@ -305,6 +318,20 @@ async function runTurn(
     await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   };
+  /**
+   * A model call that succeeded was paid for even if the turn fails afterwards (a later call or a
+   * tool throws). Persist ONLY the usage onto the state as it was loaded — the message is not
+   * marked processed, so a provider retry still runs the turn — otherwise retried partial turns
+   * could spend past the budget (005 FR-510). Best effort: a concurrent save wins.
+   */
+  const recordSpendOnFailure = async (err: unknown): Promise<never> => {
+    if (state.usage.calls > loaded.usage.calls && !(err instanceof ConversationConflictError)) {
+      await deps.conversations
+        .save(boundState({ ...loaded, usage: state.usage, updatedAt: now }, now))
+        .catch(() => {});
+    }
+    throw err;
+  };
   let finalText: string | null = null;
   // A fresh confirm_booking commits the patient's confirmation into the outbox. That
   // deterministic message OWNS the patient reply for this turn (T227): the orchestrator
@@ -345,7 +372,7 @@ async function runTurn(
       tools: toolDefs,
       messages: state.history,
       promptVersion: prompt.version,
-    });
+    }).catch(recordSpendOnFailure);
     state = appendMessage(state, { role: "assistant", content: turn.content }, now);
 
     const toolUses = toolUsesOf(turn.content);
@@ -424,6 +451,8 @@ async function runTurn(
             [ATTR.toolRejectedBy]: r.rejectedBy,
             [ATTR.errorType]: r.errorType,
           });
+          // A tool that failed is an error; a guardrail rejection is the system working.
+          if (r.outcome === "error") markSpanFailed(span, r.errorType);
           return r;
         },
       );

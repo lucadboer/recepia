@@ -225,3 +225,46 @@ describe("usage persistence", () => {
     });
   });
 });
+
+describe("review fixes — budget cannot be bypassed", () => {
+  it("M1: a served model with no price is charged at the table's highest rate (fail closed)", async () => {
+    const llm = new FakeLLM([
+      {
+        ...availability(),
+        usage: USAGE,
+        model: "provider-alias-unpriced",
+        provider: "openai-compatible",
+      },
+      text("Tenho 11h."),
+    ]);
+    const h = makeAgent(pool, llm);
+    await handleInbound(h.deps, inbound("quero marcar", "f1"));
+    const usage = (await h.conversations.load(PHONE))?.usage;
+    // claude-opus-5-5 is the priciest entry: 10k × 4 + 1k × 20 per MTok = US$ 0.06
+    expect(usage?.costUsd).toBeCloseTo(0.06, 6);
+    expect(usage?.models).toContain("provider-alias-unpriced");
+  });
+
+  it("Codex P2: usage of a call that succeeded is kept when a later call throws (message stays unprocessed)", async () => {
+    const llm = new FakeLLM([
+      priced(availability()),
+      () => {
+        throw Object.assign(new Error("overloaded"), { status: 529 });
+      },
+      priced(text("Tenho 11h.")),
+    ]);
+    const h = makeAgent(pool, llm);
+    await expect(handleInbound(h.deps, inbound("quero marcar", "f2"))).rejects.toThrow(
+      "overloaded",
+    );
+    const after = await h.conversations.load(PHONE);
+    expect(after?.usage.calls).toBe(1);
+    expect(after?.usage.costUsd).toBeCloseTo(0.03, 6);
+    expect(after?.processedInboundIds).not.toContain("f2"); // a provider retry still runs the turn
+    expect(after?.history).toHaveLength(0);
+    // The retry runs and its spend adds up on top.
+    const r = await handleInbound(h.deps, inbound("quero marcar", "f2"));
+    expect(r.status).toBe("replied");
+    expect((await h.conversations.load(PHONE))?.usage.calls).toBe(2);
+  });
+});

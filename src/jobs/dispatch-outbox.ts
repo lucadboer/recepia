@@ -14,6 +14,7 @@ import {
   ATTR,
   errorTypeOf,
   linkFromTraceparent,
+  markSpanFailed,
   SPAN,
   setAttributes,
   withSpan,
@@ -143,9 +144,8 @@ async function dispatchOne(
             await markRetry(client, row.id, attempts, nextAt, message);
             o = "retried";
           }
-          setAttributes(span, {
-            [ATTR.errorType]: errorTypeOf(sendErr),
-          });
+          setAttributes(span, { [ATTR.errorType]: errorTypeOf(sendErr) });
+          markSpanFailed(span, errorTypeOf(sendErr));
         }
         setAttributes(span, { [ATTR.outboxResult]: o });
         return o;

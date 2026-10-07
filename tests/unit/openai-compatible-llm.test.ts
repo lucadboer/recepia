@@ -237,6 +237,37 @@ describe("OpenAICompatibleLLM — response mapping", () => {
     expect(r.stopReason).toBe(expected);
   });
 
+  it.each([
+    ["content_filter", "refusal"],
+    ["length", "max_tokens"],
+  ])(
+    "review fix M2 — %s WITH tool calls → %s (the orchestrator then runs none of them)",
+    async (finish, expected) => {
+      const s = await stub((_b, _r, res) =>
+        ok(
+          res,
+          completion(
+            {
+              content: null,
+              tool_calls: [
+                {
+                  id: "c",
+                  type: "function",
+                  function: { name: "confirm_booking", arguments: "{}" },
+                },
+              ],
+            },
+            finish,
+          ),
+        ),
+      );
+      const r = await new OpenAICompatibleLLM({ baseUrl: s.baseUrl, apiKey: "k", model: "m" }).turn(
+        history,
+      );
+      expect(r.stopReason).toBe(expected);
+    },
+  );
+
   it("tool calls reported with finish_reason stop are still tool_use", async () => {
     const s = await stub((_b, _r, res) =>
       ok(

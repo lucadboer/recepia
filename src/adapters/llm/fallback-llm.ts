@@ -21,8 +21,8 @@ const errorType = errorTypeOf;
 
 export class FallbackLLM implements LLMPort {
   constructor(
-    private readonly primary: LLMPort,
-    private readonly secondary: LLMPort,
+    readonly primary: LLMPort,
+    readonly secondary: LLMPort,
     private readonly isTransient: (err: unknown) => boolean = isTransientLlmError,
   ) {}
 

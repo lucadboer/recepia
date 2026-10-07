@@ -57,6 +57,10 @@ describe("tracing helpers — in-memory provider", () => {
     expect(s.status.code).toBe(SpanStatusCode.ERROR);
     expect(s.attributes["error.type"]).toBe("SlotUnavailableError");
     expect(s.events.some((e) => e.name === "exception")).toBe(true);
+    // review fix H3: no free-form message on spans (it can carry provider bodies / phones)
+    const exc = s.events.find((e) => e.name === "exception");
+    expect(exc?.attributes?.["exception.message"]).toBeUndefined();
+    expect(s.status.message).toBe("SlotUnavailableError");
   });
 
   it("supports kind, root spans and links", async () => {

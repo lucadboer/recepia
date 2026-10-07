@@ -31,6 +31,8 @@ export interface AnthropicLLMOptions {
   client?: MessagesClient;
   /** Per-call timeout (ms). Defaults to ANTHROPIC_TIMEOUT_MS, then 30 s (so a fallback can kick in). */
   timeoutMs?: number;
+  /** SDK retries on 408/409/429/5xx/connection errors (default 2). Lower it when a fallback exists. */
+  maxRetries?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -98,6 +100,7 @@ export class AnthropicLLM implements LLMPort {
   readonly model: string;
   readonly provider = "anthropic";
   readonly timeoutMs: number;
+  readonly maxRetries: number | undefined;
 
   constructor(opts: AnthropicLLMOptions = {}) {
     const apiKey = opts.apiKey ?? process.env.ANTHROPIC_API_KEY;
@@ -106,7 +109,14 @@ export class AnthropicLLM implements LLMPort {
       throw new NotConfigured("AnthropicLLM: ANTHROPIC_API_KEY not set (NEEDS-USER)");
     }
     this.timeoutMs = resolveTimeout(opts.timeoutMs);
-    this.client = opts.client ?? new Anthropic({ apiKey, timeout: this.timeoutMs });
+    this.maxRetries = opts.maxRetries;
+    this.client =
+      opts.client ??
+      new Anthropic({
+        apiKey,
+        timeout: this.timeoutMs,
+        ...(opts.maxRetries !== undefined ? { maxRetries: opts.maxRetries } : {}),
+      });
     this.model = model && model.length > 0 ? model : DEFAULT_MODEL;
   }
 

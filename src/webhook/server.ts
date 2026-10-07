@@ -8,7 +8,7 @@ import {
   WEBHOOK_REQUEST_TIMEOUT_MS,
 } from "../config";
 import { log } from "../telemetry/logger";
-import { patientRef } from "../telemetry/pseudonym";
+import { messageRef, patientRef } from "../telemetry/pseudonym";
 import { ATTR, SPAN, startRootSpan } from "../telemetry/tracing";
 import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
 import { parseAndAccept, RecentIds } from "./dispatch";
@@ -73,7 +73,7 @@ function defaultLogStatus(s: CloudStatus): void {
   log.info(
     {
       event: "webhook.cloud.status",
-      messageId: s.id,
+      messageRef: messageRef(s.id),
       status: s.status,
       errorCode: e?.code,
       errorTitle: e?.title,
@@ -95,7 +95,7 @@ function traceInbound(
     SPAN.inbound,
     {
       [ATTR.channel]: channel,
-      [ATTR.messageId]: msg.providerMessageId,
+      [ATTR.messageRef]: messageRef(msg.providerMessageId),
       [ATTR.patientId]: patient.id,
       [ATTR.patientPhoneMasked]: patient.phoneMasked,
     },
@@ -161,6 +161,49 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
   const cloudRecent = cloud?.recent ?? new RecentIds();
   const logStatus = cloud?.onStatus ?? defaultLogStatus;
 
+  /**
+   * Hand an accepted message to its per-phone queue inside a root span (FR-501). Logs are written
+   * with the span active so they carry its trace id; the id is deduped only after a SUCCESSFUL
+   * turn (T230). Failures are reported once, inside the span.
+   */
+  // One readiness probe in flight at a time: under load, /readyz must not pile queries on the pool.
+  let probing: Promise<boolean> | null = null;
+
+  const dispatchInbound = (
+    channel: "evolution" | "cloud",
+    msg: InboundMessage,
+    handler: (m: InboundMessage) => Promise<unknown>,
+    seen: RecentIds,
+  ): void => {
+    const traced = traceInbound(channel, msg);
+    const ref = messageRef(msg.providerMessageId);
+    traced.within(() =>
+      log.info(
+        { event: "webhook.inbound", channel, messageRef: ref, patient: patientRef(msg.phone) },
+        "inbound message accepted",
+      ),
+    );
+    void queue
+      .run(msg.phone, () =>
+        traced.run(async () => {
+          try {
+            const r = await handler(msg);
+            seen.add(msg.providerMessageId);
+            const status = (r as { status?: string } | null)?.status ?? "done";
+            log.info(
+              { event: "webhook.handled", channel, messageRef: ref, status },
+              "inbound message handled",
+            );
+            return r;
+          } catch (err) {
+            onError(err);
+            throw err; // recorded on the span by run()
+          }
+        }),
+      )
+      .catch(() => {}); // already reported above
+  };
+
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     // Node's parser accepts targets like "//" that WHATWG URL rejects; an uncaught throw
     // here would take the whole server down before any authentication ran.
@@ -182,7 +225,10 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
         sendJson(res, 200, { status: "ok" }, head);
         return;
       }
-      void probeReady(opts.ready).then((ok) =>
+      probing ??= probeReady(opts.ready).finally(() => {
+        probing = null;
+      });
+      void probing.then((ok) =>
         sendJson(res, ok ? 200 : 503, { status: ok ? "ready" : "not_ready" }, head),
       );
       return;
@@ -215,35 +261,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
           });
           res.writeHead(result.status).end();
           for (const s of result.statuses) logStatus(s); // statuses: log only
-          for (const m of result.msgs) {
-            // Observability: pseudonym + masked phone (LGPD); never the message text.
-            const traced = traceInbound("cloud", m);
-            log.info(
-              {
-                event: "webhook.inbound",
-                channel: "cloud",
-                messageId: m.providerMessageId,
-                patient: patientRef(m.phone),
-              },
-              "inbound message accepted",
-            );
-            void queue
-              .run(m.phone, () => traced.run(() => cloud.onInbound(m))) // messages → orchestrator
-              .then((r) => {
-                cloudRecent.add(m.providerMessageId); // dedupe only a SUCCESSFUL turn (T230)
-                const status = (r as { status?: string } | null)?.status ?? "done";
-                log.info(
-                  {
-                    event: "webhook.handled",
-                    channel: "cloud",
-                    messageId: m.providerMessageId,
-                    status,
-                  },
-                  "inbound message handled",
-                );
-              })
-              .catch(onError);
-          }
+          for (const m of result.msgs) dispatchInbound("cloud", m, cloud.onInbound, cloudRecent);
         });
         return;
       }
@@ -272,35 +290,7 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
         seen: recent,
       });
       res.writeHead(result.status).end();
-      const msg = result.msg;
-      if (msg) {
-        const traced = traceInbound("evolution", msg);
-        log.info(
-          {
-            event: "webhook.inbound",
-            channel: "evolution",
-            messageId: msg.providerMessageId,
-            patient: patientRef(msg.phone),
-          },
-          "inbound message accepted",
-        );
-        void queue
-          .run(msg.phone, () => traced.run(() => opts.onInbound(msg)))
-          .then((r) => {
-            recent.add(msg.providerMessageId); // dedupe only a SUCCESSFUL turn (T230)
-            const status = (r as { status?: string } | null)?.status ?? "done";
-            log.info(
-              {
-                event: "webhook.handled",
-                channel: "evolution",
-                messageId: msg.providerMessageId,
-                status,
-              },
-              "inbound message handled",
-            );
-          })
-          .catch(onError);
-      }
+      if (result.msg) dispatchInbound("evolution", result.msg, opts.onInbound, recent);
     });
   });
 

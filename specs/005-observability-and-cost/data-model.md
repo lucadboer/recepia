@@ -18,7 +18,7 @@
 
 ## Telemetry entities (not persisted)
 - **Span** names: `webhook.inbound`, `agent.turn`, `chat {model}`, `execute_tool {name}`, `outbox.dispatch`, `job.{name}`, `pg.*` (instrumentation).
-- **Patient pseudonym**: `{ id: hex16, phoneMasked: "***NNNN" }`.
+- **Patient pseudonym**: `{ id: hex16, phoneMasked: "***NNNN" }`; **message reference**: `messageRef(providerMessageId)` = keyed hex16 (review 2026-10-07: a WhatsApp `wamid` encodes the phone, so raw ids never reach telemetry).
 - **Log record**: `{ level, time, msg, service, trace_id?, span_id?, event?, patient?: { id, phoneMasked }, messageId?, … }` — never `text`, `body`, `content`, `patient_name`.
 
 ## Files

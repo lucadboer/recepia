@@ -181,16 +181,14 @@ function fromMessage(message: { content?: string | null; tool_calls?: ToolCall[]
   return out;
 }
 
+/**
+ * A provider refusal or a cut-off wins over tool calls in the same response: the orchestrator
+ * then runs none of them (a truncated or filtered tool call is never executed).
+ */
 function mapFinish(reason: string | undefined, content: LlmContent[]): LlmTurnResult["stopReason"] {
-  if (content.some((c) => c.type === "tool_use")) return "tool_use";
-  switch (reason) {
-    case "length":
-      return "max_tokens";
-    case "content_filter":
-      return "refusal";
-    default:
-      return "end_turn";
-  }
+  if (reason === "content_filter") return "refusal";
+  if (reason === "length") return "max_tokens";
+  return content.some((c) => c.type === "tool_use") ? "tool_use" : "end_turn";
 }
 
 function mapUsage(u: ChatResponse["usage"]): LlmUsage {

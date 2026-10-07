@@ -83,6 +83,20 @@ describe("logger", () => {
     expect(all).toContain("***0101");
   });
 
+  it("review fix H2 — an error keeps its type and (masked) message in the log line", () => {
+    class MessagingSendError extends Error {}
+    log.error({ event: "x", err: new MessagingSendError(`HTTP 400 for ${PHONE}`) }, "send failed");
+    expect(lines[0].err).toMatchObject({
+      type: "MessagingSendError",
+      message: "HTTP 400 for ***0101",
+    });
+    const stack = String((lines[0].err as { stack?: string }).stack);
+    expect(stack).toContain("HTTP 400 for ***0101"); // the stack is masked too
+    expect(stack).not.toContain("5531900000101");
+    log.error({ error: new TypeError("bad") }, "other key");
+    expect(lines[1].error).toMatchObject({ type: "TypeError", message: "bad" });
+  });
+
   it("drops message-content keys (text, body, content, patient_name) at any depth", () => {
     log.info(
       {

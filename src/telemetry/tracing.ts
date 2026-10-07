@@ -42,7 +42,7 @@ export const ATTR = {
   errorType: "error.type",
   // recepia.*
   channel: "recepia.channel",
-  messageId: "recepia.message.id",
+  messageRef: "recepia.message.ref",
   patientId: "recepia.patient.id",
   patientPhoneMasked: "recepia.patient.phone_masked",
   turnStatus: "recepia.turn.status",
@@ -116,7 +116,7 @@ export function startRootSpan(
   name: string,
   attributes: MaybeAttributes,
   kind?: SpanKind,
-): { span: Span; run<T>(fn: () => Promise<T>): Promise<T> } {
+): { span: Span; run<T>(fn: () => Promise<T>): Promise<T>; within<T>(fn: () => T): T } {
   const span = tracer().startSpan(
     name,
     { kind, root: true, attributes: defined(attributes) },
@@ -124,6 +124,10 @@ export function startRootSpan(
   );
   return {
     span,
+    /** Run synchronous code (e.g. a log line) with the span active, without ending it. */
+    within<T>(fn: () => T): T {
+      return context.with(trace.setSpan(ROOT_CONTEXT, span), fn);
+    },
     async run<T>(fn: () => Promise<T>): Promise<T> {
       try {
         return await context.with(trace.setSpan(ROOT_CONTEXT, span), fn);
@@ -144,10 +148,19 @@ export function errorTypeOf(err: unknown): string {
   return ctor && ctor !== "Error" ? ctor : err.name || "Error";
 }
 
+/**
+ * Errors on spans carry their TYPE only: messages can embed provider response bodies, phones or
+ * patient text (FR-505). The masked message goes to the logs, which have the PII backstop.
+ */
+/** Mark a span as failed for an error that was caught and handled (no exception to record). */
+export function markSpanFailed(span: Span, errorType: string | undefined): void {
+  span.setStatus({ code: SpanStatusCode.ERROR, message: errorType ?? "error" });
+}
+
 export function recordError(span: Span, err: unknown): void {
   const type = errorTypeOf(err);
   span.setAttribute(ATTR.errorType, type);
-  if (err instanceof Error) span.recordException({ name: type, message: err.message });
+  span.recordException({ name: type });
   span.setStatus({ code: SpanStatusCode.ERROR, message: type });
 }
 

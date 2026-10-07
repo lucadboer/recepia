@@ -1,5 +1,6 @@
 import { MessagingSendError, NotConfigured } from "../../domain/errors";
 import type { MessagingPort } from "../../ports/messaging-port";
+import { maskPhonesIn } from "../../telemetry/pseudonym";
 
 /**
  * Narrow structural fetch type — decouples from DOM lib types and is trivial to fake.
@@ -58,7 +59,8 @@ export class CloudApiMessaging implements MessagingPort {
       }),
     });
     if (!res.ok) {
-      const detail = await res.text().catch(() => "");
+      // Provider bodies can echo the recipient (number / JID): masked and truncated (FR-505).
+      const detail = maskPhonesIn(await res.text().catch(() => "")).slice(0, 300);
       throw new MessagingSendError(
         `CloudApiMessaging.sendMessage failed: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`,
       );

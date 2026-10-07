@@ -9,8 +9,18 @@ import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor, NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { RedactingSpanExporter } from "./redacting-exporter";
 
 let provider: NodeTracerProvider | null = null;
+
+/** .env must be in process.env before the provider and the logger read their settings. */
+function loadDotEnv(): void {
+  try {
+    process.loadEnvFile();
+  } catch {
+    // no .env: rely on the ambient environment
+  }
+}
 
 export function telemetryEndpointConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(env.OTEL_EXPORTER_OTLP_ENDPOINT || env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT);
@@ -35,12 +45,15 @@ export function startTelemetry(env: NodeJS.ProcessEnv = process.env): boolean {
       "service.version": serviceVersion(),
     }),
     // The exporter reads OTEL_EXPORTER_OTLP_* itself (endpoint, headers, timeout).
-    spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())],
+    spanProcessors: [new BatchSpanProcessor(new RedactingSpanExporter(new OTLPTraceExporter()))],
   });
   provider.register();
-  // Statement text only — never parameter values (they can carry phones and names).
+  // Statement text only — never parameter values (they can carry phones and names); and only
+  // inside a traced operation (polling jobs and /readyz would otherwise emit a trace per query).
   registerInstrumentations({
-    instrumentations: [new PgInstrumentation({ enhancedDatabaseReporting: false })],
+    instrumentations: [
+      new PgInstrumentation({ enhancedDatabaseReporting: false, requireParentSpan: true }),
+    ],
   });
   return true;
 }
@@ -53,4 +66,5 @@ export async function shutdownTelemetry(): Promise<void> {
   await p.shutdown().catch(() => {});
 }
 
+loadDotEnv();
 startTelemetry();

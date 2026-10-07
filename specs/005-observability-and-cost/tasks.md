@@ -98,7 +98,7 @@ description: "Task list for 005-observability-and-cost"
 - [x] T539 [P] `docs/observability.md` (collector, span catalogue, log fields, pseudonym, budget, fallback, retention) and `docs/img/trace-booking.png` captured from Jaeger; README "Observability" section + guarantee rows; CONTRIBUTING env/commands
 - [x] T540 [P] ADR `docs/adr/0008-telemetry-api-only-and-pii.md` (OTel API in business code, SDK at the edge, pseudonym + masking, no content in telemetry)
 - [x] T541 Coverage: new modules inside thresholds (`register.ts` excluded like other process entrypoints, with a comment)
-- [ ] T542 Self-review + Codex review; fix findings; update checkboxes
+- [x] T542 Self-review + Codex review; fix findings; update checkboxes — 2026-10-07: self-review 4 high / 4 medium / 4 low, Codex 2 P1 / 7 P2 (4 overlapping); all addressed in the PR with regression tests
 
 ## Dependencies
 Setup → Foundational → US1 (needs tracing + logger) → US2 (logger wiring builds on US1 spans) ; US3 depends only on Foundational (pricing) ; US4 depends on US3's port fields (`model/provider`) ; US5 independent after Foundational. Polish last.

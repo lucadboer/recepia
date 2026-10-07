@@ -84,3 +84,22 @@ describe("fallback provider wiring (005 FR-513)", () => {
     ).toThrow(/gpt-unpriced/);
   });
 });
+
+describe("review fix — no SDK retries on the primary when a fallback exists", () => {
+  it("primary maxRetries is 0 with a fallback and the SDK default without", async () => {
+    const { buildLlm } = await import("../../src/composition");
+    const { FallbackLLM } = await import("../../src/adapters/llm/fallback-llm");
+    const { AnthropicLLM } = await import("../../src/adapters/llm/anthropic-llm");
+    const plain = buildLlm({ ANTHROPIC_API_KEY: "sk-ant-test" }) as InstanceType<
+      typeof AnthropicLLM
+    >;
+    expect(plain.maxRetries).toBeUndefined();
+    const wrapped = buildLlm({
+      ANTHROPIC_API_KEY: "sk-ant-test",
+      FALLBACK_LLM_BASE_URL: "https://example.test/v1",
+      FALLBACK_LLM_API_KEY: "k",
+      FALLBACK_LLM_MODEL: "claude-haiku-4-5",
+    }) as InstanceType<typeof FallbackLLM>;
+    expect((wrapped.primary as InstanceType<typeof AnthropicLLM>).maxRetries).toBe(0);
+  });
+});

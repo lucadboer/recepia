@@ -76,6 +76,30 @@ export function costUsd(
   );
 }
 
+/**
+ * Budget-safe cost (005 FR-510): the first candidate model with a price (served, then requested);
+ * when none is priced, the MOST EXPENSIVE model in the table — an unknown alias returned by a
+ * provider must never make calls free and bypass the budget.
+ */
+export function costUsdFailClosed(
+  table: PricingTable,
+  candidates: (string | undefined)[],
+  usage: LlmUsage,
+  onFallback?: (message: string) => void,
+): number {
+  for (const m of candidates) {
+    if (m && priceFor(table, m)) return costUsd(table, m, usage) ?? 0;
+  }
+  const priciest = Object.entries(table.usdPerMTok).sort(
+    ([, a], [, b]) => b.input + b.output - (a.input + a.output),
+  )[0];
+  if (!priciest) return 0;
+  onFallback?.(
+    `pricing: no price for ${candidates.filter(Boolean).join(" / ") || "an unnamed model"}; charging the budget at ${priciest[0]} rates`,
+  );
+  return costUsd(table, priciest[0], usage) ?? 0;
+}
+
 /** What the same tokens would cost if nothing were cached (cache reads/writes at plain input). */
 export function uncachedEquivalentUsd(
   table: PricingTable,

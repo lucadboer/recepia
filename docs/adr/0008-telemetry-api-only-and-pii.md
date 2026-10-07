@@ -18,9 +18,11 @@ this system handles patients' phone numbers and health-adjacent messages (LGPD, 
   spans **linked** to the span that enqueued the message (W3C `traceparent` stored on the outbox row)
   — links instead of one long trace, because deliveries can be retried for ~40 minutes.
 - **No content, no phones.** Patients are a keyed pseudonym (HMAC with an operator secret) plus a
-  masked phone; message text, model output and names are never recorded; tool arguments are reduced
-  to validated non-personal fields; logs drop content keys and pass every string through a
-  standalone-number masking backstop. Automated scans over real conversations enforce it.
+  masked phone; provider message ids are keyed references too (a WhatsApp `wamid` encodes the phone);
+  message text, model output and names are never recorded; tool arguments are reduced to validated
+  non-personal fields; spans carry error types, never messages; logs drop content keys and pass every
+  string through a masking backstop; a redacting exporter is the last line for third-party
+  instrumentations. Automated scans over real conversations enforce it.
 - **Logs** are pino JSON with the active trace/span ids; no log transport in the process.
 
 ## Consequences

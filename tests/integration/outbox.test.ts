@@ -397,6 +397,8 @@ describe("outbox — trace context links delivery to the turn that committed it 
       expect(JSON.stringify(d.attributes)).not.toContain(PATIENT);
     }
     expect(dispatches.map((d) => d.attributes["recepia.outbox.attempt"])).toEqual([1, 2]);
+    // Codex review: a failed delivery is an ERROR span; a successful one is not.
+    expect(dispatches.map((d) => d.status.code)).toEqual([2, 0]);
   });
 
   it("a row without trace context is dispatched with no link and no error", async () => {

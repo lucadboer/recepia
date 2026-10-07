@@ -27,7 +27,7 @@ import {
   type Metrics,
   type ScoredExecution,
 } from "./lib/metrics";
-import { costUsd, loadPricing } from "./lib/pricing";
+import { assertPriced, costUsd, loadPricing } from "./lib/pricing";
 import { applyBlock, checkBlock, readLatestLiveReport, renderBlock } from "./lib/readme-block";
 import { type CaseReport, HONESTY_LINE, type RunReport, writeReports } from "./lib/report";
 import {
@@ -535,6 +535,13 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
   const pricing = loadPricing();
   const fb = args.provider === "openai-compatible" ? fallbackConfig(io.env) : null;
   const model = args.model ?? (fb ? fb.model : io.env.ANTHROPIC_MODEL || DEFAULT_MODEL);
+  try {
+    // An unpriced model would make the spend cap inert (005 FR-512).
+    assertPriced(pricing, [model]);
+  } catch (e) {
+    io.error(`evals: ${(e as Error).message}`);
+    return 2;
+  }
   const llm = fb
     ? new OpenAICompatibleLLM({ ...fb, model })
     : new AnthropicLLM({ apiKey: io.env.ANTHROPIC_API_KEY, model });

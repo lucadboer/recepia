@@ -9,6 +9,7 @@ import { handleInbound } from "../../src/agent/orchestrator";
 import { PROMPT_VERSION } from "../../src/agent/system-prompt";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { Pool } from "../../src/db/pool";
+import { messageRef } from "../../src/telemetry/pseudonym";
 import { withSpan } from "../../src/telemetry/tracing";
 import { createWebhookServer } from "../../src/webhook/server";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
@@ -97,7 +98,7 @@ describe("tracing — booking through the webhook", () => {
     expect(inbound.kind).toBe(SpanKind.CONSUMER);
     expect(inbound.attributes).toMatchObject({
       "recepia.channel": "evolution",
-      "recepia.message.id": "MSG-1",
+      "recepia.message.ref": messageRef("MSG-1"), // keyed: a wamid encodes the phone
       "recepia.patient.phone_masked": "***0101",
     });
     expect(inbound.attributes["recepia.patient.id"]).toMatch(/^[0-9a-f]{16}$/);

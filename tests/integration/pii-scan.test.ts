@@ -131,6 +131,44 @@ describe("SC-502 — no personal data in logs or traces", () => {
     assertClean();
   });
 
+  it("review fixes H3/H4 — a wamid id, a provider error echoing the phone + text, and trace ids on webhook logs", async () => {
+    // Meta's documented sample wamid: base64 of a payload with the sender's number in it.
+    const WAMID = "wamid.HBgLMTY1MDUwNzY1MjAVAgARGBI5QTNDQTVCM0Q0Q0Q2RTY3RTcA";
+    const h = makeAgent(pool, new FakeLLM([]));
+    // A provider whose error body echoes the recipient and the text it was asked to send.
+    h.deps.messaging = {
+      async sendMessage(to: string, body: string) {
+        throw new Error(`HTTP 400 recipient ${to.replace("+", "")} rejected text "${body}"`);
+      },
+    };
+    const srv = createWebhookServer({ secret: SECRET, onInbound: (m) => handleInbound(h.deps, m) });
+    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+    try {
+      const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+      await postAndWait(base, WAMID, TEXTS.pain); // triage → escalation → patient reply send fails
+    } finally {
+      srv.close();
+    }
+    const haystack = [...lines, ...telemetryStrings(tel.spans())];
+    for (const s of haystack) {
+      expect(s).not.toContain(WAMID);
+      expect(s).not.toContain("HBgLMTY1MDUwNzY1MjA"); // the phone-carrying part of the id
+      expect(s).not.toContain(DIGITS);
+      expect(s).not.toContain(TEXTS.pain);
+    }
+    // The failure is still diagnosable: masked message in the log, error type on the span.
+    const parsed = lines.flatMap((l) => l.split("\n").filter(Boolean)).map((l) => JSON.parse(l));
+    const failed = parsed.find((l) => l.event === "webhook.inbound_failed");
+    expect(failed?.err?.message).toMatch(/HTTP 400 recipient \*\*\*0155/);
+    const [inbound] = tel.byName("webhook.inbound");
+    expect(inbound.status.code).toBe(2);
+    expect(inbound.attributes["error.type"]).toBe("Error");
+    // Webhook log lines carry the inbound span's trace id (Codex review).
+    const accepted = parsed.find((l) => l.event === "webhook.inbound");
+    expect(accepted?.trace_id).toBe(inbound.spanContext().traceId);
+    expect(failed?.trace_id).toBe(inbound.spanContext().traceId);
+  });
+
   it("errors that embed a phone and a hostile tool name carrying one are masked too", async () => {
     log.error(
       { event: "x", err: new ConversationConflictError(PHONE, 3) },

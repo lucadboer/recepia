@@ -117,3 +117,29 @@ describe("FallbackLLM", () => {
     expect(isTransientLlmError(err)).toBe(true); // classified by the primary
   });
 });
+
+describe('review fix H1 — classification with REAL Anthropic SDK errors (the SDK leaves name = "Error")', async () => {
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const headers = new Headers();
+  it.each([
+    ["APIConnectionTimeoutError", new Anthropic.APIConnectionTimeoutError(), true],
+    ["APIConnectionError", new Anthropic.APIConnectionError({ message: "ECONNRESET" }), true],
+    ["RateLimitError 429", new Anthropic.RateLimitError(429, {}, "rate limited", headers), true],
+    ["InternalServerError 500", new Anthropic.InternalServerError(500, {}, "boom", headers), true],
+    ["overloaded 529", new Anthropic.InternalServerError(529, {}, "overloaded", headers), true],
+    ["BadRequestError 400", new Anthropic.BadRequestError(400, {}, "bad", headers), false],
+    ["AuthenticationError 401", new Anthropic.AuthenticationError(401, {}, "auth", headers), false],
+    ["APIUserAbortError", new Anthropic.APIUserAbortError(), false],
+  ])("%s → transient %s", (_label, err, expected) => {
+    expect(err.name).toBe("Error"); // why name-based checks were wrong
+    expect(isTransientLlmError(err)).toBe(expected);
+  });
+
+  it("a real SDK timeout from the primary falls over to the secondary", async () => {
+    const primary = new Failing(new Anthropic.APIConnectionTimeoutError());
+    const secondary = new Secondary([finalTurn("oi")]);
+    const r = await new FallbackLLM(primary, secondary).turn(input);
+    expect(r.provider).toBe("openai-compatible");
+    expect(secondary.callCount).toBe(1);
+  });
+});

@@ -66,6 +66,7 @@ jobs:
           --health-retries 30
     env:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+      TELEMETRY_HASH_KEY: ci-fixed-key-fictitious-data-only # stable pseudonyms across runs
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -78,7 +79,8 @@ jobs:
         run: LOG_LEVEL=debug pnpm evals:fake 2>&1 | tee evals-fake.log; exit "${PIPESTATUS[0]}"
       - name: No full phone number in the debug logs (feature 005, SC-502)
         run: |
-          if grep -E '\+?55[0-9]{10,11}' evals-fake.log; then
+          # Same boundaries as the masking backstop: digit runs inside hex ids are not phones.
+          if grep -P '(?<![0-9A-Za-z-])\+?55\d{10,11}(?![0-9A-Za-z-])' evals-fake.log; then
             echo "::error::a full phone number reached the logs"
             exit 1
           fi

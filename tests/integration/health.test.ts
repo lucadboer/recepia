@@ -54,6 +54,20 @@ describe("health endpoints", () => {
     expect(Date.now() - t0).toBeLessThan(2500);
   });
 
+  it("concurrent /readyz calls share one probe (no query pile-up under load)", async () => {
+    let calls = 0;
+    const base = await start(async () => {
+      calls++;
+      await new Promise((r) => setTimeout(r, 100));
+      return true;
+    });
+    const res = await Promise.all(Array.from({ length: 5 }, () => fetch(`${base}/readyz`)));
+    expect(res.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(calls).toBe(1);
+    expect((await fetch(`${base}/readyz`)).status).toBe(200);
+    expect(calls).toBe(2); // the next request probes again
+  });
+
   it("/readyz without a probe answers 200 (nothing to check)", async () => {
     expect((await fetch(`${await start()}/readyz`)).status).toBe(200);
   });
