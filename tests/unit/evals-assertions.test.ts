@@ -70,6 +70,13 @@ describe("matchValue", () => {
     expect(matchValue("h9", "$ownHoldId", o)).toBe(false);
   });
 
+  it("a literal ISO instant matches any spelling of the same instant (UTC or local offset)", () => {
+    expect(matchValue("2026-06-16T09:00:00-03:00", "2026-06-16T12:00:00.000Z", o)).toBe(true);
+    expect(matchValue("2026-06-16T09:30:00-03:00", "2026-06-16T12:00:00.000Z", o)).toBe(false);
+    expect(matchValue("cleaning", "2026-06-16T12:00:00.000Z", o)).toBe(false);
+    expect(matchValue("2026", "2026", o)).toBe(true);
+  });
+
   it("$between: ISO instant inside the inclusive window, any ISO spelling", () => {
     const w = { $between: ["2026-06-16T11:00:00Z", "2026-06-16T15:00:00Z"] as [string, string] };
     expect(matchValue("2026-06-16T12:00:00.000Z", w, o)).toBe(true);

@@ -36,6 +36,8 @@ export interface Assertion {
   detail: string;
 }
 
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
 function isoKey(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const t = new Date(v).getTime();
@@ -59,6 +61,15 @@ export function matchValue(actual: unknown, matcher: Matcher, obs: Observations)
       );
     }
     return matcher.$in.some((v) => JSON.stringify(v) === JSON.stringify(actual));
+  }
+  // Two ISO instants are equal whatever their spelling ("…T12:00:00.000Z" vs "…T09:00:00-03:00").
+  if (
+    typeof actual === "string" &&
+    typeof matcher === "string" &&
+    ISO_INSTANT.test(actual) &&
+    ISO_INSTANT.test(matcher)
+  ) {
+    return new Date(actual).getTime() === new Date(matcher).getTime();
   }
   return actual === matcher;
 }

@@ -7,6 +7,7 @@
 import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
 import { hasEscalatedFlag } from "../domain/errors";
+import { slotLabelPt, toLocalIso } from "../domain/time";
 import { errorTypeOf } from "../telemetry/tracing";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
@@ -102,12 +103,15 @@ export async function dispatchTool(
         const slots = truncated ? all.slice(0, AVAILABILITY_MAX_SLOTS) : all;
         const iso = slots.map((s) => s.start.toISOString());
         state = recordOfferedSlots(state, iso, now);
+        // Clinic-local times + a pt-BR label (002 FR-213): the model quotes them as is instead of
+        // converting UTC in front of the patient. `offeredSlots` keeps the normalized instants.
         return result(
           state,
           JSON.stringify({
             slots: slots.map((s) => ({
-              start: s.start.toISOString(),
-              end: s.end.toISOString(),
+              start: toLocalIso(s.start),
+              end: toLocalIso(s.end),
+              label: slotLabelPt(s.start),
               type: s.type,
             })),
             truncated,
@@ -137,8 +141,9 @@ export async function dispatchTool(
           state,
           JSON.stringify({
             holdId: hold.id,
-            start: hold.slot.start.toISOString(),
-            expiresAt: hold.expiresAt.toISOString(),
+            start: toLocalIso(hold.slot.start),
+            label: slotLabelPt(hold.slot.start),
+            expiresAt: toLocalIso(hold.expiresAt),
           }),
           false,
         );
@@ -166,7 +171,8 @@ export async function dispatchTool(
           JSON.stringify({
             bookingId: booking.id,
             status: booking.status,
-            start: booking.start.toISOString(),
+            start: toLocalIso(booking.start),
+            label: slotLabelPt(booking.start),
           }),
           false,
           { patientNotified: outcome === "confirmed" },
