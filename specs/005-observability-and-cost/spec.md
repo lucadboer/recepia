@@ -10,6 +10,14 @@
 
 > Spec artifacts are in English (author preference); patient-facing strings stay in Brazilian Portuguese. Builds on features 001 (deterministic booking tools), 002 (conversational orchestration) and 004 (evaluation harness, which measures cost and caching). This feature adds **one patient-facing behaviour** — the budget hand-off — and otherwise makes the existing behaviour observable, cheaper and bounded.
 
+## Clarifications
+
+### Session 2026-10-07
+
+- Q: What estimated-cost budget per conversation triggers the hand-off to reception? → A: US$ 0.25 per conversation (≈ 8× a full booking conversation), configurable.
+- Q: Which secondary (fallback) model provider? → A: Ship a generic adapter for the open chat-completions protocol plus the fallback logic, tested with simulated providers; it stays off until the owner configures a provider and credential (no spend now).
+- Q: How is the patient identified in traces and logs without the phone? → A: A keyed pseudonym (one-way hash of the phone with an operator secret) for correlation plus the masked phone (last 4 digits) for humans; without the secret, a random per-process secret is used and a warning is logged (pseudonyms then change on restart).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Follow one patient message end to end (Priority: P1)
@@ -116,12 +124,12 @@ As the data controller, I want conversation state and delivered/terminal message
 - **FR-502 — Model call details**: Every model-call step MUST record the provider, the requested and served model, input/output/cache-read/cache-write tokens, the finish reason, the prompt version and the estimated cost, using the industry's standard attribute names for generative-AI calls where they exist.
 - **FR-503 — Tool call details**: Every tool-call step MUST record the tool name and its outcome (`ok`, `rejected` with the guardrail that rejected it, or `error` with the error type); tool arguments MAY be recorded only for non-personal fields (appointment type, slot start), never names or phones.
 - **FR-504 — Deferred delivery link**: A message committed by a turn MUST carry a reference to that turn's trace so its delivery step — immediate or by the background dispatcher, including retries and dead-lettering — is linked to it.
-- **FR-505 — No personal data in telemetry**: Traces and logs MUST NOT contain a full phone number or any patient or model message text. Patients are identified by a masked phone (last 4 digits) and/or a keyed pseudonym that cannot be reversed without the operator's secret. A pattern-based backstop masks phone numbers in any logged string.
+- **FR-505 — No personal data in telemetry**: Traces and logs MUST NOT contain a full phone number or any patient or model message text. Patients are identified by a masked phone (last 4 digits) and a keyed pseudonym that cannot be reversed without the operator's secret (decided 2026-10-07); when the secret is not configured, a random per-process secret is used and a warning is logged. A pattern-based backstop masks phone numbers in any logged string.
 - **FR-506 — Vendor-neutral export**: Telemetry MUST be exported with the open standard protocol to any compatible collector, MUST be disabled (no-op) when no collector is configured, and MUST never block or fail a patient turn. A local collector and viewer MUST be available as an optional development profile.
 - **FR-507 — Structured logs**: All application output MUST be structured log lines with level, time, event name and, inside a traced operation, the trace and span ids; the minimum level is configurable; every existing plain console output is replaced.
 - **FR-508 — Health endpoints**: The service MUST expose a liveness endpoint (process up, no dependencies) and a readiness endpoint (database reachable), unauthenticated, revealing no configuration and not logged per request.
 - **FR-509 — Usage accounting**: Every model call's token usage and estimated cost MUST accumulate per conversation in the conversation state (tokens by kind, estimated cost, calls, models used) and reset when the conversation starts fresh.
-- **FR-510 — Per-conversation budget**: Before every model call the agent MUST compare the conversation's accumulated estimated cost with the configured budget (default US$ 0.25); at or above it, no model call is made and the conversation is handed off to reception with reason `budget_exceeded`, a deterministic pt-BR reply (unless a committed confirmation already owns the reply) and an audit row with the accumulated cost and the budget.
+- **FR-510 — Per-conversation budget**: Before every model call the agent MUST compare the conversation's accumulated estimated cost with the configured budget (default US$ 0.25, decided 2026-10-07); at or above it, no model call is made and the conversation is handed off to reception with reason `budget_exceeded`, a deterministic pt-BR reply (unless a committed confirmation already owns the reply) and an audit row with the accumulated cost and the budget.
 - **FR-511 — Prompt caching**: Every model request MUST mark its stable prefix (tool definitions and static instructions) as cacheable, and the per-turn context (date/time) MUST be placed so that it does not invalidate the cached prefix; cache read/write tokens are recorded (FR-502) and the evaluation report shows the cache hit ratio.
 - **FR-512 — Single pricing table**: The dated pricing table MUST be the single source for the runtime budget and the evaluation harness; the service MUST refuse to start when a configured model has no price.
 - **FR-513 — Fallback provider**: An optional secondary provider speaking the widely used open chat-completions protocol MUST be used only when the primary fails transiently (timeout, rate limit, server error, connection failure) and never on refusal, invalid request or authentication error; the primary MUST have a bounded per-call timeout so fallback can happen; a failure of both fails the turn as today.
@@ -154,7 +162,7 @@ As the data controller, I want conversation state and delivered/terminal message
 ## Assumptions
 
 - No production traffic exists; telemetry is exercised locally (development profile) and in automated tests with in-memory exporters. Live model checks are kept minimal because the owner's model credit is limited (2026-10-07): a single short live call validates caching, and the full live evaluation runs once, after caching, under a hard spend cap.
-- The secondary provider is any service speaking the open chat-completions protocol with tool calling; which one (and its credential) is the owner's choice — the feature ships with the adapter, scripted tests and documentation, and the live check of the secondary waits for the credential.
+- The secondary provider is any service speaking the open chat-completions protocol with tool calling; which one (and its credential) is the owner's choice (decided 2026-10-07: generic adapter now, provider later) — the feature ships with the adapter, simulated-provider tests and documentation, and the live check of the secondary waits for the credential.
 - Metrics dashboards, alerting and log shipping infrastructure are out of scope; steps carry the numbers needed to derive them later.
 - The retention period (90 days) and what is kept (consent ledger, audit log) were decided by the owner on 2026-10-06 (feature 002, T222).
 - The default budget (US$ 0.25 per conversation) is about eight times the expected cost of a full booking conversation and is configurable.
