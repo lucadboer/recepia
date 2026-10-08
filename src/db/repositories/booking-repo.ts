@@ -138,7 +138,8 @@ export async function getById(q: Queryable, id: string): Promise<Booking | null>
 /**
  * Flip a still-held booking to confirmed. Returns null if it is no longer held (race/expiry).
  * `rescheduledFrom` (006) records the booking this one replaces; the database allows that link
- * only once per booking (`booking_rescheduled_from_uq`).
+ * only once per booking (`booking_rescheduled_from_uq`). `aliveAt` (006 review) refuses a hold
+ * whose TTL ran out during the calendar call even if no sweep has expired it yet.
  */
 export async function confirmHeld(
   q: Queryable,
@@ -147,14 +148,15 @@ export async function confirmHeld(
   eventId: string,
   consentAt: Date,
   rescheduledFrom: string | null = null,
+  aliveAt: Date | null = null,
 ): Promise<Booking | null> {
   const { rows } = await q.query(
     `UPDATE booking
      SET status = 'confirmed', patient_name = $2, google_event_id = $3, consent_at = $4,
          expires_at = NULL, rescheduled_from = $5, updated_at = now()
-     WHERE id = $1 AND status = 'held'
+     WHERE id = $1 AND status = 'held' AND ($6::timestamptz IS NULL OR expires_at > $6)
      RETURNING *`,
-    [id, patientName, eventId, consentAt, rescheduledFrom],
+    [id, patientName, eventId, consentAt, rescheduledFrom, aliveAt],
   );
   return rows[0] ? rowToBooking(rows[0]) : null;
 }

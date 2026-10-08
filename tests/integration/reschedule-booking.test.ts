@@ -251,6 +251,112 @@ describe("reschedule_booking — the old appointment survives every failure", ()
   });
 });
 
+describe("reschedule_booking — review findings (006 PR)", () => {
+  it("a concurrent confirm of the same hold wins: its event is kept, the original stands, reception decides", async () => {
+    const calendar = new FakeCalendar();
+    const d = makeDeps(calendar);
+    const oldId = await book(d, OLD_START);
+    const hold = await holdSlot(d, { start: NEW_START, type: "cleaning" }, { phone: PHONE });
+    let raced = false;
+    const racing = interceptingPool(pool, {
+      before: async (sql) => {
+        if (!raced && sql.includes("FOR UPDATE")) {
+          raced = true;
+          await confirmBooking(d, hold.id, { phone: PHONE, name: "Ana Teste" });
+        }
+      },
+    });
+    const err = await rescheduleBooking({ ...d, pool: racing }, oldId, hold.id, PHONE).catch(
+      (e) => e,
+    );
+    expect(hasEscalatedFlag(err)).toBe(true);
+    expect((await getById(pool, hold.id))?.status).toBe("confirmed");
+    expect(calendar.events.has(hold.id)).toBe(true); // never compensated: it belongs to a booking
+    expect((await getById(pool, oldId))?.status).toBe("confirmed");
+    const esc = await pool.query("SELECT payload FROM audit_log WHERE action = 'escalated'");
+    expect(esc.rows.map((r) => r.payload.reason)).toContain("reschedule_conflict");
+  });
+
+  it("an orphan event that cannot be removed is not reported as compensated: reception removes it", async () => {
+    const calendar = new FakeCalendar();
+    const d = makeDeps(calendar);
+    const oldId = await book(d, OLD_START);
+    const hold = await holdSlot(d, { start: NEW_START, type: "cleaning" }, { phone: PHONE });
+    calendar.deleteFailAlways = true;
+    let swept = false;
+    const racing = interceptingPool(pool, {
+      before: async (sql) => {
+        if (!swept && sql.includes("FOR UPDATE")) {
+          swept = true;
+          await pool.query(
+            "UPDATE booking SET status = 'expired', expires_at = NULL WHERE id = $1",
+            [hold.id],
+          );
+        }
+      },
+    });
+    await rescheduleBooking({ ...d, pool: racing }, oldId, hold.id, PHONE).catch(() => {});
+    const orphan = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = 'calendar_orphan_compensated'",
+    );
+    expect(orphan.rows[0].payload).toMatchObject({ deleted: false });
+    expect(await countAudit(pool, "calendar_delete_failed")).toBe(1);
+    expect((await outbox("reception_notice")).map((n) => n.dedupe_key)).toEqual([
+      `calendar_cleanup:${hold.id}`,
+    ]);
+  });
+
+  it("a hold whose TTL ran out during the calendar call is not confirmed, even before any sweep", async () => {
+    const calendar = new FakeCalendar();
+    const d = makeDeps(calendar);
+    const oldId = await book(d, OLD_START);
+    const hold = await holdSlot(d, { start: NEW_START, type: "cleaning" }, { phone: PHONE });
+    let advanced = false;
+    const slow = interceptingPool(pool, {
+      before: (sql) => {
+        if (!advanced && sql.includes("FOR UPDATE")) {
+          advanced = true;
+          (d.clock as FakeClock).advance(11 * 60_000); // the TTL is 10 minutes
+        }
+      },
+    });
+    const err = await rescheduleBooking({ ...d, pool: slow }, oldId, hold.id, PHONE).catch(
+      (e) => e,
+    );
+    expect(hasEscalatedFlag(err)).toBe(true);
+    expect((await getById(pool, oldId))?.status).toBe("confirmed");
+    expect((await getById(pool, hold.id))?.status).toBe("expired");
+    expect(calendar.events.has(hold.id)).toBe(false);
+  });
+
+  it("the original time's confirmation still queued is superseded by the move", async () => {
+    const d = makeDeps();
+    const oldId = await book(d, OLD_START); // its confirmation is still pending
+    const hold = await holdSlot(d, { start: NEW_START, type: "cleaning" }, { phone: PHONE });
+    await rescheduleBooking(d, oldId, hold.id, PHONE);
+    const r = await pool.query(
+      "SELECT dedupe_key, status FROM outbox_message WHERE kind = 'booking_confirmation' ORDER BY created_at",
+    );
+    expect(r.rows).toEqual([
+      { dedupe_key: `booking_confirmation:${oldId}`, status: "cancelled" },
+      { dedupe_key: `booking_confirmation:${hold.id}`, status: "pending" },
+    ]);
+  });
+
+  it("a replay finishes the old event's removal a lost acknowledgment skipped", async () => {
+    const calendar = new FakeCalendar();
+    const d = makeDeps(calendar);
+    const oldId = await book(d, OLD_START);
+    const hold = await holdSlot(d, { start: NEW_START, type: "cleaning" }, { phone: PHONE });
+    calendar.deleteFailTimes = 3; // every attempt of the first call fails → cleanup notice
+    await rescheduleBooking(d, oldId, hold.id, PHONE);
+    expect(calendar.events.has(oldId)).toBe(true);
+    const again = await rescheduleBooking(d, oldId, hold.id, PHONE);
+    expect(["rescheduled", "already_rescheduled"]).toContain(again.outcome);
+    expect(calendar.events.has(oldId)).toBe(false);
+  });
+});
+
 describe("reschedule_booking — refusals write nothing", () => {
   it("same time, different type, foreign hold, foreign booking, past booking", async () => {
     const calendar = new FakeCalendar();

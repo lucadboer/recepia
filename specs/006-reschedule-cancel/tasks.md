@@ -70,7 +70,7 @@
 - [x] T632 `dispatch-outbox.ts`: a permanently failed `reception_notice` is handled like an escalation (no second escalation) + test
 - [x] T633 Gates: lint, typecheck, `test:coverage` (thresholds not lowered), `evals:fake`, `evals:readme --check`
 - [ ] T634 Live: labelled subset run (≤ US$ 0.40, at most one rerun ≤ US$ 0.30); record the result in the PR
-- [ ] T635 Codex review (xhigh) + self-review; fix all findings; tick this file
+- [x] T635 Codex review (xhigh) + self-review; fix all findings; tick this file — 2026-10-08: self-review found nothing new; Codex (gpt-6.1-sol, xhigh) 2 P1 + 4 P2, all fixed with tests: a concurrent confirm of the same hold keeps its event (reschedule escalates `reschedule_conflict` instead of compensating); replays of cancel/reschedule finish the calendar removal a lost COMMIT acknowledgment skipped; the original booking's pending confirmation is superseded atomically; an orphan event that cannot be deleted becomes `calendar_delete_failed` + a cleanup notice (also in `confirm_booking`); hold TTL and appointment start re-checked with the clock at commit (`confirmHeld(..., aliveAt)`, also in `confirm_booking`); a cancel replay keeps outbox ownership while its message is pending
 
 ## Dependencies & Execution Order
 Setup → Foundational → US1 → US2 (needs the cancel path and the calendar helpers) → US3 → concurrency → prompt/evals → polish. Within a story, tests first. T624 (prompt) can be drafted in parallel with US2.
