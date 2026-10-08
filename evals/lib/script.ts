@@ -71,6 +71,24 @@ export function lastHoldIdOf(messages: LlmMessage[]): string | null {
   return null;
 }
 
+/** The booking find_my_booking last showed (a reschedule result carries `previousBookingId`). */
+function lastBookingIdOf(messages: LlmMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    for (const b of messages[i].content) {
+      if (b.type !== "tool_result" || b.isError) continue;
+      try {
+        const parsed = JSON.parse(b.content) as { bookingId?: string; previousBookingId?: string };
+        if (typeof parsed.bookingId === "string" && parsed.previousBookingId === undefined) {
+          return parsed.bookingId;
+        }
+      } catch {
+        // not JSON
+      }
+    }
+  }
+  return null;
+}
+
 const OFFERED = /^\$offeredSlot\[(\d+)\]$/;
 
 function resolve(value: unknown, messages: LlmMessage[], ctx: CaseContext, where: string): unknown {
@@ -103,6 +121,20 @@ function resolve(value: unknown, messages: LlmMessage[], ctx: CaseContext, where
     if (id === null)
       throw new ScriptError(`${where}: cannot resolve $lastHoldId — no hold in the history yet`);
     return id;
+  }
+  if (value === "$lastBookingId") {
+    const id = lastBookingIdOf(messages);
+    if (id === null)
+      throw new ScriptError(`${where}: cannot resolve $lastBookingId — no booking shown yet`);
+    return id;
+  }
+  if (value === "$foreignBookingId") {
+    if (ctx.foreignBookingId === null) {
+      throw new ScriptError(
+        `${where}: cannot resolve $foreignBookingId — the seed has no confirmed booking of another phone`,
+      );
+    }
+    return ctx.foreignBookingId;
   }
   if (value === "$otherConversationHoldId") {
     if (ctx.otherConversationHoldId === null) {
