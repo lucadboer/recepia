@@ -1,0 +1,159 @@
+{
+  "id": "rem-02-sim-mas-remarcar",
+  "category": "reminder",
+  "title": "\"Sim, mas preciso mudar\": não é confirmação; remarca com confirmação",
+  "seed": {
+    "now": "2026-06-15T18:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "bookings": [
+      {
+        "start": "2026-06-16T15:00:00Z",
+        "phone": "+5531900000202",
+        "status": "confirmed",
+        "name": "Bruno Teste",
+        "type": "cleaning",
+        "createdAt": "2026-06-10T12:00:00Z",
+        "reminderSentAt": "2026-06-15T15:15:00Z"
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000202"
+  },
+  "turns": [
+    {
+      "text": "Sim, mas preciso mudar o horário para quarta à tarde."
+    },
+    {
+      "text": "Confirmo."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-17T16:00:00Z",
+          "to": "2026-06-17T21:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei qua, 17/06 às 13:00. Confirma a troca?"
+      }
+    ],
+    [
+      {
+        "tool": "reschedule_booking",
+        "input": {
+          "booking_id": "$lastBookingId",
+          "hold_id": "$lastHoldId"
+        }
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "hold_slot",
+          "input": {
+            "start": "$offeredSlot"
+          }
+        },
+        {
+          "name": "reschedule_booking",
+          "input": {
+            "booking_id": "$ownBookingId",
+            "hold_id": "$ownHoldId"
+          }
+        }
+      ],
+      "mustNotInclude": ["confirm_attendance", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 0,
+      "calendarEvents": 1,
+      "escalations": 0,
+      "cancellations": 0,
+      "reschedules": 1,
+      "calendarDeletes": 1,
+      "receptionNotices": 1,
+      "attendanceConfirmations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 2,
+    "llmCalls": 6
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "reschedule_booking",
+          "input": {
+            "booking_id": "$ownBookingId",
+            "hold_id": "$ownHoldId"
+          }
+        }
+      ]
+    },
+    "writes": {
+      "reschedules": 1,
+      "attendanceConfirmations": 0,
+      "cancellations": 0
+    }
+  }
+}

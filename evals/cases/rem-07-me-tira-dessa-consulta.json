@@ -1,9 +1,9 @@
 {
-  "id": "resched-04-confirmar-presenca",
-  "category": "reschedule_cancel",
-  "title": "Confirmar presença em consulta já marcada (sem lembrete)",
+  "id": "rem-07-me-tira-dessa-consulta",
+  "category": "reminder",
+  "title": "\"Me tira dessa consulta\" não é opt-out: é um cancelamento com confirmação",
   "seed": {
-    "now": "2026-06-15T12:00:00Z",
+    "now": "2026-06-15T18:00:00Z",
     "capacity": [
       {
         "weekday": 1,
@@ -38,21 +38,26 @@
     ],
     "bookings": [
       {
-        "start": "2026-06-16T12:00:00Z",
-        "phone": "+5531900000124",
+        "start": "2026-06-16T15:00:00Z",
+        "phone": "+5531900000207",
         "status": "confirmed",
-        "name": "João Teste",
-        "type": "cleaning"
+        "name": "Gabriela Teste",
+        "type": "cleaning",
+        "createdAt": "2026-06-10T12:00:00Z",
+        "reminderSentAt": "2026-06-15T15:15:00Z"
       }
     ],
     "consent": "opted_in"
   },
   "patient": {
-    "phone": "+5531900000124"
+    "phone": "+5531900000207"
   },
   "turns": [
     {
-      "text": "Quero confirmar minha presença na consulta de amanhã."
+      "text": "Me tira dessa consulta de amanhã, não vou poder ir."
+    },
+    {
+      "text": "Sim, pode cancelar."
     }
   ],
   "llmScript": [
@@ -62,7 +67,12 @@
         "input": {}
       },
       {
-        "tool": "confirm_attendance",
+        "text": "Confirma o cancelamento da sua limpeza de amanhã às 12:00?"
+      }
+    ],
+    [
+      {
+        "tool": "cancel_booking",
         "input": {
           "booking_id": "$lastBookingId"
         }
@@ -79,40 +89,7 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "find_my_booking"
-        },
-        {
-          "name": "confirm_attendance",
-          "input": {
-            "booking_id": "$ownBookingId"
-          }
-        }
-      ],
-      "mustNotInclude": ["cancel_booking", "reschedule_booking", "escalate_to_human"]
-    },
-    "writes": {
-      "holds": 0,
-      "bookings": 0,
-      "calendarEvents": 0,
-      "escalations": 0,
-      "cancellations": 0,
-      "reschedules": 0,
-      "calendarDeletes": 0,
-      "receptionNotices": 0,
-      "attendanceConfirmations": 1
-    },
-    "escalation": {
-      "expected": false
-    },
-    "status": "completed",
-    "patientMessages": 1,
-    "llmCalls": 3
-  },
-  "liveExpect": {
-    "toolCalls": {
-      "mustInclude": [
-        {
-          "name": "confirm_attendance",
+          "name": "cancel_booking",
           "input": {
             "booking_id": "$ownBookingId"
           }
@@ -120,9 +97,27 @@
       ]
     },
     "writes": {
-      "attendanceConfirmations": 1,
-      "cancellations": 0,
-      "reschedules": 0
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0,
+      "cancellations": 1,
+      "reschedules": 0,
+      "calendarDeletes": 1,
+      "receptionNotices": 1,
+      "attendanceConfirmations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 2,
+    "llmCalls": 4
+  },
+  "liveExpect": {
+    "writes": {
+      "cancellations": 1,
+      "attendanceConfirmations": 0
     }
   }
 }
