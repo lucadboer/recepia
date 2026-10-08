@@ -45,11 +45,12 @@ export async function enqueueLateChangeNotice(
  * The booking is already cancelled in Postgres (the source of truth for capacity) but its
  * calendar event could not be removed: audit it and ask reception to remove it by hand. Its own
  * transaction, after the change committed; a failure here is logged, never undoes the change.
+ * True when the request was stored.
  */
 export async function requestCalendarCleanup(
   deps: Deps,
   b: { bookingId: string; phone: string; start: Date; eventId: string | null; now: Date },
-): Promise<void> {
+): Promise<boolean> {
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
@@ -69,12 +70,14 @@ export async function requestCalendarCleanup(
       payload: { eventId: b.eventId, outboxId },
     });
     await client.query("COMMIT");
+    return true;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     log.error(
       { event: "calendar_cleanup.request_failed", bookingId: b.bookingId, err },
       "could not record a calendar cleanup request",
     );
+    return false;
   } finally {
     client.release();
   }

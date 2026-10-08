@@ -42,13 +42,15 @@ export async function expireHolds(deps: Deps): Promise<number> {
  * Remove the calendar events that turns which lost their inbound message left on holds that then
  * ended unconfirmed (008 review: such a turn leaves the hold and its event to the new holder and
  * only flags the hold). Idempotent; an event that cannot be removed becomes a reception cleanup
- * notice. Runs after each sweep. Returns how many holds were settled.
+ * notice. The flag is cleared only once that is settled — event gone or notice stored — so a
+ * transient failure is retried by the next sweep. Runs after each sweep; returns how many settled.
  */
 export async function removeAbandonedEvents(deps: Deps): Promise<number> {
-  const holds = await abandonedEventHolds(deps.pool);
-  for (const hold of holds) {
-    await removeEventOrNotify(deps, hold, hold.patientPhone, deps.clock.now());
+  let settled = 0;
+  for (const hold of await abandonedEventHolds(deps.pool)) {
+    if (!(await removeEventOrNotify(deps, hold, hold.patientPhone, deps.clock.now()))) continue;
     await clearEventCleanup(deps.pool, hold.id);
+    settled++;
   }
-  return holds.length;
+  return settled;
 }
