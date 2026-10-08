@@ -6,7 +6,7 @@ import {
   releasedBookingMessages,
   supersedePending,
 } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, turnStamp } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { cancellationMessagePt } from "../messages";
@@ -98,7 +98,7 @@ export async function cancelBooking(
           start: row.start.toISOString(),
           late,
           outboxId,
-          ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+          ...turnStamp(deps),
         },
       });
       await client.query("COMMIT");

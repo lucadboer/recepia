@@ -1,7 +1,7 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, turnStamp } from "../deps";
 import { isExpired } from "../domain/booking";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
 import type { Booking, Patient } from "../domain/types";
@@ -124,7 +124,7 @@ export async function confirmBooking(
           eventId,
           start: flipped.start.toISOString(),
           outboxId,
-          ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+          ...turnStamp(deps),
         },
       });
       await client.query("COMMIT");

@@ -5,6 +5,7 @@ import {
   DEFAULT_AGENT_BUDGET_USD,
   isRoutineType,
 } from "../config";
+import { messageAlreadyCommitted } from "../db/repositories/audit-repo";
 import { hasLiveHold } from "../db/repositories/booking-repo";
 import { pendingRemindersForPhone } from "../db/repositories/reminder-repo";
 import type { Deps } from "../deps";
@@ -219,6 +220,18 @@ async function runTurn(
   const loaded = state; // before this message touches it (see recordSpendOnFailure)
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
+  // Every write of this turn carries the message that caused it (008 replay guard).
+  const msgDeps: AgentDeps = { ...deps, inboundMessageId: msg.providerMessageId };
+  // 1b. Replay guard (found by the chaos test): the durable queue re-runs a message whose worker
+  //     died after the turn's tools committed but before this state was saved. If that turn
+  //     already produced a final write, running it again would duplicate it (a second booking, a
+  //     second hand-off): finish the message instead — the outbox still delivers what it committed.
+  if (await messageAlreadyCommitted(deps.pool, msg.providerMessageId)) {
+    state = markProcessed(state, msg.providerMessageId, now);
+    state = await persist(state);
+    await flushOutbox();
+    return { status: "noop" };
+  }
   state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
   state = appendUserText(state, msg.text, now);
 
@@ -269,7 +282,7 @@ async function runTurn(
     isStrictAffirmative(msg.text) &&
     !(await hasLiveHold(deps.pool, state.activeHoldIds, now))
   ) {
-    await confirmAttendance(deps, pendingReminders[0].id, msg.phone, "fast_path");
+    await confirmAttendance(msgDeps, pendingReminders[0].id, msg.phone, "fast_path");
     state = markCompleted(state, now);
     state = await persist(state);
     await flushOutbox(); // the attendance reply committed with the change is the only message
@@ -282,7 +295,7 @@ async function runTurn(
   // 3. Deterministic escalation triage — BEFORE the LLM ("escalar na dúvida").
   const triaged = triage(msg.text);
   if (triaged.escalate) {
-    await escalateToHuman(deps, {
+    await escalateToHuman(msgDeps, {
       reason: triaged.reason ?? "triage",
       phone: msg.phone,
       context: msg.text,
@@ -303,7 +316,7 @@ async function runTurn(
     context: reminderContextLine(pendingReminders),
   });
   // Every write the model initiates from here on is audited with this prompt version.
-  const turnDeps: AgentDeps = { ...deps, promptVersion: prompt.version };
+  const turnDeps: AgentDeps = { ...msgDeps, promptVersion: prompt.version };
   state = setPromptVersion(state, prompt.version, now);
   seen.promptVersion = prompt.version;
   // One `chat` span per model call with the GenAI attributes (FR-502); never content.

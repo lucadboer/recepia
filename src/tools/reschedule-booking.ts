@@ -12,7 +12,7 @@ import {
   releasedBookingMessages,
   supersedePending,
 } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, turnStamp } from "../deps";
 import { isExpired } from "../domain/booking";
 import {
   BookingNotChangeableError,
@@ -144,7 +144,7 @@ export async function rescheduleBooking(
           now,
         });
       }
-      const prompt = deps.promptVersion ? { promptVersion: deps.promptVersion } : {};
+      const prompt = turnStamp(deps);
       await appendAudit(client, {
         entity: "booking",
         entityId: confirmed.id,

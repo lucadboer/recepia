@@ -1,6 +1,6 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { enqueueOutbox } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, turnStamp } from "../deps";
 import { escalationMessagePt } from "../messages";
 
 /** What reception needs to pick the conversation up (FR-204). */
@@ -49,7 +49,7 @@ export async function escalateToHuman(deps: Deps, escalation: Escalation): Promi
         summary,
         outboxId,
         ...(escalation.details ?? {}),
-        ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+        ...turnStamp(deps),
       },
     });
     await client.query("COMMIT");

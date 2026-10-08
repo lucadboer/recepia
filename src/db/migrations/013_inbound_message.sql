@@ -28,3 +28,8 @@ CREATE INDEX inbound_message_phone_open_idx ON inbound_message (phone, id)
   WHERE status IN ('pending', 'processing');
 CREATE INDEX inbound_message_due_idx ON inbound_message (next_attempt_at)
   WHERE status = 'pending';
+
+-- Replay guard (found by the chaos test): a reclaimed message whose turn already committed a final
+-- write is recognised by the inbound message id stamped on that write's audit row.
+CREATE INDEX audit_log_inbound_message_idx ON audit_log ((payload->>'inboundMessageId'))
+  WHERE payload ? 'inboundMessageId';

@@ -1,7 +1,7 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { lockBookingForUpdate } from "../db/repositories/booking-repo";
 import { enqueueOutbox, supersedePending } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, turnStamp } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { attendanceConfirmedMessagePt } from "../messages";
@@ -60,7 +60,7 @@ export async function confirmAttendance(
         via,
         start: row.start.toISOString(),
         outboxId,
-        ...(via === "model" && deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+        ...turnStamp(deps, { prompt: via === "model" }),
       },
     });
     await client.query("COMMIT");

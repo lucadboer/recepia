@@ -34,3 +34,8 @@
 
 ## R7 — Load and chaos tests
 - **Decision**: integration load test in-process (4 workers, 200 messages, 10 phones, scripted LLM that records arrival order per phone); `scripts/inbound-chaos.ts` spawns `node --import tsx` child servers with fakes, sends messages, `kill -9` at random 3 times, restarts, waits for the queue to drain, and checks: every acknowledged id is `done`, none `processing`, no overbooking, no duplicate confirmed booking per phone.
+
+## R8 — Replay guard (found by the chaos test)
+- **Finding**: with seed 17 a worker died after a turn's booking committed but before the conversation state (with the processed message id) was saved; the reclaimed message ran again and the scripted model booked a second appointment.
+- **Decision**: every final write (`booking_confirmed`, `booking_rescheduled`, `booking_cancelled`, `attendance_confirmed`, `escalated`) stamps `inboundMessageId` in its audit payload (`turnStamp(deps)`); at the start of a turn the orchestrator asks `messageAlreadyCommitted(id)` and, if so, marks the message processed, flushes the outbox and stops — the patient still receives what the first run committed. An expression index on `payload->>'inboundMessageId'` keeps the check cheap.
+- **Alternatives**: saving the conversation state in the tools' transactions (couples every tool to the conversation store); idempotency keys per tool call (the model's second run is a different call).

@@ -1,4 +1,4 @@
-import type { PoolClient } from "../pool";
+import type { Pool, PoolClient } from "../pool";
 
 export type AuditAction =
   | "hold_created"
@@ -41,4 +41,30 @@ export async function appendAudit(q: PoolClient, entry: AuditEntry): Promise<voi
       JSON.stringify(entry.payload ?? null),
     ],
   );
+}
+
+/** Writes that end a turn's work: once one exists for a message, re-running it would duplicate it. */
+const FINAL_ACTIONS = [
+  "booking_confirmed",
+  "booking_rescheduled",
+  "booking_cancelled",
+  "attendance_confirmed",
+  "escalated",
+] as const;
+
+/**
+ * True when the turn for this inbound message already committed a final write (008: a message is
+ * reclaimed after a crash between the tools' commit and the conversation save).
+ */
+export async function messageAlreadyCommitted(
+  q: PoolClient | Pool,
+  inboundMessageId: string,
+): Promise<boolean> {
+  const { rows } = await q.query(
+    `SELECT 1 FROM audit_log
+     WHERE (payload->>'inboundMessageId') = $1 AND action = ANY($2::text[])
+     LIMIT 1`,
+    [inboundMessageId, FINAL_ACTIONS],
+  );
+  return rows.length > 0;
 }
