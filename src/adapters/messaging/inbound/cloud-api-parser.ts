@@ -1,6 +1,6 @@
 import type { InboundMessage } from "../../../agent/types";
 
-// Minimal shape of a WhatsApp Cloud API webhook payload (text only).
+// Minimal shape of a WhatsApp Cloud API webhook payload (text and quick-reply buttons).
 interface CloudApiPayload {
   object?: string;
   entry?: Array<{
@@ -11,6 +11,10 @@ interface CloudApiPayload {
           id?: string;
           type?: string;
           text?: { body?: string };
+          /** Template quick-reply (007). */
+          button?: { text?: string; payload?: string };
+          /** Interactive message reply (007). */
+          interactive?: { type?: string; button_reply?: { id?: string; title?: string } };
           timestamp?: string;
         }>;
         statuses?: unknown[];
@@ -27,8 +31,15 @@ export function parseCloudApiInbound(payload: unknown): InboundMessage[] {
   for (const entry of p.entry ?? []) {
     for (const change of entry.changes ?? []) {
       for (const m of change.value?.messages ?? []) {
-        if (m.type !== "text") continue; // ignore non-text
-        const text = m.text?.body;
+        // Text, or a button the patient tapped (read as the button's text — 007 FR-707).
+        const text =
+          m.type === "text"
+            ? m.text?.body
+            : m.type === "button"
+              ? m.button?.text
+              : m.type === "interactive"
+                ? m.interactive?.button_reply?.title
+                : undefined;
         if (!m.from || !m.id || typeof text !== "string" || text.length === 0) continue;
         const receivedAt = m.timestamp ? new Date(Number(m.timestamp) * 1000) : undefined;
         out.push({ phone: `+${m.from}`, text, providerMessageId: m.id, receivedAt });

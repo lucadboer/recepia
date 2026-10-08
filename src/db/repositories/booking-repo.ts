@@ -19,6 +19,8 @@ interface BookingRow {
   consent_at: Date | null;
   cancelled_at: Date | null;
   rescheduled_from: string | null;
+  reminder_sent_at: Date | null;
+  unconfirmed_notice_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -39,6 +41,8 @@ export function rowToBooking(r: BookingRow): Booking {
     consentAt: r.consent_at,
     cancelledAt: r.cancelled_at,
     rescheduledFrom: r.rescheduled_from,
+    reminderSentAt: r.reminder_sent_at ?? null,
+    unconfirmedNoticeAt: r.unconfirmed_notice_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

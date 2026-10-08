@@ -41,3 +41,54 @@ describe("isAffirmative — documented conservative case", () => {
     expect(isAffirmative("Não, pode sim")).toBe(false);
   });
 });
+
+// T703 (007) — the reminder fast path confirms attendance only for an unmistakable "yes".
+describe("isStrictAffirmative — a reply that is ONLY an affirmation", () => {
+  it.each([
+    "sim",
+    "Sim!",
+    "SIM.",
+    "  sim  ",
+    "confirmo",
+    "Confirmado",
+    "pode confirmar",
+    "sim, confirmo",
+    "sim confirmo",
+    "ok",
+    "Ok!",
+    "👍",
+    "estarei lá",
+    "vou sim",
+    "Confirmar presença", // the reminder template's quick-reply button
+  ])("accepts %j", async (text) => {
+    const { isStrictAffirmative } = await import("../../src/agent/intent");
+    expect(isStrictAffirmative(text)).toBe(true);
+  });
+
+  it.each([
+    "sim, mas preciso mudar o horário",
+    "sim? que horas mesmo?",
+    "não",
+    "não vou poder ir",
+    "sim não sei",
+    "talvez",
+    "ok, mas quero remarcar",
+    "pode cancelar",
+    "sim, pode cancelar",
+    "",
+    "quero confirmar minha presença na consulta de amanhã e também marcar outra para minha filha",
+  ])("rejects %j", async (text) => {
+    const { isStrictAffirmative } = await import("../../src/agent/intent");
+    expect(isStrictAffirmative(text)).toBe(false);
+  });
+});
+
+describe("opt-out is not fooled by an appointment (007 FR-708)", () => {
+  it("'me tira da lista' still opts out; 'me tira dessa consulta' does not", async () => {
+    const { classifyIntent } = await import("../../src/agent/intent");
+    expect(classifyIntent("me tira da lista, por favor")).toBe("opt_out");
+    expect(classifyIntent("me tira daqui")).toBe("opt_out");
+    expect(classifyIntent("me tira dessa consulta, não vou poder ir")).not.toBe("opt_out");
+    expect(classifyIntent("pode me tirar do horário de amanhã?")).not.toBe("opt_out");
+  });
+});

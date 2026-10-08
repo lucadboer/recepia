@@ -53,6 +53,7 @@ const KIND_LABEL_PT: Record<OutboxRow["kind"], string> = {
   escalation: "o aviso à recepção",
   booking_cancellation: "a confirmação do cancelamento",
   reception_notice: "o aviso à recepção",
+  appointment_reminder: "o lembrete da consulta",
 };
 
 function errorMessage(err: unknown): string {
@@ -130,7 +131,10 @@ async function dispatchOne(
       async (span): Promise<Outcome> => {
         let o: Outcome;
         try {
-          await withTimeout(deps.messaging.sendMessage(row.toPhone, row.body), timeoutMs);
+          await withTimeout(
+            deps.messaging.sendMessage(row.toPhone, row.body, row.template ?? undefined),
+            timeoutMs,
+          );
           await markSent(client, row.id, attempts, deps.clock.now());
           o = "sent";
         } catch (sendErr) {

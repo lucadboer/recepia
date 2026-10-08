@@ -34,6 +34,10 @@ export interface Booking {
   cancelledAt: Date | null;
   /** The booking this one replaced through a reschedule; null otherwise. 006. */
   rescheduledFrom: string | null;
+  /** When its reminder was queued (007); null = not reminded. */
+  reminderSentAt: Date | null;
+  /** When reception was told the patient did not answer the reminder (007). */
+  unconfirmedNoticeAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

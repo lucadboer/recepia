@@ -86,3 +86,16 @@ describe("review fix H3 — provider bodies are masked in the error message", ()
     expect(err.message).toContain("***8888");
   });
 });
+
+describe("EvolutionMessaging — templates are a Cloud-only concept (007)", () => {
+  it("sends the text body even when a template is given", async () => {
+    const { calls, fetchFn } = recorder({ ok: true, status: 201 });
+    const m = new EvolutionMessaging("https://evo.example.com", "k", "clinica", fetchFn);
+    await m.sendMessage("+5531900000701", "Lembrete…", {
+      name: "t",
+      language: "pt_BR",
+      params: ["a"],
+    });
+    expect(JSON.parse(calls[0].init.body)).toEqual({ number: "5531900000701", text: "Lembrete…" });
+  });
+});

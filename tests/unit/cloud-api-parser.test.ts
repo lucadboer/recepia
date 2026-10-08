@@ -39,3 +39,29 @@ describe("parseCloudApiInbound", () => {
     expect(parseCloudApiInbound({})).toHaveLength(0);
   });
 });
+
+describe("parseCloudApiInbound — quick-reply buttons (007 FR-707)", () => {
+  it("reads a template quick-reply button and an interactive button reply as the patient's text", () => {
+    const out = parseCloudApiInbound(
+      envelope([
+        {
+          from: "5531900000701",
+          id: "b1",
+          type: "button",
+          button: { text: "Confirmar presença", payload: "CONFIRM" },
+        },
+        {
+          from: "5531900000702",
+          id: "b2",
+          type: "interactive",
+          interactive: { type: "button_reply", button_reply: { id: "x", title: "Remarcar" } },
+        },
+        { from: "5531900000703", id: "b3", type: "button", button: { payload: "NO_TEXT" } },
+      ]),
+    );
+    expect(out.map((m) => [m.phone, m.text, m.providerMessageId])).toEqual([
+      ["+5531900000701", "Confirmar presença", "b1"],
+      ["+5531900000702", "Remarcar", "b2"],
+    ]);
+  });
+});

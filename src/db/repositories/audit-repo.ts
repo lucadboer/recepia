@@ -15,7 +15,10 @@ export type AuditAction =
   | "retention_purged"
   | "booking_cancelled"
   | "booking_rescheduled"
-  | "calendar_delete_failed";
+  | "calendar_delete_failed"
+  | "reminder_enqueued"
+  | "attendance_confirmed"
+  | "unconfirmed_notified";
 
 export interface AuditEntry {
   entity: string;

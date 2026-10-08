@@ -11,7 +11,11 @@ const OPT_OUT = [
   /\bremover meus dados\b/,
   /\bnao quero (mais )?receber\b/,
   /\bcancelar cadastro\b/,
-  /\bme tira\b/,
+  // "me tira" alone or off a list/registry — never "me tira dessa consulta" (007 FR-708).
+  /^me tira$/,
+  /\bme tira (da|dessa|desta) lista\b/,
+  /\bme tira daqui\b/,
+  /\bme tira do (cadastro|sistema|contato|grupo)\b/,
   /\bparar de receber\b/,
 ];
 const BOOKING = [
@@ -54,4 +58,42 @@ export function isAffirmative(text: string): boolean {
   const n = normalize(text);
   if (NEGATION.some((p) => p.test(n))) return false;
   return AFFIRMATIVE.some((p) => p.test(n));
+}
+
+// Whole-message affirmations only (007 FR-703): what a patient answers to "Você confirma
+// presença?" when the answer is unmistakable. Punctuation is ignored; any other word — "mas",
+// a question, a negation, a request — sends the reply to the model instead.
+const STRICT_AFFIRMATIVE = new Set([
+  "sim",
+  "s",
+  "sim sim",
+  "confirmo",
+  "confirmado",
+  "confirmada",
+  "pode confirmar",
+  "sim confirmo",
+  "sim pode confirmar",
+  "sim confirmado",
+  "confirmo presenca",
+  "confirmar presenca",
+  "presenca confirmada",
+  "ok",
+  "okay",
+  "ok confirmo",
+  "estarei la",
+  "vou sim",
+  "sim vou",
+  "sim estarei la",
+  "👍",
+  "sim 👍",
+]);
+
+/** True only when the WHOLE reply is a plain affirmation (no "mas", no question, no request). */
+export function isStrictAffirmative(text: string): boolean {
+  const n = normalize(text)
+    .replace(/[.,!;:¡¿"'()…-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (n.includes("?")) return false;
+  return STRICT_AFFIRMATIVE.has(n);
 }
