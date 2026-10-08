@@ -56,15 +56,16 @@ export async function deleteEventWithRetry(deps: Deps, bookingId: string): Promi
  * Remove a cancelled booking's event after the cancellation committed (cancel, reschedule, and a
  * replay that finishes either one, 008); one that keeps failing becomes a reception notice.
  * Idempotent: an event already gone counts as removed, and the notice is deduplicated.
+ * True when settled: the event is gone or the reception notice was stored.
  */
 export async function removeEventOrNotify(
   deps: Deps,
   booking: Pick<Booking, "id" | "start" | "googleEventId">,
   phone: string,
   now: Date,
-): Promise<void> {
-  if (await deleteEventWithRetry(deps, booking.id)) return;
-  await requestCalendarCleanup(deps, {
+): Promise<boolean> {
+  if (await deleteEventWithRetry(deps, booking.id)) return true;
+  return requestCalendarCleanup(deps, {
     bookingId: booking.id,
     phone,
     start: booking.start,

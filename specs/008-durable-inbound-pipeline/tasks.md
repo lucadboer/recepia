@@ -54,3 +54,7 @@
 > the hold or deletes its event (the new holder may confirm that hold) — it flags the hold and the
 > hold sweep removes the event only if the hold ends unconfirmed; `drain()` no longer waits out the
 > idle poll when it starts during a claim.
+>
+> Fourth pass, fixed with a test: the hold sweep clears a hold's cleanup flag only once the event is
+> gone or the reception notice was stored (`removeEventOrNotify` / `requestCalendarCleanup` report
+> it), so a transient failure is retried by the next sweep.
