@@ -23,6 +23,7 @@
     "test:live": "vitest run --config vitest.live.config.ts",
     "test:coverage": "vitest run --coverage",
     "perf:smoke": "node --import tsx --import ./src/telemetry/register.ts scripts/perf-smoke.ts",
+    "chaos:inbound": "node --import tsx scripts/inbound-chaos.ts",
     "evals:fake": "node --import tsx evals/run.ts --mode fake",
     "evals:live": "node --import tsx evals/run.ts --mode live",
     "evals:readme": "node --import tsx evals/run.ts readme",

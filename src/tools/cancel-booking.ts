@@ -6,12 +6,12 @@ import {
   releasedBookingMessages,
   supersedePending,
 } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { cancellationMessagePt } from "../messages";
-import { deleteEventWithRetry } from "./booking-calendar";
-import { enqueueLateChangeNotice, isLateChange, requestCalendarCleanup } from "./reception-notices";
+import { removeEventOrNotify } from "./booking-calendar";
+import { enqueueLateChangeNotice, isLateChange } from "./reception-notices";
 
 export type CancelOutcome = "cancelled" | "already_cancelled";
 
@@ -88,6 +88,7 @@ export async function cancelBooking(
           now,
         });
       }
+      const stamp = await fencedStamp(client, deps);
       await appendAudit(client, {
         entity: "booking",
         entityId: row.id,
@@ -98,7 +99,7 @@ export async function cancelBooking(
           start: row.start.toISOString(),
           late,
           outboxId,
-          ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+          ...stamp,
         },
       });
       await client.query("COMMIT");
@@ -112,7 +113,7 @@ export async function cancelBooking(
     client.release();
   }
 
-  await removeEvent(deps, booking, phone, now);
+  await removeEventOrNotify(deps, booking, phone, now);
   if (fresh) return { booking, outcome: "cancelled", late };
   // Replay: while the cancellation message is still queued, the outbox owns the reply (as in
   // confirm and reschedule) — the caller must not add a second message.
@@ -122,16 +123,4 @@ export async function cancelBooking(
     outcome: queued === "pending" ? "cancelled" : "already_cancelled",
     late: false,
   };
-}
-
-/** Remove the cancelled booking's event; one that keeps failing becomes a reception notice. */
-async function removeEvent(deps: Deps, booking: Booking, phone: string, now: Date): Promise<void> {
-  if (await deleteEventWithRetry(deps, booking.id)) return;
-  await requestCalendarCleanup(deps, {
-    bookingId: booking.id,
-    phone,
-    start: booking.start,
-    eventId: booking.googleEventId,
-    now,
-  });
 }

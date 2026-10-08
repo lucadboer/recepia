@@ -6,6 +6,22 @@ export interface InboundMessage {
   text: string;
   providerMessageId: string; // for idempotency
   receivedAt?: Date;
+  /**
+   * Id of the `inbound_message` row this message was stored as (008 durable queue) — unique across
+   * providers, unlike `providerMessageId`. Final writes are stamped with it and the replay guard
+   * keys on it; outside the queue (tests, evals) the provider id stands in.
+   */
+  inboundMessageId?: string;
+}
+
+/** How the durable queue asks for a turn (008). */
+export interface TurnOptions {
+  /**
+   * The message's attempts are exhausted: only recover what an earlier attempt committed (or
+   * confirm it was already processed) — never run the turn again. Throws AttemptsExhaustedError
+   * when there is nothing to recover.
+   */
+  recoverOnly?: boolean;
 }
 
 /** Token usage and estimated cost accumulated over one conversation (005 FR-509). */

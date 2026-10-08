@@ -75,3 +75,43 @@ jobs:
           name: perf-report
           path: perf-report.json
           retention-days: 30
+
+  # Feature 008 (FR-810): the production inbound path in a child process, SIGKILLed three times
+  # while patients keep writing — zero lost acknowledged messages, nothing stuck, no overbooking,
+  # no patient booked twice. Three seeds per run so different kill points are exercised.
+  chaos:
+    name: inbound chaos (kill -9 × 3) — nothing lost, nothing duplicated
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'perf')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: recepia
+          POSTGRES_PASSWORD: recepia
+          POSTGRES_DB: recepia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recepia -d recepia"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Chaos run, three seeds
+        run: |
+          for seed in 8 17 42; do
+            echo "::group::seed ${seed}"
+            CHAOS_SEED="${seed}" pnpm chaos:inbound
+            echo "::endgroup::"
+          done

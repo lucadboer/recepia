@@ -4,7 +4,6 @@ import {
   confirmHeld,
   getById,
   lockBookingForUpdate,
-  releaseHeld,
 } from "../db/repositories/booking-repo";
 import {
   confirmationStatus,
@@ -12,7 +11,7 @@ import {
   releasedBookingMessages,
   supersedePending,
 } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { isExpired } from "../domain/booking";
 import {
   BookingNotChangeableError,
@@ -24,7 +23,13 @@ import {
 } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { rescheduledMessagePt } from "../messages";
-import { deleteEventWithRetry, writeEventWithRetry } from "./booking-calendar";
+import {
+  deleteEventWithRetry,
+  removeEventOrNotify,
+  retireHold,
+  writeEventWithRetry,
+  yieldIfLeaseLost,
+} from "./booking-calendar";
 import { escalateToHuman } from "./escalate-to-human";
 import { enqueueLateChangeNotice, isLateChange, requestCalendarCleanup } from "./reception-notices";
 
@@ -77,7 +82,7 @@ export async function rescheduleBooking(
   if (ACTIVE.has(hold.status) && hold.rescheduledFrom === old.id) {
     // Idempotent repeat: finish the old event's removal (a lost COMMIT acknowledgment must not
     // leave it behind — review), and while the message is still queued the outbox owns it.
-    await removeOldEvent(deps, old, phone, now);
+    await removeEventOrNotify(deps, old, phone, now);
     const queued = await confirmationStatus(deps.pool, hold.id);
     const outcome = queued === "pending" ? "rescheduled" : "already_rescheduled";
     return { booking: hold, previous: old, outcome, late: false };
@@ -94,7 +99,7 @@ export async function rescheduleBooking(
   const name = old.patientName ?? "Paciente";
   const eventId = await writeEventWithRetry(deps, hold, { name, phone });
   if (eventId === null) {
-    await releaseHold(deps, hold.id, "calendar_write_failed");
+    await retireHold(deps, hold.id, "calendar_write_failed"); // fenced: a stale turn leaves it
     await escalateToHuman(deps, {
       reason: "calendar_write_failed",
       phone,
@@ -144,7 +149,7 @@ export async function rescheduleBooking(
           now,
         });
       }
-      const prompt = deps.promptVersion ? { promptVersion: deps.promptVersion } : {};
+      const prompt = await fencedStamp(client, deps);
       await appendAudit(client, {
         entity: "booking",
         entityId: confirmed.id,
@@ -187,9 +192,10 @@ export async function rescheduleBooking(
   }
 
   if (swapped && cancelled) {
-    await removeOldEvent(deps, cancelled, phone, now);
+    await removeEventOrNotify(deps, cancelled, phone, now);
     return { booking: swapped, previous: cancelled, outcome: "rescheduled", late };
   }
+  await yieldIfLeaseLost(deps, hold.id); // never undo what may now be the new holder's
 
   // Not committed by us. The event belongs to whichever active booking now holds it: never
   // compensate a confirmed booking's event (review: a concurrent confirm of the same hold).
@@ -198,7 +204,7 @@ export async function rescheduleBooking(
     if (current.rescheduledFrom === old.id) {
       // Our commit landed with a lost acknowledgment: the swap is real.
       const previous = (await getById(deps.pool, old.id)) ?? old;
-      await removeOldEvent(deps, previous, phone, now);
+      await removeEventOrNotify(deps, previous, phone, now);
       return { booking: current, previous, outcome: "rescheduled", late };
     }
     // Another operation confirmed this time as a booking of its own: keep its event, keep the
@@ -211,9 +217,10 @@ export async function rescheduleBooking(
     throw flagEscalated(new BookingNotChangeableError("A remarcação não pôde ser concluída."));
   }
 
-  // True orphan: the new event has no booking. Compensate, release the hold, hand off.
+  // True orphan: the new event has no booking. End the hold first (it can then never be confirmed
+  // with this event), compensate the event, hand off.
+  await retireHold(deps, hold.id, "reschedule_not_committed");
   const deleted = await deleteEventWithRetry(deps, hold.id);
-  await releaseHold(deps, hold.id, "reschedule_not_committed");
   const reason = failure ? "commit_failed" : "booking_or_hold_changed";
   await auditOrphan(deps, hold.id, eventId, reason, deleted);
   if (!deleted) {
@@ -236,44 +243,6 @@ export async function rescheduleBooking(
     }. A consulta original continua marcada.`,
   });
   throw flagEscalated(failure instanceof Error ? failure : new HoldExpiredError());
-}
-
-async function removeOldEvent(deps: Deps, old: Booking, phone: string, now: Date): Promise<void> {
-  if (await deleteEventWithRetry(deps, old.id)) return;
-  await requestCalendarCleanup(deps, {
-    bookingId: old.id,
-    phone,
-    start: old.start,
-    eventId: old.googleEventId,
-    now,
-  });
-}
-
-async function releaseHold(deps: Deps, holdId: string, reason: string): Promise<void> {
-  const client = await deps.pool.connect();
-  try {
-    await client.query("BEGIN");
-    const { rowCount } = await client.query(
-      "SELECT 1 FROM booking WHERE id = $1 AND status = 'held'",
-      [holdId],
-    );
-    if (rowCount) {
-      await releaseHeld(client, holdId);
-      await appendAudit(client, {
-        entity: "booking",
-        entityId: holdId,
-        action: "hold_released",
-        actor: "system",
-        payload: { reason },
-      });
-    }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 async function auditOrphan(

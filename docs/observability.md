@@ -8,7 +8,7 @@ configured** (no-op API, zero overhead). See [ADR 0008](adr/0008-telemetry-api-o
 ![One booking message as a single trace in Jaeger](img/trace-booking.png)
 
 *One patient message, captured from the local Jaeger while running the perf smoke (scripted
-model, real orchestrator, real Postgres): `webhook.inbound` → `agent.turn` → model calls
+model, real orchestrator, real Postgres): `webhook.inbound` → `inbound.process` → `agent.turn` → model calls
 (`chat …`), tools (`execute_tool …`) with their SQL (`pg.query:*`) → `outbox.dispatch`, linked
 to the `confirm_booking` that committed the confirmation.*
 
@@ -24,7 +24,8 @@ instrumentation is in place before `pg` is imported.
 ## Span catalogue
 | Span | Where | Attributes |
 |---|---|---|
-| `webhook.inbound` (root, CONSUMER) | one per accepted patient message, started on acceptance (queue wait included) | `recepia.channel`, `recepia.message.ref` (keyed hash — a WhatsApp `wamid` encodes the phone), `recepia.patient.id` (keyed pseudonym), `recepia.patient.phone_masked` |
+| `webhook.inbound` (root, CONSUMER) | one per accepted patient message, around storing it in the durable queue (008) | `recepia.channel`, `recepia.message.ref` (keyed hash — a WhatsApp `wamid` encodes the phone), `recepia.patient.id` (keyed pseudonym), `recepia.patient.phone_masked` |
+| `inbound.process` (CONSUMER) | the worker's turn for one stored message — a child of its `webhook.inbound` span through the stored traceparent, so the trace stays one per message even after a restart | `recepia.message.ref`, `recepia.inbound.attempt` |
 | `agent.turn` | `handleInbound` | `recepia.turn.status`, `recepia.conversation.status`, `recepia.prompt.version`, `recepia.conversation.cost_usd` |
 | `chat {model}` (CLIENT) | every model call | GenAI semconv: `gen_ai.operation.name=chat`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens`, `gen_ai.response.finish_reasons`; plus `recepia.prompt.version`, `recepia.llm.cost_usd`, `recepia.llm.fallback` (+ `llm.fallback` event) |
 | `execute_tool {name}` | every tool call | `gen_ai.tool.name`, `recepia.tool.outcome` (`ok` · `rejected` · `error`), `recepia.tool.rejected_by` (`unknown_tool` · `not_offered` · `foreign_hold` · `invalid_args` · `consent` · `after_handoff`), `error.type`, validated `recepia.tool.appointment_type` / `recepia.tool.slot_start` only |

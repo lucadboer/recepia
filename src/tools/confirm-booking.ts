@@ -1,12 +1,17 @@
 import { appendAudit } from "../db/repositories/audit-repo";
-import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo";
+import { confirmHeld, getById } from "../db/repositories/booking-repo";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { isExpired } from "../domain/booking";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
 import type { Booking, Patient } from "../domain/types";
 import { confirmationMessagePt } from "../messages";
-import { deleteEventWithRetry, writeEventWithRetry } from "./booking-calendar";
+import {
+  deleteEventWithRetry,
+  retireHold,
+  writeEventWithRetry,
+  yieldIfLeaseLost,
+} from "./booking-calendar";
 import { escalateToHuman } from "./escalate-to-human";
 import { requestCalendarCleanup } from "./reception-notices";
 
@@ -62,24 +67,8 @@ export async function confirmBooking(
   const eventId = await writeEventWithRetry(deps, existing, patient);
 
   if (eventId === null) {
-    const client = await deps.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await releaseHeld(client, existing.id);
-      await appendAudit(client, {
-        entity: "booking",
-        entityId: existing.id,
-        action: "hold_released",
-        actor: "system",
-        payload: { reason: "calendar_write_failed" },
-      });
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    // No event to keep: end the hold (fenced — a turn that lost its message leaves it alone).
+    await retireHold(deps, existing.id, "calendar_write_failed");
     await escalateToHuman(deps, {
       reason: "calendar_write_failed",
       phone: patient.phone,
@@ -115,6 +104,7 @@ export async function confirmBooking(
         dedupeKey: `booking_confirmation:${flipped.id}`,
         now,
       });
+      const stamp = await fencedStamp(client, deps);
       await appendAudit(client, {
         entity: "booking",
         entityId: flipped.id,
@@ -124,7 +114,7 @@ export async function confirmBooking(
           eventId,
           start: flipped.start.toISOString(),
           outboxId,
-          ...(deps.promptVersion ? { promptVersion: deps.promptVersion } : {}),
+          ...stamp,
         },
       });
       await client.query("COMMIT");
@@ -140,6 +130,7 @@ export async function confirmBooking(
   }
 
   if (confirmed) return { booking: confirmed, outcome: "confirmed" };
+  await yieldIfLeaseLost(deps, existing.id); // never undo what may now be the new holder's
 
   // Either a concurrent confirm won, or OUR commit landed but its acknowledgment was lost
   // (commitError set, row confirmed with our event). In both cases the event must be kept,
@@ -152,7 +143,9 @@ export async function confirmBooking(
     return { booking: current, outcome: owned ? "confirmed" : "already_confirmed" };
   }
 
-  // True orphan: an event exists with no booking. Delete it, audit, escalate.
+  // True orphan: an event exists with no booking. End the hold first (it can then never be
+  // confirmed with this event), delete the event, audit, escalate.
+  await retireHold(deps, existing.id, "calendar_orphan");
   const deleted = await deleteEventWithRetry(deps, existing.id);
   const reason = commitError ? "commit_failed" : "hold_not_held";
   if (!deleted) {

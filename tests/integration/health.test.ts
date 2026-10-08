@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 async function start(ready?: WebhookServerOptions["ready"]): Promise<string> {
-  server = createWebhookServer({ secret: "s3cr3t", onInbound: async () => undefined, ready });
+  server = createWebhookServer({ secret: "s3cr3t", enqueue: async () => undefined, ready });
   await new Promise<void>((r) => server?.listen(0, "127.0.0.1", () => r()));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }

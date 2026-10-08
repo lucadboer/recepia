@@ -11,8 +11,9 @@ import { log } from "../telemetry/logger";
 import { messageRef, patientRef } from "../telemetry/pseudonym";
 import { ATTR, SPAN, startRootSpan } from "../telemetry/tracing";
 import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
-import { parseAndAccept, RecentIds } from "./dispatch";
-import { PerKeyQueue } from "./per-key-queue";
+import { parseAndAccept } from "./dispatch";
+
+export type InboundChannel = "evolution" | "cloud";
 
 export interface CloudWebhookOptions {
   /** Exact path of the Cloud API webhook. Default: "/webhook/cloud". */
@@ -21,11 +22,8 @@ export interface CloudWebhookOptions {
   verifyToken: string;
   /** Meta App Secret, used to validate the X-Hub-Signature-256 HMAC. */
   appSecret: string;
-  /** Inbound patient messages → orchestrator. */
-  onInbound: (msg: InboundMessage) => Promise<unknown>;
   /** Delivery-status receipts → log/observe only (never the orchestrator). */
   onStatus?: (s: CloudStatus) => void;
-  recent?: RecentIds;
 }
 
 export interface WebhookServerOptions {
@@ -33,14 +31,15 @@ export interface WebhookServerOptions {
   secret: string;
   /** Path prefix before the secret token segment. Default: "/webhook/evolution". */
   basePath?: string;
-  /** The ONLY business action: hand a fresh inbound message to the orchestrator. */
-  onInbound: (msg: InboundMessage) => Promise<unknown>;
-  recent?: RecentIds;
+  /**
+   * The ONLY business action (008): store a verified message durably. The webhook answers 200
+   * only after this resolves, and a retryable 503 when it throws — an acknowledgment is a promise
+   * that the message will be processed. Redeliveries are deduped by the store.
+   */
+  enqueue: (msg: InboundMessage, channel: InboundChannel) => Promise<void>;
   onError?: (err: unknown) => void;
   /** Optional WhatsApp Cloud API webhook (GET verify + HMAC POST). Additive; Evolution stays as-is. */
   cloud?: CloudWebhookOptions;
-  /** Per-phone serialization of onInbound (shared by both providers). Default: a new queue. */
-  queue?: PerKeyQueue;
   /** Request bodies above this size are refused with 413. Default: WEBHOOK_MAX_BODY_BYTES. */
   maxBodyBytes?: number;
   /** Readiness probe for GET /readyz (e.g. `SELECT 1`). Absent = always ready. */
@@ -83,8 +82,8 @@ function defaultLogStatus(s: CloudStatus): void {
 }
 
 /**
- * One root span per accepted patient message (FR-501), started on acceptance so the queue wait
- * is inside it; the turn runs as its child. Patient identified by pseudonym + masked phone.
+ * One root span per accepted patient message (FR-501), around storing it; the worker's turn later
+ * continues this trace through the stored traceparent (008). Patient = pseudonym + masked phone.
  */
 function traceInbound(
   channel: "evolution" | "cloud",
@@ -137,71 +136,59 @@ function readBody(
 
 /**
  * Minimal webhook entrypoint over Node's built-in http (zero deps). It does NO business
- * logic: it verifies origin, parses/dedupes, acks fast, and hands fresh inbound messages
- * to onInbound (logging Cloud delivery statuses). Two independent paths, matched on the
+ * logic: it verifies origin, parses, STORES each patient message durably and only then
+ * acknowledges (008; logging Cloud delivery statuses). Two independent paths, matched on the
  * EXACT pathname (a path that merely shares a prefix is a 404, T229):
  *   - Evolution (shared-secret, POST) at `/webhook/evolution/<token>` — exactly one segment.
  *   - Cloud API (GET verify + HMAC POST) at `/webhook/cloud` — only when `cloud` is set.
- * Edge-dedupe ids are recorded only after onInbound SUCCEEDED, so a redelivery after a failed
- * turn is processed again (at-least-once; DB idempotency by providerMessageId is the guarantee).
+ * A store failure answers 503 so the provider retries; the queue's unique key makes a redelivery
+ * a no-op, and the in-process worker runs the turns.
  */
 export function createWebhookServer(opts: WebhookServerOptions): Server {
   const basePath = opts.basePath ?? "/webhook/evolution";
-  const recent = opts.recent ?? new RecentIds();
   const onError =
     opts.onError ??
     ((err: unknown) =>
-      log.error({ event: "webhook.inbound_failed", err }, "inbound processing failed"));
+      log.error({ event: "webhook.store_failed", err }, "inbound message could not be stored"));
   const maxBodyBytes = opts.maxBodyBytes ?? WEBHOOK_MAX_BODY_BYTES;
-  // Messages from the same phone are processed one at a time (T240); different phones overlap.
-  const queue = opts.queue ?? new PerKeyQueue();
 
   const cloud = opts.cloud;
   const cloudBase = cloud?.basePath ?? "/webhook/cloud";
-  const cloudRecent = cloud?.recent ?? new RecentIds();
   const logStatus = cloud?.onStatus ?? defaultLogStatus;
 
-  /**
-   * Hand an accepted message to its per-phone queue inside a root span (FR-501). Logs are written
-   * with the span active so they carry its trace id; the id is deduped only after a SUCCESSFUL
-   * turn (T230). Failures are reported once, inside the span.
-   */
   // One readiness probe in flight at a time: under load, /readyz must not pile queries on the pool.
   let probing: Promise<boolean> | null = null;
 
-  const dispatchInbound = (
-    channel: "evolution" | "cloud",
-    msg: InboundMessage,
-    handler: (m: InboundMessage) => Promise<unknown>,
-    seen: RecentIds,
-  ): void => {
-    const traced = traceInbound(channel, msg);
-    const ref = messageRef(msg.providerMessageId);
-    traced.within(() =>
-      log.info(
-        { event: "webhook.inbound", channel, messageRef: ref, patient: patientRef(msg.phone) },
-        "inbound message accepted",
-      ),
-    );
-    void queue
-      .run(msg.phone, () =>
-        traced.run(async () => {
-          try {
-            const r = await handler(msg);
-            seen.add(msg.providerMessageId);
-            const status = (r as { status?: string } | null)?.status ?? "done";
-            log.info(
-              { event: "webhook.handled", channel, messageRef: ref, status },
-              "inbound message handled",
-            );
-            return r;
-          } catch (err) {
-            onError(err);
-            throw err; // recorded on the span by run()
-          }
-        }),
-      )
-      .catch(() => {}); // already reported above
+  /**
+   * Store the accepted messages, each inside its own root span (FR-501), then answer: 200 once
+   * every message is stored, 503 if any store failed (already-stored ones are deduped on retry).
+   */
+  const storeThenAck = async (
+    res: ServerResponse,
+    channel: InboundChannel,
+    msgs: InboundMessage[],
+  ): Promise<void> => {
+    try {
+      for (const msg of msgs) {
+        const traced = traceInbound(channel, msg);
+        await traced.run(async () => {
+          await opts.enqueue(msg, channel);
+          log.info(
+            {
+              event: "webhook.inbound",
+              channel,
+              messageRef: messageRef(msg.providerMessageId),
+              patient: patientRef(msg.phone),
+            },
+            "inbound message stored",
+          );
+        });
+      }
+      res.writeHead(200).end();
+    } catch (err) {
+      onError(err);
+      if (!res.headersSent) res.writeHead(503, { "retry-after": "5" }).end();
+    }
   };
 
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -257,11 +244,13 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
             rawBody,
             signatureHeader: req.headers["x-hub-signature-256"] as string | undefined,
             appSecret: cloud.appSecret,
-            seen: cloudRecent,
           });
-          res.writeHead(result.status).end();
           for (const s of result.statuses) logStatus(s); // statuses: log only
-          for (const m of result.msgs) dispatchInbound("cloud", m, cloud.onInbound, cloudRecent);
+          if (result.status !== 200 || result.msgs.length === 0) {
+            res.writeHead(result.status).end();
+            return;
+          }
+          void storeThenAck(res, "cloud", result.msgs);
         });
         return;
       }
@@ -287,10 +276,12 @@ export function createWebhookServer(opts: WebhookServerOptions): Server {
         authHeader: req.headers.authorization,
         pathToken,
         secret: opts.secret,
-        seen: recent,
       });
-      res.writeHead(result.status).end();
-      if (result.msg) dispatchInbound("evolution", result.msg, opts.onInbound, recent);
+      if (result.status !== 200 || !result.msg) {
+        res.writeHead(result.status).end();
+        return;
+      }
+      void storeThenAck(res, "evolution", [result.msg]);
     });
   });
 
