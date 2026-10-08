@@ -31,6 +31,11 @@ export const HISTORY_MAX_MESSAGES = 40;
 export const AVAILABILITY_MAX_SLOTS = 40;
 export const OFFERED_SLOTS_MAX = 3 * AVAILABILITY_MAX_SLOTS;
 export const ACTIVE_HOLDS_MAX = 10;
+/**
+ * Postgres `lock_timeout` on every connection (008 review): lock waits in this app last
+ * milliseconds; one that lasts this long is a stuck transaction and fails instead of blocking.
+ */
+export const DB_LOCK_TIMEOUT_MS = 10_000;
 /** Durable inbound pipeline (008). */
 export const INBOUND_CONCURRENCY = 4;
 export const INBOUND_LEASE_MS = 5 * 60 * 1000;

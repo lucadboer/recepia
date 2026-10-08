@@ -67,3 +67,7 @@
 > committed (`handleInbound(…, { recoverOnly: true })`, AttemptsExhaustedError when there is
 > nothing) instead of dead-lettering a change that succeeded; a replay whose calendar cleanup
 > neither succeeds nor gets recorded fails (CleanupPendingError) so the message is retried.
+>
+> Seventh pass, fixed with a test: every pool connection sets `lock_timeout` (DB_LOCK_TIMEOUT_MS,
+> 10 s), so a timed-out turn blocked on a lock inside its fenced transaction rolls back and
+> releases the message row instead of stranding the phone.

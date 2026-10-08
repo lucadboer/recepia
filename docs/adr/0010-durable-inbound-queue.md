@@ -37,7 +37,9 @@ one process.
   attempts never finished (crashes) counts them, so the attempt limit holds across crashes too —
   such a claim only recovers what the last attempt committed (`recoverOnly`) and otherwise goes to
   reception. A replay whose calendar cleanup neither succeeds nor gets recorded fails, so the
-  message is retried instead of finishing with the event left behind.
+  message is retried instead of finishing with the event left behind. Every connection sets
+  Postgres `lock_timeout` (10 s): a timed-out turn stuck on a lock inside a fenced transaction
+  fails and rolls back, releasing the message row so its attempt can be finished and reclaimed.
   Every direct patient reply is fenced on the lease as well.
 - **Retries** with jittered backoff (2 s … 10 min); the 5th failure marks the row dead, audits it
   and hands the patient to reception — notice and handed-off conversation state — in one
