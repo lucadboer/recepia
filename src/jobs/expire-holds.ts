@@ -1,6 +1,11 @@
 import { appendAudit } from "../db/repositories/audit-repo";
-import { expireDueHolds } from "../db/repositories/booking-repo";
+import {
+  abandonedEventHolds,
+  clearEventCleanup,
+  expireDueHolds,
+} from "../db/repositories/booking-repo";
 import type { Deps } from "../deps";
+import { removeEventOrNotify } from "../tools/booking-calendar";
 
 /**
  * Sweep: expire all holds past their TTL and audit each release (Constitution V).
@@ -31,4 +36,19 @@ export async function expireHolds(deps: Deps): Promise<number> {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Remove the calendar events that turns which lost their inbound message left on holds that then
+ * ended unconfirmed (008 review: such a turn leaves the hold and its event to the new holder and
+ * only flags the hold). Idempotent; an event that cannot be removed becomes a reception cleanup
+ * notice. Runs after each sweep. Returns how many holds were settled.
+ */
+export async function removeAbandonedEvents(deps: Deps): Promise<number> {
+  const holds = await abandonedEventHolds(deps.pool);
+  for (const hold of holds) {
+    await removeEventOrNotify(deps, hold, hold.patientPhone, deps.clock.now());
+    await clearEventCleanup(deps.pool, hold.id);
+  }
+  return holds.length;
 }

@@ -208,4 +208,28 @@ describe("createInboundWorker", () => {
     expect(rows[0]).toEqual({ status: "processing", locked_by: "w2/other-claim", attempts: 1 });
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(0);
   });
+
+  it("drain() started while a claim is in flight does not wait out the idle poll", async () => {
+    // A slow claim: drain() wakes the idle waiters before this slot has registered as one.
+    const slowPool = {
+      query: async (text: string, values?: unknown[]) => {
+        if (text.includes("SET status = 'processing'"))
+          await new Promise((r) => setTimeout(r, 150));
+        return pool.query(text, values);
+      },
+    } as unknown as Pool;
+    const worker = createInboundWorker({
+      pool: slowPool,
+      clock: new FakeClock(NOW),
+      receptionPhone: RECEPTION,
+      concurrency: 1,
+      pollMs: 10_000,
+      handler: async () => {},
+    });
+    worker.start();
+    await new Promise((r) => setTimeout(r, 30)); // the first claim is in flight
+    const t0 = Date.now();
+    expect(await worker.drain(2_000)).toBe(true);
+    expect(Date.now() - t0).toBeLessThan(1_000);
+  });
 });

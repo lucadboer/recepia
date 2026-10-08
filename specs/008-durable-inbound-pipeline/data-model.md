@@ -21,3 +21,10 @@ Indexes: `(phone, id) WHERE status IN ('pending','processing')`, `(next_attempt_
 
 ## audit_log
 - New action `inbound_dead_letter` (`entity: inbound`, payload `{ provider, attempts, lastError }`).
+
+## `booking.event_cleanup_pending` (review addition, migration 013)
+`boolean NOT NULL DEFAULT false`, partial index where true. Set when a turn that lost its inbound
+message had written a hold's calendar event but could not commit: the hold and the event are left
+to the new holder. The hold sweep (`removeAbandonedEvents`) deletes the event of a flagged hold that
+ended `expired` (or files a reception cleanup notice) and clears the flag; a confirmed booking keeps
+its event.

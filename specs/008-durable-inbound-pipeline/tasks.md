@@ -49,3 +49,8 @@
 > inside their own transactions (`ConversationStorePort.save(state, { fence })`); a replayed
 > cancel/reschedule finishes removing the calendar event; the dead letter persists the handed-off
 > conversation state; final writes are stamped with the `inbound_message` id, not the provider's.
+>
+> Third pass, fixed with tests: after a lease loss a confirm/reschedule attempt no longer releases
+> the hold or deletes its event (the new holder may confirm that hold) — it flags the hold and the
+> hold sweep removes the event only if the hold ends unconfirmed; `drain()` no longer waits out the
+> idle poll when it starts during a claim.

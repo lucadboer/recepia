@@ -33,3 +33,9 @@ CREATE INDEX inbound_message_due_idx ON inbound_message (next_attempt_at)
 -- write is recognised by the inbound message id stamped on that write's audit row.
 CREATE INDEX audit_log_inbound_message_idx ON audit_log ((payload->>'inboundMessageId'))
   WHERE payload ? 'inboundMessageId';
+
+-- Review (fencing): a turn that lost its message after writing a hold's calendar event leaves the
+-- hold and the event to the new holder, who may confirm that same hold (the event is idempotent by
+-- hold id). It only flags the hold; the hold sweep removes the event if the hold ends unconfirmed.
+ALTER TABLE booking ADD COLUMN event_cleanup_pending boolean NOT NULL DEFAULT false;
+CREATE INDEX booking_event_cleanup_idx ON booking (id) WHERE event_cleanup_pending;

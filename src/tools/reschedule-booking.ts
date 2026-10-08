@@ -24,7 +24,12 @@ import {
 } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { rescheduledMessagePt } from "../messages";
-import { deleteEventWithRetry, removeEventOrNotify, writeEventWithRetry } from "./booking-calendar";
+import {
+  deleteEventWithRetry,
+  removeEventOrNotify,
+  writeEventWithRetry,
+  yieldIfLeaseLost,
+} from "./booking-calendar";
 import { escalateToHuman } from "./escalate-to-human";
 import { enqueueLateChangeNotice, isLateChange, requestCalendarCleanup } from "./reception-notices";
 
@@ -94,6 +99,7 @@ export async function rescheduleBooking(
   const name = old.patientName ?? "Paciente";
   const eventId = await writeEventWithRetry(deps, hold, { name, phone });
   if (eventId === null) {
+    await yieldIfLeaseLost(deps, hold.id); // the hold may be the new holder's to use
     await releaseHold(deps, hold.id, "calendar_write_failed");
     await escalateToHuman(deps, {
       reason: "calendar_write_failed",
@@ -190,6 +196,7 @@ export async function rescheduleBooking(
     await removeEventOrNotify(deps, cancelled, phone, now);
     return { booking: swapped, previous: cancelled, outcome: "rescheduled", late };
   }
+  await yieldIfLeaseLost(deps, hold.id); // never undo what may now be the new holder's
 
   // Not committed by us. The event belongs to whichever active booking now holds it: never
   // compensate a confirmed booking's event (review: a concurrent confirm of the same hold).
@@ -242,6 +249,7 @@ async function releaseHold(deps: Deps, holdId: string, reason: string): Promise<
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
+    await deps.lease?.fence(client);
     const { rowCount } = await client.query(
       "SELECT 1 FROM booking WHERE id = $1 AND status = 'held'",
       [holdId],
