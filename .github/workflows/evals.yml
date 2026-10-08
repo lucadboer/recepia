@@ -176,6 +176,10 @@ jobs:
           cases="$EVALS_CASES_INPUT"
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             cases="$(grep -vE '^[[:space:]]*(#|$)' evals/live-subset.txt | paste -sd, -)"
+            if [ -z "$cases" ]; then
+              echo "::error::evals/live-subset.txt lists no case — a pull request never runs the whole set"
+              exit 1
+            fi
           fi
           if [ -n "$cases" ]; then
             args+=(--case "$cases")

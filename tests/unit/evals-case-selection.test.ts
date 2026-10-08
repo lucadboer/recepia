@@ -64,6 +64,10 @@ describe("--case accepts a list and --category repeats", () => {
     ]);
   });
 
+  it("an empty list is an error, never a silent full (paid) run", () => {
+    expect(() => parseArgs(["--case", " , ,"])).toThrow(/--case/);
+  });
+
   it("collects every --category", () => {
     expect(parseArgs(["--category", "injection", "--category", "opt_out"]).categories).toEqual([
       "injection",

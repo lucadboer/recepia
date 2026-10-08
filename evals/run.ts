@@ -109,6 +109,7 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
           .split(",")
           .map((id) => id.trim())
           .filter((id) => id.length > 0);
+        if (ids.length === 0) throw new Error("--case: expected at least one case id");
         args.caseIds = [...new Set([...(args.caseIds ?? []), ...ids])];
         break;
       }
