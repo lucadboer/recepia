@@ -7,6 +7,9 @@ export const TOOL_NAMES = {
   hold: "hold_slot",
   confirm: "confirm_booking",
   escalate: "escalate_to_human",
+  findBooking: "find_my_booking",
+  cancelBooking: "cancel_booking",
+  rescheduleBooking: "reschedule_booking",
 } as const;
 
 export const toolDefs: LlmToolDef[] = [
@@ -67,6 +70,44 @@ export const toolDefs: LlmToolDef[] = [
         context: { type: "string" },
       },
       required: ["reason", "context"],
+    },
+  },
+  {
+    name: TOOL_NAMES.findBooking,
+    description:
+      "Busca a próxima consulta do paciente desta conversa (para cancelar ou remarcar). Mostre a consulta ao paciente e peça a confirmação dele; nenhuma ou várias consultas vão para a recepção automaticamente.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false, // required by strict tool schemas
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: TOOL_NAMES.cancelBooking,
+    description:
+      "Cancela a consulta retornada por find_my_booking NESTA conversa, somente depois que o paciente confirmou o cancelamento em uma mensagem posterior.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false, // required by strict tool schemas
+      properties: {
+        booking_id: { type: "string", description: "bookingId retornado por find_my_booking" },
+      },
+      required: ["booking_id"],
+    },
+  },
+  {
+    name: TOOL_NAMES.rescheduleBooking,
+    description:
+      "Remarca a consulta retornada por find_my_booking para um horário reservado com hold_slot NESTA conversa (mesmo tipo de consulta), somente depois que o paciente confirmou o novo horário em uma mensagem posterior.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false, // required by strict tool schemas
+      properties: {
+        booking_id: { type: "string", description: "bookingId retornado por find_my_booking" },
+        hold_id: { type: "string", description: "holdId retornado por hold_slot" },
+      },
+      required: ["booking_id", "hold_id"],
     },
   },
 ];

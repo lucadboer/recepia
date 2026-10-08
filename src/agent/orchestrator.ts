@@ -38,6 +38,7 @@ import {
   setAwaitingConsent,
   setPromptVersion,
   shouldSendHandoffNotice,
+  startTurn,
   stripThinking,
 } from "./conversation";
 import { classifyIntent, isAffirmative } from "./intent";
@@ -212,7 +213,7 @@ async function runTurn(
   const loaded = state; // before this message touches it (see recordSpendOnFailure)
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
-  state = markProcessed(state, msg.providerMessageId, now);
+  state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
   state = appendUserText(state, msg.text, now);
 
   // 2. Opt-out fast path (LGPD "opt-out fácil").
@@ -413,7 +414,12 @@ async function runTurn(
       }
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
-      if (tu.name === TOOL_NAMES.confirm && !(await hasConsent(deps, msg.phone))) {
+      // A reschedule writes a new booking with the patient's data, so it needs consent too (006
+      // FR-607); a cancel reduces data and does not.
+      if (
+        (tu.name === TOOL_NAMES.confirm || tu.name === TOOL_NAMES.rescheduleBooking) &&
+        !(await hasConsent(deps, msg.phone))
+      ) {
         state = setAwaitingConsent(state, true, now);
         return {
           content: reply.askConsent(),

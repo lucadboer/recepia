@@ -2,8 +2,11 @@
 // strings. Wording accepted as the pilot copy by the owner (T220/T221, 2026-10-06).
 
 import {
+  BookingNotChangeableError,
+  BookingNotFoundError,
   CalendarWriteError,
   HoldExpiredError,
+  InvalidRescheduleError,
   OutOfScopeError,
   SlotOutOfWindowError,
   SlotUnavailableError,
@@ -38,5 +41,11 @@ export function errorReply(err: unknown): string {
   if (err instanceof OutOfScopeError)
     return "Esse tipo de atendimento é melhor com a nossa recepção; vou te encaminhar.";
   if (err instanceof CalendarWriteError) return reply.couldNotComplete();
+  if (err instanceof BookingNotFoundError)
+    return "Não encontrei essa consulta para este telefone. Se o paciente insistir, encaminhe à recepção.";
+  if (err instanceof BookingNotChangeableError)
+    return "Essa consulta não pode mais ser alterada por aqui (já começou ou não está ativa). Ofereça encaminhar à recepção.";
+  if (err instanceof InvalidRescheduleError)
+    return `${err.message} Ofereça outro horário do mesmo tipo de consulta.`;
   return reply.couldNotComplete();
 }

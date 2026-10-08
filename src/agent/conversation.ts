@@ -158,6 +158,11 @@ export function recordConfirmed(
   return { ...s, lastConfirmedBookingId: bookingId, status: "completed", updatedAt: now };
 }
 
+/** A cancel finished the patient's request: the next message starts a fresh conversation (006). */
+export function markCompleted(s: ConversationState, now: Date): ConversationState {
+  return { ...s, status: "completed", updatedAt: now };
+}
+
 export function markEscalated(s: ConversationState, now: Date): ConversationState {
   return { ...s, status: "escalated", escalatedAt: now.toISOString(), updatedAt: now };
 }

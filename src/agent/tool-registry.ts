@@ -1,25 +1,34 @@
 // The closed tool allowlist + dispatch. This is where "the LLM never writes" is
 // enforced STRUCTURALLY: unknown tools are rejected; a hold's start must have come
-// from get_availability in this conversation; a confirm's hold must have been
-// created in this conversation. The patient phone is injected from context — never
-// taken from LLM args.
+// from get_availability in this conversation; a confirm's (or a reschedule's) hold must
+// have been created in this conversation; a cancel/reschedule acts only on a booking
+// find_my_booking showed in this conversation, and never in the turn it was first shown
+// (006). The patient phone is injected from context — never taken from LLM args.
 
 import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
 import { hasEscalatedFlag } from "../domain/errors";
 import { slotLabelPt, toLocalIso } from "../domain/time";
 import { errorTypeOf } from "../telemetry/tracing";
+import { cancelBooking } from "../tools/cancel-booking";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
+import { findMyBooking } from "../tools/find-my-booking";
 import { getAvailability } from "../tools/get-availability";
 import { holdSlot } from "../tools/hold-slot";
+import { rescheduleBooking } from "../tools/reschedule-booking";
 import {
   hasActiveHold,
+  holdTurnOf,
   isOfferedSlot,
+  markCompleted,
   markEscalated,
   recordConfirmed,
   recordHold,
+  recordHoldTurn,
   recordOfferedSlots,
+  recordSurfacedBooking,
+  surfacedTurnOf,
 } from "./conversation";
 import { errorReply } from "./reply";
 import { summarizeHistory } from "./summary";
@@ -79,6 +88,30 @@ function result(
 }
 
 const INVALID = { rejectedBy: "invalid_args" } as const;
+
+const CONFIRM_FIRST =
+  "Ainda não: mostre ao paciente a consulta (e o novo horário, se for remarcação) e peça a confirmação dele. Execute só depois que ele responder.";
+
+/**
+ * GUARDRAILS 4 and 5 (006): a cancel/reschedule acts only on a booking find_my_booking showed in
+ * THIS conversation (`not_surfaced`), and never in the turn it was first shown — the patient must
+ * have replied after seeing it (`confirmation_required`, constitution IV). Null = allowed.
+ */
+function lifecycleGate(state: ConversationState, bookingId: string): ToolDispatchResult | null {
+  const turn = surfacedTurnOf(state, bookingId);
+  if (turn === null) {
+    return result(
+      state,
+      "Essa consulta não foi encontrada nesta conversa; use find_my_booking primeiro.",
+      true,
+      { rejectedBy: "not_surfaced" },
+    );
+  }
+  if (turn >= state.turnSeq) {
+    return result(state, CONFIRM_FIRST, true, { rejectedBy: "confirmation_required" });
+  }
+  return null;
+}
 
 function asString(v: unknown): string | null {
   return typeof v === "string" && v.length > 0 ? v : null;
@@ -142,7 +175,7 @@ export async function dispatchTool(
           );
         }
         const hold = await holdSlot(deps, { start: new Date(start), type }, { phone });
-        state = recordHold(state, hold.id, now);
+        state = recordHoldTurn(recordHold(state, hold.id, now), hold.id, now);
         return result(
           state,
           JSON.stringify({
@@ -182,6 +215,99 @@ export async function dispatchTool(
           }),
           false,
           { patientNotified: outcome === "confirmed" },
+        );
+      }
+
+      case TOOL_NAMES.findBooking: {
+        const found = await findMyBooking(deps, phone);
+        if (found.kind !== "found") {
+          // SPEC.md US3-3: never guess between zero or several bookings — reception decides, by code.
+          const reason = found.kind === "none" ? "booking_not_found" : "multiple_bookings";
+          const context =
+            found.kind === "none"
+              ? "Paciente pediu para alterar uma consulta, mas não há consulta futura ativa para este telefone."
+              : `Paciente pediu para alterar uma consulta e tem ${found.count} consultas futuras ativas.`;
+          await escalateToHuman(deps, {
+            reason,
+            phone,
+            context,
+            summary: summarizeHistory(state.history),
+          });
+          state = markEscalated(state, now);
+          return result(state, JSON.stringify({ escalated: true, reason }), false, {
+            escalated: true,
+          });
+        }
+        const b = found.booking;
+        state = recordSurfacedBooking(state, b.id, now);
+        return result(
+          state,
+          JSON.stringify({
+            bookingId: b.id,
+            start: toLocalIso(b.start),
+            end: toLocalIso(b.end),
+            label: slotLabelPt(b.start),
+            type: b.appointmentType,
+            status: b.status,
+          }),
+          false,
+        );
+      }
+
+      case TOOL_NAMES.cancelBooking: {
+        const bookingId = asString(input.booking_id);
+        if (!bookingId) {
+          return result(state, "Argumentos inválidos para cancel_booking.", true, INVALID);
+        }
+        const refused = lifecycleGate(state, bookingId);
+        if (refused) return refused;
+        const { booking, outcome } = await cancelBooking(deps, bookingId, phone);
+        state = markCompleted(state, now);
+        return result(
+          state,
+          JSON.stringify({
+            bookingId: booking.id,
+            status: booking.status,
+            start: toLocalIso(booking.start),
+            label: slotLabelPt(booking.start),
+          }),
+          false,
+          { patientNotified: outcome === "cancelled" },
+        );
+      }
+
+      case TOOL_NAMES.rescheduleBooking: {
+        const bookingId = asString(input.booking_id);
+        const holdId = asString(input.hold_id);
+        if (!bookingId || !holdId) {
+          return result(state, "Argumentos inválidos para reschedule_booking.", true, INVALID);
+        }
+        const refused = lifecycleGate(state, bookingId);
+        if (refused) return refused;
+        // GUARDRAIL 3 (reused): the new time must be a hold created in THIS conversation...
+        if (!hasActiveHold(state, holdId)) {
+          return result(state, "Reserva não reconhecida nesta conversa.", true, {
+            rejectedBy: "foreign_hold",
+          });
+        }
+        // ...that the patient saw before this turn (006 FR-603).
+        const holdTurn = holdTurnOf(state, holdId);
+        if (holdTurn === null || holdTurn >= state.turnSeq) {
+          return result(state, CONFIRM_FIRST, true, { rejectedBy: "confirmation_required" });
+        }
+        const r = await rescheduleBooking(deps, bookingId, holdId, phone);
+        state = recordConfirmed(state, r.booking.id, now);
+        return result(
+          state,
+          JSON.stringify({
+            bookingId: r.booking.id,
+            previousBookingId: r.previous.id,
+            status: r.booking.status,
+            start: toLocalIso(r.booking.start),
+            label: slotLabelPt(r.booking.start),
+          }),
+          false,
+          { patientNotified: r.outcome === "rescheduled" },
         );
       }
 
