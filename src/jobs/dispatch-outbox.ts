@@ -51,6 +51,8 @@ type Outcome = keyof DispatchOutboxResult;
 const KIND_LABEL_PT: Record<OutboxRow["kind"], string> = {
   booking_confirmation: "a confirmação da consulta",
   escalation: "o aviso à recepção",
+  booking_cancellation: "a confirmação do cancelamento",
+  reception_notice: "o aviso à recepção",
 };
 
 function errorMessage(err: unknown): string {
@@ -61,7 +63,7 @@ function errorMessage(err: unknown): string {
  * Bound a send. NOTE (at-least-once): when the timeout fires the underlying request keeps
  * running; if the provider actually delivered, the row is retried and the recipient may get
  * the same message twice. Accepted for now (FR-214); provider message ids for idempotent
- * sends are planned with the durable inbound pipeline (feature 006).
+ * sends are planned with the durable inbound pipeline (feature 008).
  */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -178,7 +180,8 @@ async function deadLetter(
     actor: "system",
     payload: { kind: row.kind, toPhone: row.toPhone, attempts, lastError },
   });
-  if (row.kind === "escalation") return; // never escalate a failed escalation (no loop)
+  // Never escalate a failed message to reception (escalation or notice): no loop.
+  if (row.kind === "escalation" || row.kind === "reception_notice") return;
 
   const context = `Não foi possível entregar ${KIND_LABEL_PT[row.kind]} após ${attempts} tentativas (${lastError}).`;
   const escalationId = await enqueueOutbox(client, {

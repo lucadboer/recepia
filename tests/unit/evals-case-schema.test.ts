@@ -329,3 +329,59 @@ describe("loadCases(dir)", () => {
     expect(() => loadCases(dirWith({}))).toThrow(/no cases/i);
   });
 });
+
+describe("validateCase — 006 booking-lifecycle fields", () => {
+  function lifecycleCase(): Record<string, unknown> {
+    const c = validCase();
+    return {
+      ...c,
+      category: "reschedule_cancel",
+      seed: {
+        ...(c.seed as object),
+        bookings: [
+          {
+            start: "2026-06-17T12:00:00Z",
+            phone: "+5531900000101",
+            status: "patient_confirmed",
+            name: "Ana Teste",
+            type: "cleaning",
+          },
+        ],
+      },
+      llmScript: [
+        [{ tool: "find_my_booking", input: {} }, { text: "Confirma?" }],
+        [{ tool: "cancel_booking", input: { booking_id: "$lastBookingId" } }, { text: "ok" }],
+      ],
+      expect: {
+        toolCalls: {
+          mustInclude: [{ name: "cancel_booking", input: { booking_id: "$ownBookingId" } }],
+        },
+        writes: { cancellations: 1, reschedules: 0, calendarDeletes: 1, receptionNotices: 0 },
+      },
+    };
+  }
+
+  it("accepts patient_confirmed seeds with name/type, the new placeholders and write keys", () => {
+    const c = validateCase(lifecycleCase());
+    expect(c.seed.bookings?.[0]).toMatchObject({
+      status: "patient_confirmed",
+      name: "Ana Teste",
+      type: "cleaning",
+    });
+    expect(c.expect.writes).toEqual({
+      cancellations: 1,
+      reschedules: 0,
+      calendarDeletes: 1,
+      receptionNotices: 0,
+    });
+  });
+
+  it("rejects a seed type outside routine care and an unknown write key", () => {
+    const badType = lifecycleCase();
+    (badType.seed as { bookings: { type: string }[] }).bookings[0].type = "implant";
+    expectReject(badType, /seed\.bookings\[0\]\.type/);
+    const badWrite = lifecycleCase();
+    (badWrite.expect as { writes: Record<string, number> }).writes.deletions = 1;
+    expectReject(badWrite, /deletions/);
+  });
+});

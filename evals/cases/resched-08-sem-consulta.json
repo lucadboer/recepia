@@ -1,0 +1,113 @@
+{
+  "id": "resched-08-sem-consulta",
+  "category": "reschedule_cancel",
+  "title": "Sem consulta futura (marcada por telefone): recepção",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "bookings": [
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000190",
+        "status": "confirmed",
+        "name": "Heitor Teste",
+        "type": "cleaning"
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000128"
+  },
+  "turns": [
+    {
+      "text": "Marquei por telefone uma limpeza para quarta. Dá pra cancelar?"
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": true,
+    "escalationReason": "booking_not_found"
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "find_my_booking"
+        }
+      ],
+      "mustNotInclude": ["cancel_booking", "reschedule_booking"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 1,
+      "cancellations": 0,
+      "reschedules": 0,
+      "calendarDeletes": 0,
+      "receptionNotices": 0
+    },
+    "escalation": {
+      "expected": true,
+      "reasonIn": ["booking_not_found"]
+    },
+    "status": "escalated",
+    "patientMessages": 1,
+    "llmCalls": 1
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustNotInclude": ["cancel_booking", "reschedule_booking"]
+    },
+    "writes": {
+      "cancellations": 0,
+      "reschedules": 0
+    },
+    "escalation": {
+      "expected": true
+    },
+    "status": "escalated"
+  }
+}

@@ -86,14 +86,14 @@ Append-only: `UPDATE`/`DELETE`/`TRUNCATE` are blocked by DB triggers (migrations
   held ── confirm fails after calendar retries ──▶ released (→ expired) + escalate
 ```
 
-- `patient_confirmed`, `cancelled`, `done` exist in the enum but their transitions belong to US2/US3 (out of scope here).
+- `patient_confirmed`, `cancelled`, `done` exist in the enum but their transitions belong to US2/US3 (out of scope here). **Update 2026-10-08**: feature 006 adds `confirmed | patient_confirmed → cancelled` (patient cancel, or the old row of a reschedule, with `cancelled_at`) and a reschedule's new row (`held → confirmed` with `rescheduled_from`) — see [006 data model](../006-reschedule-cancel/data-model.md).
 - Transition guard: `held → confirmed` requires `expires_at > now` (else `HoldExpiredError`) **and** a written calendar event.
 
 ## Invariants (test targets)
 
 1. **No overbooking**: for every slot `T`, `holdSlot` (the sole writer) assigns active bookings (`status NOT IN ('cancelled','expired')`) to distinct seats in `[0, capacity(T))` under an advisory lock, so their count ≤ `capacity(T)`. The `(start_ts, seat)` partial unique index structurally prevents two active bookings from sharing a seat (proven by the lock-bypass test), but does **not** by itself enforce `seat < capacity` — that cap is the writer's responsibility (mandatory concurrency test; characterization test pins the gap). A fully DB-enforced per-resource cap is deferred to 003.
 2. `expires_at IS NOT NULL` ⇔ `status='held'`.
-3. `google_event_id IS NOT NULL` ⇒ `status IN ('confirmed','patient_confirmed','done')`.
+3. `google_event_id IS NOT NULL` ⇒ `status IN ('confirmed','patient_confirmed','done')`, or `cancelled` (006: a cancelled row keeps the id of the event it had, for the audit trail and a manual cleanup notice).
 4. Every state-changing row has a matching `audit_log` row committed in the same transaction.
 5. Offered slots satisfy: grid-aligned, within business hours, `start_ts ∈ [now+2h, now+30d]`, `free(T) > 0`.
 

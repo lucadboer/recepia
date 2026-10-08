@@ -55,3 +55,23 @@ export function lastHoldId(messages: LlmMessage[]): string {
   }
   return "MISSING-HOLD";
 }
+
+/** Extract the most recent bookingId find_my_booking returned (006). */
+export function lastBookingId(messages: LlmMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    for (const c of messages[i].content) {
+      if (c.type === "tool_result") {
+        try {
+          const parsed = JSON.parse(c.content) as {
+            bookingId?: string;
+            previousBookingId?: string;
+          };
+          if (parsed.bookingId && parsed.previousBookingId === undefined) return parsed.bookingId;
+        } catch {
+          // not JSON / no bookingId
+        }
+      }
+    }
+  }
+  return "MISSING-BOOKING";
+}

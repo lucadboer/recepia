@@ -13,3 +13,4 @@ the specs (`specs/*/spec.md`); these are the technical ones a reviewer would ask
 | [0006](0006-pooled-capacity.md) | Capacity is a pooled counter per slot; patients do not choose a dentist in the MVP |
 | [0007](0007-production-model-sonnet-5-5.md) | Production model `claude-sonnet-5-5` with the lowest thinking setting; reasoning blocks never persisted; refusals and truncated tool calls hand off to reception |
 | [0008](0008-telemetry-api-only-and-pii.md) | OpenTelemetry API in business code, SDK only at the process edge; keyed patient pseudonym, no content and no phones in logs or traces |
+| [0009](0009-reschedule-as-new-row.md) | A reschedule is a new booking row swapped in atomically (`rescheduled_from`, unique); cancel is database-first; the calendar is compensated, never trusted over Postgres |

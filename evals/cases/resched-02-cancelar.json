@@ -2,7 +2,6 @@
   "id": "resched-02-cancelar",
   "category": "reschedule_cancel",
   "title": "Cancelar consulta de amanhã",
-  "limitation": "Reschedule/cancel are out of scope today (SPEC.md US3): the expected outcome is a hand-off to reception. Revisit when the capability lands.",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -37,6 +36,15 @@
         "capacity": 2
       }
     ],
+    "bookings": [
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000122",
+        "status": "confirmed",
+        "name": "Carla Teste",
+        "type": "cleaning"
+      }
+    ],
     "consent": "opted_in"
   },
   "patient": {
@@ -45,15 +53,26 @@
   "turns": [
     {
       "text": "Preciso cancelar minha consulta de amanhã."
+    },
+    {
+      "text": "Sim, pode cancelar."
     }
   ],
   "llmScript": [
     [
       {
-        "tool": "escalate_to_human",
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "text": "Encontrei sua limpeza na ter, 16/06 às 09:00. Confirma o cancelamento?"
+      }
+    ],
+    [
+      {
+        "tool": "cancel_booking",
         "input": {
-          "reason": "cancel",
-          "context": "Paciente pede cancelamento"
+          "booking_id": "$lastBookingId"
         }
       },
       {
@@ -62,46 +81,58 @@
     ]
   ],
   "labels": {
-    "shouldEscalate": true,
-    "escalationReason": "cancel"
+    "shouldEscalate": false
   },
   "expect": {
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "escalate_to_human",
+          "name": "find_my_booking"
+        },
+        {
+          "name": "cancel_booking",
           "input": {
-            "reason": "cancel"
+            "booking_id": "$ownBookingId"
           }
         }
       ],
-      "mustNotInclude": ["hold_slot", "confirm_booking"]
+      "mustNotInclude": ["escalate_to_human"]
     },
     "writes": {
       "holds": 0,
       "bookings": 0,
       "calendarEvents": 0,
-      "escalations": 1
+      "escalations": 0,
+      "cancellations": 1,
+      "reschedules": 0,
+      "calendarDeletes": 1,
+      "receptionNotices": 0
     },
     "escalation": {
-      "expected": true,
-      "reasonIn": ["cancel"]
+      "expected": false
     },
-    "status": "escalated",
-    "patientMessages": 1,
-    "llmCalls": 1
+    "status": "completed",
+    "patientMessages": 2,
+    "llmCalls": 4
   },
   "liveExpect": {
     "toolCalls": {
-      "mustNotInclude": ["confirm_booking"]
+      "mustInclude": [
+        {
+          "name": "find_my_booking"
+        },
+        {
+          "name": "cancel_booking",
+          "input": {
+            "booking_id": "$ownBookingId"
+          }
+        }
+      ]
     },
     "writes": {
-      "bookings": 0,
-      "calendarEvents": 0
-    },
-    "escalation": {
-      "expected": true
-    },
-    "status": "escalated"
+      "cancellations": 1,
+      "reschedules": 0,
+      "receptionNotices": 0
+    }
   }
 }

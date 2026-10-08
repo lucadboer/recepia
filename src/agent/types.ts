@@ -34,6 +34,12 @@ export interface ConversationState {
   handoffNoticeAt: string | null; // ISO; last "a recepção vai continuar" notice (FR-211)
   promptVersion: string | null; // last system prompt version the model was given (FR-409)
   usage: ConversationUsage; // reset with the conversation; checked against the budget (005 FR-510)
+  /** Accepted inbound messages in this conversation; the clock of the confirmation gate (006 FR-603). */
+  turnSeq: number;
+  /** Bookings find_my_booking showed, with the turn they were FIRST shown in (006 FR-602/603). */
+  surfacedBookings: { bookingId: string; turn: number }[];
+  /** Holds hold_slot created, with their turn (a reschedule's new time, 006 FR-603). */
+  holdSeqs: { holdId: string; turn: number }[];
   version: number; // optimistic concurrency; 0 = never persisted (T240)
   updatedAt: Date;
 }

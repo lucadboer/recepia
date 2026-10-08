@@ -24,7 +24,7 @@ import type {
   LlmTurnResult,
   LlmUsage,
 } from "../../src/ports/llm-port";
-import { resetDb, seedConfirmed, seedHeld, seedOverride, seedRule } from "../../tests/helpers/db";
+import { resetDb, seedBooking, seedHeld, seedOverride, seedRule } from "../../tests/helpers/db";
 import type { Observations, ObservedToolCall } from "./assertions";
 import {
   type ConversationStatus,
@@ -42,6 +42,8 @@ export interface CaseContext {
   foreignPhone: string;
   /** Id of a seeded `held` booking belonging to another phone, if the seed has one. */
   otherConversationHoldId: string | null;
+  /** Id of a seeded confirmed booking belonging to another phone, if the seed has one (006). */
+  foreignBookingId: string | null;
 }
 
 export interface RunCaseOptions {
@@ -159,10 +161,21 @@ export async function seedCase(pool: Pool, c: EvalCase, deps: AgentDeps): Promis
   }
   const now = new Date(c.seed.now);
   let otherConversationHoldId: string | null = null;
+  let foreignBookingId: string | null = null;
   for (const [i, b] of (c.seed.bookings ?? []).entries()) {
     const seat = b.seat ?? i;
-    if (b.status === "confirmed") {
-      await seedConfirmed(pool, b.start, b.phone, seat);
+    if (b.status === "confirmed" || b.status === "patient_confirmed") {
+      const id = await seedBooking(pool, {
+        start: b.start,
+        phone: b.phone,
+        status: b.status,
+        seat,
+        ...(b.name ? { name: b.name } : {}),
+        ...(b.type
+          ? { type: b.type as "evaluation" | "cleaning" | "follow_up" | "consultation" }
+          : {}),
+      });
+      if (b.phone !== c.patient.phone && foreignBookingId === null) foreignBookingId = id;
     } else {
       await seedHeld(pool, b.start, b.phone, new Date(now.getTime() + HOLD_TTL_MS), seat);
       if (b.phone !== c.patient.phone && otherConversationHoldId === null) {
@@ -181,6 +194,7 @@ export async function seedCase(pool: Pool, c: EvalCase, deps: AgentDeps): Promis
     patientPhone: c.patient.phone,
     foreignPhone: FOREIGN_PHONE,
     otherConversationHoldId,
+    foreignBookingId,
   };
 }
 
@@ -302,6 +316,22 @@ async function collectObservations(
   const escalations = audit
     .filter((r) => r.action === "escalated" && (r.payload?.phone ?? phone) === phone)
     .map((r) => ({ reason: String(r.payload?.reason ?? "unspecified") }));
+  // 006: patient cancels (a reschedule's cancel of the old row is counted as the reschedule).
+  const cancellations = audit.filter(
+    (r) =>
+      r.action === "booking_cancelled" &&
+      r.booking_phone === phone &&
+      r.payload?.reason !== "rescheduled",
+  );
+  const reschedules = audit.filter(
+    (r) => r.action === "booking_rescheduled" && r.booking_phone === phone,
+  );
+  const { rows: noticeRows } = await pool.query(
+    "SELECT count(*)::int AS n FROM outbox_message WHERE kind = 'reception_notice'",
+  );
+  const { rows: ownRows } = await pool.query("SELECT id FROM booking WHERE patient_phone = $1", [
+    phone,
+  ]);
 
   // Consent in effect at each booking write, from the audit trail (append-only, ordered), and
   // writes that landed on another phone (the phone is injected from context, never from args).
@@ -312,10 +342,11 @@ async function collectObservations(
     if (r.payload?.phone === phone && r.action === "consent_recorded") consented = true;
     if (r.payload?.phone === phone && r.action === "consent_revoked") consented = false;
     if (r.action === "hold_created" && r.payload?.phone !== phone) foreignWrites++;
-    if (r.action === "booking_confirmed") {
+    if (r.action === "booking_confirmed" || r.action === "booking_rescheduled") {
       if (r.booking_phone !== phone) foreignWrites++;
       else if (!consented) writesWithoutConsent++;
     }
+    if (r.action === "booking_cancelled" && r.booking_phone !== phone) foreignWrites++;
   }
 
   const offeredSlots = [...new Set(offeredFromHistory(parts.llm, history))];
@@ -328,11 +359,16 @@ async function collectObservations(
       bookings: bookings.length,
       calendarEvents: parts.calendar.createdCount,
       escalations: escalations.length,
+      cancellations: cancellations.length,
+      reschedules: reschedules.length,
+      calendarDeletes: parts.calendar.deleted.length,
+      receptionNotices: noticeRows[0].n as number,
     },
     escalations,
     offeredSlots,
     heldStarts,
     ownHoldIds: holds.map((h) => h.entity_id).filter((id): id is string => id !== null),
+    ownBookingIds: ownRows.map((r) => r.id as string),
     writesWithoutConsent,
     status: (state?.status ?? "active") as ConversationStatus,
     messages: parts.messaging.sent.map((m) => ({ to: m.to, body: m.body })),

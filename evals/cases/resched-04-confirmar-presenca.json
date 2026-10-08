@@ -2,7 +2,7 @@
   "id": "resched-04-confirmar-presenca",
   "category": "reschedule_cancel",
   "title": "Confirmar presença em consulta já marcada",
-  "limitation": "Reschedule/cancel are out of scope today (SPEC.md US3): the expected outcome is a hand-off to reception. Revisit when the capability lands.",
+  "limitation": "Attendance confirmation arrives with feature 007 (appointment reminders, SPEC.md US2): until then the expected outcome is a hand-off to reception.",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [

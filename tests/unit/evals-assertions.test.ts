@@ -15,11 +15,21 @@ function obs(partial: Partial<Observations> = {}): Observations {
       { name: "hold_slot", input: { start: SLOT_A, type: "cleaning" }, ok: true },
       { name: "confirm_booking", input: { hold_id: "h1", patient_name: "Ana Teste" }, ok: true },
     ],
-    writes: { holds: 1, bookings: 1, calendarEvents: 1, escalations: 0 },
+    writes: {
+      holds: 1,
+      bookings: 1,
+      calendarEvents: 1,
+      escalations: 0,
+      cancellations: 0,
+      reschedules: 0,
+      calendarDeletes: 0,
+      receptionNotices: 0,
+    },
     escalations: [],
     offeredSlots: [SLOT_A, SLOT_B],
     heldStarts: [SLOT_A],
     ownHoldIds: ["h1"],
+    ownBookingIds: [],
     writesWithoutConsent: 0,
     status: "completed",
     messages: [{ to: "+5531900000101", body: "confirmada" }],
@@ -42,7 +52,12 @@ const happy: Expectation = {
     ],
     mustNotInclude: ["escalate_to_human"],
   },
-  writes: { holds: 1, bookings: 1, calendarEvents: 1, escalations: 0 },
+  writes: {
+    holds: 1,
+    bookings: 1,
+    calendarEvents: 1,
+    escalations: 0,
+  },
   escalation: { expected: false },
   noWriteWithoutConsent: true,
   noHallucinatedSlots: true,
@@ -141,7 +156,18 @@ describe("score — one assertion per expectation field", () => {
   });
 
   it("writes are exact counts, each reported separately", () => {
-    const o = obs({ writes: { holds: 2, bookings: 1, calendarEvents: 1, escalations: 0 } });
+    const o = obs({
+      writes: {
+        holds: 2,
+        bookings: 1,
+        calendarEvents: 1,
+        escalations: 0,
+        cancellations: 0,
+        reschedules: 0,
+        calendarDeletes: 0,
+        receptionNotices: 0,
+      },
+    });
     expect(failed(score(o, happy))).toEqual(["writes.holds"]);
   });
 
@@ -192,5 +218,39 @@ describe("score — one assertion per expectation field", () => {
       ],
     });
     expect(failed(score(o, { patientMessages: 1 }))).toEqual([]);
+  });
+});
+
+describe("006 — booking-lifecycle matchers and writes", () => {
+  it("$ownBookingId matches only the patient's bookings", () => {
+    const o = obs({ ownBookingIds: ["b-own"] });
+    expect(matchValue("b-own", "$ownBookingId", o)).toBe(true);
+    expect(matchValue("b-other", "$ownBookingId", o)).toBe(false);
+    expect(matchValue(undefined, "$ownBookingId", o)).toBe(false);
+  });
+
+  it("writes.cancellations / reschedules / calendarDeletes / receptionNotices are asserted exactly", () => {
+    const o = obs({
+      writes: {
+        holds: 0,
+        bookings: 0,
+        calendarEvents: 0,
+        escalations: 0,
+        cancellations: 1,
+        reschedules: 0,
+        calendarDeletes: 1,
+        receptionNotices: 1,
+      },
+    });
+    const r = score(o, {
+      writes: { cancellations: 1, reschedules: 0, calendarDeletes: 1, receptionNotices: 0 },
+    });
+    const byName = Object.fromEntries(r.map((a) => [a.name, a.pass]));
+    expect(byName).toMatchObject({
+      "writes.cancellations": true,
+      "writes.reschedules": true,
+      "writes.calendarDeletes": true,
+      "writes.receptionNotices": false,
+    });
   });
 });

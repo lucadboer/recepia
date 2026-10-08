@@ -109,4 +109,19 @@ describe("DbConversationStore — promptVersion (004 US3)", async () => {
     expect((await store.load("+55legacy"))?.promptVersion).toBeNull();
     expect(saved.version).toBe(1);
   });
+
+  it("reads rows written before 006 with an empty confirmation memory (turn 0, nothing shown)", async () => {
+    const store = new DbConversationStore(pool);
+    const now = new Date("2026-06-15T12:00:00Z");
+    const legacy = { ...emptyState("+55pre006", now) } as Record<string, unknown>;
+    delete legacy.turnSeq;
+    delete legacy.surfacedBookings;
+    delete legacy.holdSeqs;
+    await pool.query(
+      "INSERT INTO conversation_state (phone, state, version, updated_at) VALUES ($1, $2, 1, now())",
+      ["+55pre006", JSON.stringify(legacy)],
+    );
+    const loaded = await store.load("+55pre006");
+    expect(loaded).toMatchObject({ turnSeq: 0, surfacedBookings: [], holdSeqs: [] });
+  });
 });

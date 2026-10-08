@@ -46,8 +46,10 @@ describe("golden set — deterministic mode", () => {
     ]) {
       expect(categories.has(cat as never)).toBe(true);
     }
-    for (const c of cases.filter((x) => x.category === "reschedule_cancel"))
-      expect(c.limitation).toBeTruthy();
+    // 006 made cancel/reschedule real; only attendance confirmation is still a known limitation (007).
+    expect(
+      cases.filter((x) => x.category === "reschedule_cancel" && x.limitation).map((x) => x.id),
+    ).toEqual(["resched-04-confirmar-presenca"]);
   });
 
   it("passes every case and is exactly repeatable across two runs (SC-401)", async () => {

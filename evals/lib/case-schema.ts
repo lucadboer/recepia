@@ -5,6 +5,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { ROUTINE_TYPES } from "../../src/config";
 
 export const CATEGORIES = [
   "happy_path",
@@ -36,8 +37,13 @@ export const FICTITIOUS_NAMES = [
 ] as const;
 
 export const SCRIPT_PLACEHOLDER =
-  /^\$(offeredSlot\[\d+\]|lastHoldId|otherConversationHoldId|foreignPhone)$/;
-export const MATCHER_PLACEHOLDERS = ["$offeredSlot", "$ownHoldId", "$any"] as const;
+  /^\$(offeredSlot\[\d+\]|lastHoldId|lastBookingId|otherConversationHoldId|foreignBookingId|foreignPhone)$/;
+export const MATCHER_PLACEHOLDERS = [
+  "$offeredSlot",
+  "$ownHoldId",
+  "$ownBookingId",
+  "$any",
+] as const;
 
 export type Matcher =
   | string
@@ -56,9 +62,24 @@ export interface ExpectedCall {
 
 export type ConversationStatus = "active" | "escalated" | "completed";
 
+/** Agent writes a case can count (006 adds the booking-lifecycle ones). */
+export const WRITE_KEYS = [
+  "holds",
+  "bookings",
+  "calendarEvents",
+  "escalations",
+  "cancellations",
+  "reschedules",
+  "calendarDeletes",
+  "receptionNotices",
+] as const;
+export type WriteKey = (typeof WRITE_KEYS)[number];
+
+export type SeedBookingStatus = "confirmed" | "patient_confirmed" | "held";
+
 export interface Expectation {
   toolCalls?: { mustInclude?: ExpectedCall[]; mustNotInclude?: string[] };
-  writes?: { holds?: number; bookings?: number; calendarEvents?: number; escalations?: number };
+  writes?: Partial<Record<WriteKey, number>>;
   escalation?: { expected: boolean; reasonIn?: string[] };
   /** Default true: every booking write happened with opt-in recorded. */
   noWriteWithoutConsent?: boolean;
@@ -76,7 +97,14 @@ export interface CaseSeed {
   now: string;
   capacity: { weekday: number; start: string; end: string; capacity: number }[];
   overrides?: { date: string; start: string; end: string; capacity: number }[];
-  bookings?: { start: string; phone: string; status: "confirmed" | "held"; seat?: number }[];
+  bookings?: {
+    start: string;
+    phone: string;
+    status: SeedBookingStatus;
+    seat?: number;
+    name?: string;
+    type?: string;
+  }[];
   consent: "none" | "opted_in" | "opted_out";
 }
 
@@ -208,14 +236,22 @@ function seed(v: unknown): CaseSeed {
       ? undefined
       : arr(s.bookings, "seed.bookings").map((r, i) => {
           const p = `seed.bookings[${i}]`;
-          const o = obj(r, p, ["start", "phone", "status", "seat"]);
+          const o = obj(r, p, ["start", "phone", "status", "seat", "name", "type"]);
           const status = str(o.status, `${p}.status`);
-          if (status !== "confirmed" && status !== "held") fail(`${p}.status: confirmed | held`);
+          if (!["confirmed", "patient_confirmed", "held"].includes(status)) {
+            fail(`${p}.status: confirmed | patient_confirmed | held`);
+          }
+          const type = o.type === undefined ? undefined : str(o.type, `${p}.type`);
+          if (type !== undefined && !(ROUTINE_TYPES as readonly string[]).includes(type)) {
+            fail(`${p}.type: one of ${ROUTINE_TYPES.join(", ")}`);
+          }
           return {
             start: iso(o.start, `${p}.start`),
             phone: phone(o.phone, `${p}.phone`),
-            status: status as "confirmed" | "held",
+            status: status as SeedBookingStatus,
             seat: optInt(o.seat, `${p}.seat`),
+            ...(o.name === undefined ? {} : { name: str(o.name, `${p}.name`) }),
+            ...(type === undefined ? {} : { type }),
           };
         });
   const consent = str(s.consent, "seed.consent");
@@ -367,18 +403,13 @@ function expectation(v: unknown, path: string): Expectation {
     }
   }
   if (e.writes !== undefined) {
-    const w = obj(e.writes, `${path}.writes`, [
-      "holds",
-      "bookings",
-      "calendarEvents",
-      "escalations",
-    ]);
-    out.writes = {
-      holds: optInt(w.holds, `${path}.writes.holds`),
-      bookings: optInt(w.bookings, `${path}.writes.bookings`),
-      calendarEvents: optInt(w.calendarEvents, `${path}.writes.calendarEvents`),
-      escalations: optInt(w.escalations, `${path}.writes.escalations`),
-    };
+    const w = obj(e.writes, `${path}.writes`, [...WRITE_KEYS]);
+    const writes: Partial<Record<WriteKey, number>> = {};
+    for (const key of WRITE_KEYS) {
+      const n = optInt(w[key], `${path}.writes.${key}`);
+      if (n !== undefined) writes[key] = n;
+    }
+    out.writes = writes;
   }
   if (e.escalation !== undefined) {
     const es = obj(e.escalation, `${path}.escalation`, ["expected", "reasonIn"]);

@@ -13,6 +13,7 @@ const ctx: CaseContext = {
   patientPhone: "+5531900000101",
   foreignPhone: FOREIGN_PHONE,
   otherConversationHoldId: "hold-other",
+  foreignBookingId: "booking-other",
 };
 
 function makeCase(llmScript: unknown[][]): EvalCase {
@@ -224,5 +225,83 @@ describe("history readers", () => {
       },
     ];
     expect(lastAvailability(errored)).toEqual([]); // the LAST result was an error → nothing offered by it
+  });
+});
+
+describe("006 placeholders", () => {
+  const found: LlmMessage[] = [
+    { role: "user", content: [{ type: "text", text: "quero cancelar" }] },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tu_f", name: "find_my_booking", input: {} }],
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          toolUseId: "tu_f",
+          content: JSON.stringify({ bookingId: "b-own", start: "x", label: "y", type: "cleaning" }),
+        },
+      ],
+    },
+  ];
+
+  it("$lastBookingId is the booking find_my_booking showed; $foreignBookingId comes from the seed", async () => {
+    const llm = compileScript(
+      makeCase([
+        [
+          { tool: "cancel_booking", input: { booking_id: "$lastBookingId" } },
+          { tool: "cancel_booking", input: { booking_id: "$foreignBookingId" } },
+        ],
+      ]),
+      ctx,
+    );
+    llm.beginTurn(0);
+    expect((await llm.turn(input(found))).content[0]).toMatchObject({
+      input: { booking_id: "b-own" },
+    });
+    expect((await llm.turn(input(found))).content[0]).toMatchObject({
+      input: { booking_id: "booking-other" },
+    });
+  });
+
+  it("a reschedule result (it carries previousBookingId) is not mistaken for the shown booking", async () => {
+    const afterReschedule: LlmMessage[] = [
+      ...found,
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            toolUseId: "tu_r",
+            content: JSON.stringify({ bookingId: "b-new", previousBookingId: "b-own" }),
+          },
+        ],
+      },
+    ];
+    const llm = compileScript(
+      makeCase([[{ tool: "cancel_booking", input: { booking_id: "$lastBookingId" } }]]),
+      ctx,
+    );
+    llm.beginTurn(0);
+    expect((await llm.turn(input(afterReschedule))).content[0]).toMatchObject({
+      input: { booking_id: "b-own" },
+    });
+  });
+
+  it("fails loudly when no booking was shown yet or the seed has no foreign booking", async () => {
+    const llm = compileScript(
+      makeCase([[{ tool: "cancel_booking", input: { booking_id: "$lastBookingId" } }]]),
+      ctx,
+    );
+    llm.beginTurn(0);
+    await expect(llm.turn(input())).rejects.toBeInstanceOf(ScriptError);
+    const noForeign = compileScript(
+      makeCase([[{ tool: "cancel_booking", input: { booking_id: "$foreignBookingId" } }]]),
+      { ...ctx, foreignBookingId: null },
+    );
+    noForeign.beginTurn(0);
+    await expect(noForeign.turn(input())).rejects.toThrow(/foreignBookingId/);
   });
 });

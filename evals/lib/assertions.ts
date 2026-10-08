@@ -2,7 +2,14 @@
 // their arguments, writes, escalations, consent/hallucination invariants, final status.
 // Never over the model's wording.
 
-import type { ConversationStatus, Expectation, ExpectedCall, Matcher } from "./case-schema";
+import {
+  type ConversationStatus,
+  type Expectation,
+  type ExpectedCall,
+  type Matcher,
+  WRITE_KEYS,
+  type WriteKey,
+} from "./case-schema";
 
 export interface ObservedToolCall {
   name: string;
@@ -13,20 +20,22 @@ export interface ObservedToolCall {
 
 export interface Observations {
   toolCalls: ObservedToolCall[];
-  writes: { holds: number; bookings: number; calendarEvents: number; escalations: number };
+  writes: Record<WriteKey, number>;
   escalations: { reason: string }[];
   /** ISO starts returned by get_availability in this conversation. */
   offeredSlots: string[];
   /** ISO starts of holds created in this conversation. */
   heldStarts: string[];
   ownHoldIds: string[];
-  /** booking_confirmed writes that happened while the patient was not opted in. */
+  /** Ids of every booking that belongs to the patient's phone (seeded or written), 006. */
+  ownBookingIds: string[];
+  /** booking_confirmed / booking_rescheduled writes that happened while the patient was not opted in. */
   writesWithoutConsent: number;
   status: ConversationStatus;
   messages: { to: string; body: string }[];
   patientPhone: string;
   llmCalls: number;
-  /** Holds/bookings written for a phone other than the patient's (seeded rows excluded). */
+  /** Holds, bookings, cancels or reschedules written for another phone (seeded rows excluded). */
   foreignWrites: number;
 }
 
@@ -52,6 +61,8 @@ export function matchValue(actual: unknown, matcher: Matcher, obs: Observations)
   }
   if (matcher === "$ownHoldId")
     return typeof actual === "string" && obs.ownHoldIds.includes(actual);
+  if (matcher === "$ownBookingId")
+    return typeof actual === "string" && obs.ownBookingIds.includes(actual);
   if (typeof matcher === "object" && matcher !== null) {
     if ("$between" in matcher) {
       const t = typeof actual === "string" ? new Date(actual).getTime() : Number.NaN;
@@ -144,7 +155,7 @@ export function score(obs: Observations, expectation: Expectation): Assertion[] 
     });
   }
   if (expectation.writes) {
-    for (const key of ["holds", "bookings", "calendarEvents", "escalations"] as const) {
+    for (const key of WRITE_KEYS) {
       const want = expectation.writes[key];
       if (want === undefined) continue;
       const got = obs.writes[key];

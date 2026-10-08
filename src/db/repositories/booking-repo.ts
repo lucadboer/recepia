@@ -17,6 +17,8 @@ interface BookingRow {
   attended_by: string | null;
   created_via: "ai" | "human";
   consent_at: Date | null;
+  cancelled_at: Date | null;
+  rescheduled_from: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -35,6 +37,8 @@ export function rowToBooking(r: BookingRow): Booking {
     attendedBy: r.attended_by,
     createdVia: r.created_via,
     consentAt: r.consent_at,
+    cancelledAt: r.cancelled_at,
+    rescheduledFrom: r.rescheduled_from,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -131,22 +135,67 @@ export async function getById(q: Queryable, id: string): Promise<Booking | null>
   return rows[0] ? rowToBooking(rows[0]) : null;
 }
 
-/** Flip a still-held booking to confirmed. Returns null if it is no longer held (race/expiry). */
+/**
+ * Flip a still-held booking to confirmed. Returns null if it is no longer held (race/expiry).
+ * `rescheduledFrom` (006) records the booking this one replaces; the database allows that link
+ * only once per booking (`booking_rescheduled_from_uq`). `aliveAt` (006 review) refuses a hold
+ * whose TTL ran out during the calendar call even if no sweep has expired it yet.
+ */
 export async function confirmHeld(
   q: Queryable,
   id: string,
   patientName: string,
   eventId: string,
   consentAt: Date,
+  rescheduledFrom: string | null = null,
+  aliveAt: Date | null = null,
 ): Promise<Booking | null> {
   const { rows } = await q.query(
     `UPDATE booking
      SET status = 'confirmed', patient_name = $2, google_event_id = $3, consent_at = $4,
-         expires_at = NULL, updated_at = now()
-     WHERE id = $1 AND status = 'held'
+         expires_at = NULL, rescheduled_from = $5, updated_at = now()
+     WHERE id = $1 AND status = 'held' AND ($6::timestamptz IS NULL OR expires_at > $6)
      RETURNING *`,
-    [id, patientName, eventId, consentAt],
+    [id, patientName, eventId, consentAt, rescheduledFrom, aliveAt],
   );
+  return rows[0] ? rowToBooking(rows[0]) : null;
+}
+
+/** The patient's active bookings that have not started yet, earliest first (006 FR-601). */
+export async function findUpcomingForPhone(
+  q: Queryable,
+  phone: string,
+  now: Date,
+): Promise<Booking[]> {
+  const { rows } = await q.query(
+    `SELECT * FROM booking
+     WHERE patient_phone = $1 AND status IN ('confirmed','patient_confirmed') AND start_ts > $2
+     ORDER BY start_ts`,
+    [phone, now],
+  );
+  return rows.map(rowToBooking);
+}
+
+/** Row lock for a cancel/reschedule transaction (006). Null when the id does not exist. */
+export async function lockBookingForUpdate(q: PoolClient, id: string): Promise<Booking | null> {
+  const { rows } = await q.query("SELECT * FROM booking WHERE id = $1 FOR UPDATE", [id]);
+  return rows[0] ? rowToBooking(rows[0]) : null;
+}
+
+/** Cancel an active booking (frees its seat). Null when it is not active any more (006 FR-604). */
+export async function cancelActive(q: Queryable, id: string, now: Date): Promise<Booking | null> {
+  const { rows } = await q.query(
+    `UPDATE booking SET status = 'cancelled', cancelled_at = $2, updated_at = now()
+     WHERE id = $1 AND status IN ('confirmed','patient_confirmed')
+     RETURNING *`,
+    [id, now],
+  );
+  return rows[0] ? rowToBooking(rows[0]) : null;
+}
+
+/** The booking that replaced `id` through a reschedule, if any (006 FR-608 idempotency). */
+export async function findRescheduleOf(q: Queryable, id: string): Promise<Booking | null> {
+  const { rows } = await q.query("SELECT * FROM booking WHERE rescheduled_from = $1", [id]);
   return rows[0] ? rowToBooking(rows[0]) : null;
 }
 

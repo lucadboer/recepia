@@ -3,7 +3,11 @@ import type { Pool, PoolClient } from "../pool";
 
 type Queryable = Pool | PoolClient;
 
-export type OutboxKind = "booking_confirmation" | "escalation";
+export type OutboxKind =
+  | "booking_confirmation"
+  | "escalation"
+  | "booking_cancellation"
+  | "reception_notice";
 
 export type OutboxStatus = "pending" | "sent" | "failed" | "cancelled";
 
@@ -150,4 +154,28 @@ export async function markFailed(
     "UPDATE outbox_message SET status = 'failed', attempts = $2, last_error = $3 WHERE id = $1",
     [id, attempts, error],
   );
+}
+
+/**
+ * Cancel still-pending messages that a lifecycle change made wrong (006 review): the original
+ * booking's confirmation must never be delivered after its cancellation or reschedule. Returns the
+ * cancelled ids.
+ */
+export async function supersedePending(q: Queryable, dedupeKeys: string[]): Promise<string[]> {
+  if (dedupeKeys.length === 0) return [];
+  const { rows } = await q.query(
+    `UPDATE outbox_message SET status = 'cancelled', last_error = 'cancelled: superseded'
+     WHERE dedupe_key = ANY($1::text[]) AND status = 'pending'
+     RETURNING id`,
+    [dedupeKeys],
+  );
+  return rows.map((r) => r.id as string);
+}
+
+/** Delivery status of the message with this dedupe key, or null if none (006: cancel replays). */
+export async function messageStatus(q: Queryable, dedupeKey: string): Promise<OutboxStatus | null> {
+  const { rows } = await q.query("SELECT status FROM outbox_message WHERE dedupe_key = $1", [
+    dedupeKey,
+  ]);
+  return rows[0] ? (rows[0].status as OutboxStatus) : null;
 }

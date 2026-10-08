@@ -10,6 +10,14 @@ Rules: a new file (`v002.md`, …) for a change in instructions; an entry here f
 (the loader refuses to start without it); a baseline update in the same PR when the eval numbers
 move (feature 004).
 
+## v002 — 2026-10-08
+- Cancel and reschedule (feature 006, SPEC.md US3): start with `find_my_booking`, show the
+  appointment and ask; `cancel_booking` / `reschedule_booking` only after the patient confirms in a
+  later message (the registry enforces it structurally: `not_surfaced`, `confirmation_required`);
+  a reschedule goes through `get_availability` → `hold_slot` for the same appointment type and the
+  old appointment stands until it completes; none / several appointments or attendance
+  confirmation go to reception. One new style example (cancellation).
+
 ## v001 — 2026-10-06
 - Initial artifact: the static block moved verbatim from `src/agent/system-prompt.ts` (pilot copy
   accepted by the owner, T220/T221). Defense-in-depth wording only; the structural guarantees are

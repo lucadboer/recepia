@@ -1,0 +1,134 @@
+{
+  "id": "resched-05-cancelamento-tardio",
+  "category": "reschedule_cancel",
+  "title": "Cancelar no mesmo dia: recepção também é avisada",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "bookings": [
+      {
+        "start": "2026-06-15T20:00:00Z",
+        "phone": "+5531900000125",
+        "status": "confirmed",
+        "name": "Elisa Teste",
+        "type": "cleaning"
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000125"
+  },
+  "turns": [
+    {
+      "text": "Não vou conseguir ir hoje às 17h, pode cancelar?"
+    },
+    {
+      "text": "Isso, pode cancelar."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "text": "Encontrei sua limpeza hoje, 15/06 às 17:00. Confirma o cancelamento?"
+      }
+    ],
+    [
+      {
+        "tool": "cancel_booking",
+        "input": {
+          "booking_id": "$lastBookingId"
+        }
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "find_my_booking"
+        },
+        {
+          "name": "cancel_booking",
+          "input": {
+            "booking_id": "$ownBookingId"
+          }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0,
+      "cancellations": 1,
+      "reschedules": 0,
+      "calendarDeletes": 1,
+      "receptionNotices": 1
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 2,
+    "llmCalls": 4
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "cancel_booking",
+          "input": {
+            "booking_id": "$ownBookingId"
+          }
+        }
+      ]
+    },
+    "writes": {
+      "cancellations": 1,
+      "receptionNotices": 1
+    }
+  }
+}

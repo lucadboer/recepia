@@ -1,4 +1,3 @@
-import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config";
 import { appendAudit } from "../db/repositories/audit-repo";
 import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
@@ -7,7 +6,9 @@ import { isExpired } from "../domain/booking";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
 import type { Booking, Patient } from "../domain/types";
 import { confirmationMessagePt } from "../messages";
+import { deleteEventWithRetry, writeEventWithRetry } from "./booking-calendar";
 import { escalateToHuman } from "./escalate-to-human";
+import { requestCalendarCleanup } from "./reception-notices";
 
 const CONFIRMED_STATUSES = new Set(["confirmed", "patient_confirmed", "done"]);
 
@@ -22,10 +23,6 @@ export interface ConfirmResult {
    * `already_confirmed` = the booking was confirmed earlier and its confirmation already left.
    */
   outcome: ConfirmOutcome;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -62,23 +59,7 @@ export async function confirmBooking(
   }
 
   // Calendar write with short retry, outside any DB transaction.
-  let eventId: string | null = null;
-  for (let attempt = 1; attempt <= CALENDAR_MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await deps.calendar.createEvent({
-        idempotencyKey: existing.id,
-        start: existing.start,
-        end: existing.end,
-        title: `Consulta de rotina (${existing.appointmentType})`,
-        patientName: patient.name,
-        patientPhone: patient.phone,
-      });
-      eventId = res.eventId;
-      break;
-    } catch {
-      if (attempt < CALENDAR_MAX_ATTEMPTS) await sleep(CALENDAR_RETRY_BASE_MS * attempt);
-    }
-  }
+  const eventId = await writeEventWithRetry(deps, existing, patient);
 
   if (eventId === null) {
     const client = await deps.pool.connect();
@@ -114,7 +95,17 @@ export async function confirmBooking(
   let commitError: unknown = null;
   try {
     await client.query("BEGIN");
-    const flipped = await confirmHeld(client, existing.id, patient.name, eventId, now);
+    // The hold's TTL is re-checked with the clock at commit time: the calendar call may have
+    // outlasted it even if no sweep has expired the row yet (006 review).
+    const flipped = await confirmHeld(
+      client,
+      existing.id,
+      patient.name,
+      eventId,
+      now,
+      null,
+      deps.clock.now(),
+    );
     if (flipped) {
       const outboxId = await enqueueOutbox(client, {
         kind: "booking_confirmation",
@@ -162,8 +153,18 @@ export async function confirmBooking(
   }
 
   // True orphan: an event exists with no booking. Delete it, audit, escalate.
-  await deps.calendar.deleteEvent(existing.id).catch(() => {});
+  const deleted = await deleteEventWithRetry(deps, existing.id);
   const reason = commitError ? "commit_failed" : "hold_not_held";
+  if (!deleted) {
+    // Never claim a compensation that did not happen (006 review): reception removes it by hand.
+    await requestCalendarCleanup(deps, {
+      bookingId: existing.id,
+      phone: patient.phone,
+      start: existing.start,
+      eventId,
+      now,
+    });
+  }
   const orphanClient = await deps.pool.connect();
   try {
     await orphanClient.query("BEGIN");
@@ -172,7 +173,7 @@ export async function confirmBooking(
       entityId: existing.id,
       action: "calendar_orphan_compensated",
       actor: "system",
-      payload: { eventId, reason },
+      payload: { eventId, reason, deleted },
     });
     await orphanClient.query("COMMIT");
   } catch {
@@ -183,7 +184,11 @@ export async function confirmBooking(
   await escalateToHuman(deps, {
     reason: "calendar_orphan",
     phone: patient.phone,
-    context: `Evento da reserva ${existing.id} foi criado mas a confirmação falhou (${reason}); evento removido por compensação.`,
+    context: `Evento da reserva ${existing.id} foi criado mas a confirmação falhou (${reason}); ${
+      deleted
+        ? "evento removido por compensação"
+        : "o evento não pôde ser removido e a recepção recebeu um aviso para apagá-lo"
+    }.`,
   });
   throw flagEscalated(commitError instanceof Error ? commitError : new HoldExpiredError());
 }

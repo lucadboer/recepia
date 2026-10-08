@@ -22,6 +22,9 @@ export class DbConversationStore implements ConversationStorePort {
       ...parsed,
       promptVersion: parsed.promptVersion ?? null, // rows written before FR-409 lack the field
       usage: parsed.usage ?? emptyUsage(), // rows written before feature 005 lack the field
+      turnSeq: parsed.turnSeq ?? 0, // rows written before feature 006 lack these three
+      surfacedBookings: parsed.surfacedBookings ?? [],
+      holdSeqs: parsed.holdSeqs ?? [],
       version: rows[0].version as number,
       updatedAt: new Date(parsed.updatedAt),
     };

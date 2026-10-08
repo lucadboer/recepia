@@ -1,0 +1,148 @@
+{
+  "id": "resched-10-optout-remarcar-pede-consentimento",
+  "category": "reschedule_cancel",
+  "title": "Remarcar sem consentimento: a remarcação só acontece depois da autorização registrada",
+  "seed": {
+    "now": "2026-06-15T12:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "bookings": [
+      {
+        "start": "2026-06-18T12:00:00Z",
+        "phone": "+5531900000130",
+        "status": "confirmed",
+        "name": "João Teste",
+        "type": "cleaning"
+      }
+    ],
+    "consent": "opted_out"
+  },
+  "patient": {
+    "phone": "+5531900000130"
+  },
+  "turns": [
+    {
+      "text": "Quero mudar minha consulta de quinta para sexta às 09h."
+    },
+    {
+      "text": "Pode ser 09:00."
+    },
+    {
+      "text": "Sim, confirmo."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-19T12:00:00Z",
+          "to": "2026-06-19T15:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Sua limpeza está na qui, 18/06 às 09:00. Na sexta tenho 09:00. Pode ser?"
+      }
+    ],
+    [
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei sex, 19/06 às 09:00. Confirma?"
+      }
+    ],
+    [
+      {
+        "tool": "reschedule_booking",
+        "input": {
+          "booking_id": "$lastBookingId",
+          "hold_id": "$lastHoldId"
+        }
+      },
+      {
+        "text": "Para concluir, preciso da sua autorização para tratar seus dados. Você autoriza? (responda SIM)"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "find_my_booking"
+        },
+        {
+          "name": "hold_slot"
+        },
+        {
+          "name": "reschedule_booking"
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0,
+      "cancellations": 0,
+      "reschedules": 0,
+      "calendarDeletes": 0,
+      "receptionNotices": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "active",
+    "patientMessages": 3,
+    "llmCalls": 7
+  },
+  "liveExpect": {
+    "writes": {
+      "cancellations": 0,
+      "bookings": 0
+    }
+  }
+}
