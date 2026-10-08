@@ -68,9 +68,9 @@ jobs:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
       TELEMETRY_HASH_KEY: ci-fixed-key-fictitious-data-only # stable pseudonyms across runs
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -94,7 +94,7 @@ jobs:
           fi
       - name: Upload report (90 days)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: evals-fake-${{ github.sha }}
           path: evals/reports/fake/latest.*
@@ -128,7 +128,7 @@ jobs:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Does this pull request touch the versioned prompt?
@@ -147,9 +147,9 @@ jobs:
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "::warning::ANTHROPIC_API_KEY is not configured as a repository secret — the live evaluation is SKIPPED (this is not a pass)"
           fi
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -176,7 +176,7 @@ jobs:
           fi
       - name: Upload report (90 days)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: evals-live-${{ github.run_id }}
           path: evals/reports/latest.*
