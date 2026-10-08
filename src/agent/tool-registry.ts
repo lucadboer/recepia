@@ -11,6 +11,7 @@ import { hasEscalatedFlag } from "../domain/errors";
 import { slotLabelPt, toLocalIso } from "../domain/time";
 import { errorTypeOf } from "../telemetry/tracing";
 import { cancelBooking } from "../tools/cancel-booking";
+import { confirmAttendance } from "../tools/confirm-attendance";
 import { confirmBooking } from "../tools/confirm-booking";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { findMyBooking } from "../tools/find-my-booking";
@@ -308,6 +309,37 @@ export async function dispatchTool(
           }),
           false,
           { patientNotified: r.outcome === "rescheduled" },
+        );
+      }
+
+      case TOOL_NAMES.confirmAttendance: {
+        const bookingId = asString(input.booking_id);
+        if (!bookingId) {
+          return result(state, "Argumentos inválidos para confirm_attendance.", true, INVALID);
+        }
+        // GUARDRAIL 4 only: the booking must be the one shown in this conversation (the reminder's,
+        // pre-recorded by the orchestrator, or find_my_booking's). Confirming attendance is not
+        // destructive, so no confirmation round trip (007 FR-704).
+        if (surfacedTurnOf(state, bookingId) === null) {
+          return result(
+            state,
+            "Essa consulta não foi encontrada nesta conversa; use find_my_booking primeiro.",
+            true,
+            { rejectedBy: "not_surfaced" },
+          );
+        }
+        const { booking, outcome } = await confirmAttendance(deps, bookingId, phone, "model");
+        state = markCompleted(state, now);
+        return result(
+          state,
+          JSON.stringify({
+            bookingId: booking.id,
+            status: booking.status,
+            start: toLocalIso(booking.start),
+            label: slotLabelPt(booking.start),
+          }),
+          false,
+          { patientNotified: outcome === "confirmed" },
         );
       }
 

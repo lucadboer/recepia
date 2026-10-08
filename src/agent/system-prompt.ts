@@ -3,7 +3,9 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ROUTINE_TYPES } from "../config";
-import { formatLocalPt, formatOffset, toLocalParts } from "../domain/time";
+import { formatLocalPt, formatOffset, slotLabelPt, toLocalParts } from "../domain/time";
+import type { Booking } from "../domain/types";
+import { typeLabelPt } from "../messages";
 import { toolDefs } from "./tool-schemas";
 
 export interface PromptContext {
@@ -11,6 +13,11 @@ export interface PromptContext {
   now: Date;
   /** IANA zone of the clinic, e.g. "America/Sao_Paulo" (FR-213). */
   timezone: string;
+  /**
+   * One more dynamic line after the dated one (007: the appointment a reminder is about). It comes
+   * last, so the cached static prefix stays byte-identical.
+   */
+  context?: string;
 }
 
 /** The versioned static block of the system prompt (FR-409). */
@@ -114,8 +121,22 @@ export function buildSystemPrompt(
 ): SystemPrompt {
   const stable = renderStatic(artifact.template);
   return {
-    text: `${stable}\n\n${datedLine(ctx)}`,
+    text: `${stable}\n\n${datedLine(ctx)}${ctx.context ? `\n${ctx.context}` : ""}`,
     version: artifact.version,
     cacheablePrefixLength: stable.length,
   };
+}
+
+/**
+ * The reminder context line (007 FR-704): which appointment the patient is answering about. The
+ * reminder was sent by a job, so it is not in the conversation history; this line is the model's
+ * only view of it. Several pending reminders are never auto-resolved.
+ */
+export function reminderContextLine(pending: Booking[]): string | undefined {
+  if (pending.length === 0) return undefined;
+  if (pending.length > 1) {
+    return `Contexto: o paciente tem ${pending.length} consultas com lembrete pendente; não confirme nenhuma por conta própria — use find_my_booking (várias consultas vão para a recepção).`;
+  }
+  const b = pending[0];
+  return `Contexto: o paciente está respondendo ao lembrete da consulta de ${typeLabelPt(b.appointmentType)} em ${slotLabelPt(b.start)} (bookingId ${b.id}). Se ele confirmar presença, use confirm_attendance; para cancelar ou remarcar, siga o fluxo de cancelar/remarcar.`;
 }

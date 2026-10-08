@@ -5,6 +5,8 @@ import {
   DEFAULT_AGENT_BUDGET_USD,
   isRoutineType,
 } from "../config";
+import { hasLiveHold } from "../db/repositories/booking-repo";
+import { pendingRemindersForPhone } from "../db/repositories/reminder-repo";
 import type { Deps } from "../deps";
 import { ConversationConflictError } from "../domain/errors";
 import { dispatchOutbox } from "../jobs/dispatch-outbox";
@@ -21,6 +23,7 @@ import {
   setAttributes,
   withSpan,
 } from "../telemetry/tracing";
+import { confirmAttendance } from "../tools/confirm-attendance";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
 import {
@@ -31,9 +34,11 @@ import {
   emptyState,
   isAutoReleaseDue,
   isProcessed,
+  markCompleted,
   markEscalated,
   markHandoffNoticed,
   markProcessed,
+  recordSurfacedBooking,
   resetConversation,
   setAwaitingConsent,
   setPromptVersion,
@@ -41,10 +46,10 @@ import {
   startTurn,
   stripThinking,
 } from "./conversation";
-import { classifyIntent, isAffirmative } from "./intent";
+import { classifyIntent, isAffirmative, isStrictAffirmative } from "./intent";
 import { reply } from "./reply";
 import { summarizeHistory } from "./summary";
-import { buildSystemPrompt } from "./system-prompt";
+import { buildSystemPrompt, reminderContextLine } from "./system-prompt";
 import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas";
 import { triage } from "./triage";
@@ -240,9 +245,32 @@ async function runTurn(
   }
 
   // 2b. Capture opt-in when we were awaiting it.
+  let consentCaptured = false;
   if (state.awaitingConsent && isAffirmative(msg.text) && !(await hasConsent(deps, msg.phone))) {
     await recordConsent(deps, msg.phone);
     state = setAwaitingConsent(state, false, now);
+    consentCaptured = true;
+  }
+
+  // 2c. Reply to an appointment reminder (007). A plain "sim" to the only pending reminder
+  //     confirms attendance deterministically — no model call (FR-703). Anything else reaches the
+  //     model with that appointment in context and counted as shown in this turn (FR-704).
+  const pendingReminders = await pendingRemindersForPhone(deps.pool, msg.phone, now);
+  if (
+    pendingReminders.length === 1 &&
+    !consentCaptured &&
+    !state.awaitingConsent &&
+    isStrictAffirmative(msg.text) &&
+    !(await hasLiveHold(deps.pool, state.activeHoldIds, now))
+  ) {
+    await confirmAttendance(deps, pendingReminders[0].id, msg.phone, "fast_path");
+    state = markCompleted(state, now);
+    state = await persist(state);
+    await flushOutbox(); // the attendance reply committed with the change is the only message
+    return { status: "replied" };
+  }
+  if (pendingReminders.length === 1) {
+    state = recordSurfacedBooking(state, pendingReminders[0].id, now);
   }
 
   // 3. Deterministic escalation triage — BEFORE the LLM ("escalar na dúvida").
@@ -263,7 +291,11 @@ async function runTurn(
 
   // 4. Bounded LLM tool-use loop. The prompt version in effect is recorded on every call
   //    (FR-409) and, through the tools' audit payloads, on every model-initiated write.
-  const prompt = buildSystemPrompt({ now, timezone: CLINIC_TIMEZONE });
+  const prompt = buildSystemPrompt({
+    now,
+    timezone: CLINIC_TIMEZONE,
+    context: reminderContextLine(pendingReminders),
+  });
   // Every write the model initiates from here on is audited with this prompt version.
   const turnDeps: AgentDeps = { ...deps, promptVersion: prompt.version };
   state = setPromptVersion(state, prompt.version, now);

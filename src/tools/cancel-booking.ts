@@ -1,6 +1,7 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { cancelActive, lockBookingForUpdate } from "../db/repositories/booking-repo";
 import { enqueueOutbox } from "../db/repositories/outbox-repo";
+import { cancelQueuedReminder } from "../db/repositories/reminder-repo";
 import type { Deps } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
@@ -53,6 +54,8 @@ export async function cancelBooking(
     const flipped = await cancelActive(client, row.id, now);
     if (!flipped) throw new BookingNotChangeableError(); // unreachable under the row lock
     late = isLateChange(row.start, now);
+    // A released booking is never reminded (007 FR-702): drop a still-queued reminder.
+    await cancelQueuedReminder(client, row.id);
     const outboxId = await enqueueOutbox(client, {
       kind: "booking_cancellation",
       toPhone: phone,

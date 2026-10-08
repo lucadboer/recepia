@@ -10,6 +10,11 @@ const TYPE_LABELS_PT: Record<AppointmentType, string> = {
   consultation: "consulta",
 };
 
+/** pt-BR name of an appointment type (also used in the model's reminder context, 007). */
+export function typeLabelPt(type: AppointmentType): string {
+  return TYPE_LABELS_PT[type];
+}
+
 /** Render an instant in clinic-local time (IANA zone, DST-aware) as DD/MM/YYYY às HH:MM. */
 export function formatSlotPt(start: Date): string {
   const { date, time } = formatLocalPt(start);

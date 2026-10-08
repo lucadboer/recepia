@@ -7,6 +7,7 @@ import {
   releaseHeld,
 } from "../db/repositories/booking-repo";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
+import { cancelQueuedReminder } from "../db/repositories/reminder-repo";
 import type { Deps } from "../deps";
 import { isExpired } from "../domain/booking";
 import {
@@ -111,6 +112,7 @@ export async function rescheduleBooking(
       : null;
     const released = confirmed ? await cancelActive(client, old.id, now) : null;
     if (confirmed && released) {
+      await cancelQueuedReminder(client, old.id); // the old booking is never reminded (007)
       const outboxId = await enqueueOutbox(client, {
         kind: "booking_confirmation",
         toPhone: phone,

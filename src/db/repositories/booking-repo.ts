@@ -221,3 +221,13 @@ export async function expireDueHolds(q: Queryable, now: Date): Promise<string[]>
   );
   return rows.map((r) => r.id as string);
 }
+
+/** True when one of `ids` is a hold still alive (a booking in progress in this conversation, 007). */
+export async function hasLiveHold(q: Queryable, ids: string[], now: Date): Promise<boolean> {
+  if (ids.length === 0) return false;
+  const { rows } = await q.query(
+    "SELECT 1 FROM booking WHERE id::text = ANY($1::text[]) AND status = 'held' AND expires_at > $2 LIMIT 1",
+    [ids, now],
+  );
+  return rows.length > 0;
+}
