@@ -19,7 +19,7 @@ export async function releaseConversation(pool: Pool, phone: string, now: Date):
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await store.save(resetConversation(current, now), client);
+    await store.save(resetConversation(current, now), { client });
     await appendAudit(client, {
       entity: "conversation",
       entityId: null,

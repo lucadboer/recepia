@@ -185,7 +185,7 @@ describe("createInboundWorker", () => {
       pollMs: 10,
       leaseMs: 3_000, // a heartbeat every second
       handler: async (_m, lease) => {
-        await lease.fence(pool); // still ours
+        await lease.fence(); // still ours
         await pool.query(
           "UPDATE inbound_message SET locked_by = 'w2/other-claim' WHERE provider_message_id = 'lost-1'",
         );
@@ -193,7 +193,7 @@ describe("createInboundWorker", () => {
           lease.signal.addEventListener("abort", () => resolve(), { once: true }),
         );
         aborted = true;
-        fenced = await lease.fence(pool).catch((err: unknown) => err);
+        fenced = await lease.fence().catch((err: unknown) => err);
         throw fenced;
       },
     });

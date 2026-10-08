@@ -24,7 +24,11 @@ import {
 } from "../domain/errors.ts";
 import type { Booking } from "../domain/types.ts";
 import { rescheduledMessagePt } from "../messages.ts";
-import { deleteEventWithRetry, writeEventWithRetry } from "./booking-calendar.ts";
+import {
+  deleteEventWithRetry,
+  removeEventOrNotify,
+  writeEventWithRetry,
+} from "./booking-calendar.ts";
 import { escalateToHuman } from "./escalate-to-human.ts";
 import {
   enqueueLateChangeNotice,
@@ -81,7 +85,7 @@ export async function rescheduleBooking(
   if (ACTIVE.has(hold.status) && hold.rescheduledFrom === old.id) {
     // Idempotent repeat: finish the old event's removal (a lost COMMIT acknowledgment must not
     // leave it behind — review), and while the message is still queued the outbox owns it.
-    await removeOldEvent(deps, old, phone, now);
+    await removeEventOrNotify(deps, old, phone, now);
     const queued = await confirmationStatus(deps.pool, hold.id);
     const outcome = queued === "pending" ? "rescheduled" : "already_rescheduled";
     return { booking: hold, previous: old, outcome, late: false };
@@ -191,7 +195,7 @@ export async function rescheduleBooking(
   }
 
   if (swapped && cancelled) {
-    await removeOldEvent(deps, cancelled, phone, now);
+    await removeEventOrNotify(deps, cancelled, phone, now);
     return { booking: swapped, previous: cancelled, outcome: "rescheduled", late };
   }
 
@@ -202,7 +206,7 @@ export async function rescheduleBooking(
     if (current.rescheduledFrom === old.id) {
       // Our commit landed with a lost acknowledgment: the swap is real.
       const previous = (await getById(deps.pool, old.id)) ?? old;
-      await removeOldEvent(deps, previous, phone, now);
+      await removeEventOrNotify(deps, previous, phone, now);
       return { booking: current, previous, outcome: "rescheduled", late };
     }
     // Another operation confirmed this time as a booking of its own: keep its event, keep the
@@ -240,17 +244,6 @@ export async function rescheduleBooking(
     }. A consulta original continua marcada.`,
   });
   throw flagEscalated(failure instanceof Error ? failure : new HoldExpiredError());
-}
-
-async function removeOldEvent(deps: Deps, old: Booking, phone: string, now: Date): Promise<void> {
-  if (await deleteEventWithRetry(deps, old.id)) return;
-  await requestCalendarCleanup(deps, {
-    bookingId: old.id,
-    phone,
-    start: old.start,
-    eventId: old.googleEventId,
-    now,
-  });
 }
 
 async function releaseHold(deps: Deps, holdId: string, reason: string): Promise<void> {

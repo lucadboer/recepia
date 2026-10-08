@@ -6,6 +6,12 @@ export interface InboundMessage {
   text: string;
   providerMessageId: string; // for idempotency
   receivedAt?: Date;
+  /**
+   * Id of the `inbound_message` row this message was stored as (008 durable queue) — unique across
+   * providers, unlike `providerMessageId`. Final writes are stamped with it and the replay guard
+   * keys on it; outside the queue (tests, evals) the provider id stands in.
+   */
+  inboundMessageId?: string;
 }
 
 /** Token usage and estimated cost accumulated over one conversation (005 FR-509). */

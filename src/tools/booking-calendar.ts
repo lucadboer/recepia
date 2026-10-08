@@ -4,6 +4,7 @@
 import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config.ts";
 import type { Deps } from "../deps.ts";
 import type { Booking } from "../domain/types.ts";
+import { requestCalendarCleanup } from "./reception-notices.ts";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,4 +48,25 @@ export async function deleteEventWithRetry(deps: Deps, bookingId: string): Promi
     }
   }
   return false;
+}
+
+/**
+ * Remove a cancelled booking's event after the cancellation committed (cancel, reschedule, and a
+ * replay that finishes either one, 008); one that keeps failing becomes a reception notice.
+ * Idempotent: an event already gone counts as removed, and the notice is deduplicated.
+ */
+export async function removeEventOrNotify(
+  deps: Deps,
+  booking: Pick<Booking, "id" | "start" | "googleEventId">,
+  phone: string,
+  now: Date,
+): Promise<void> {
+  if (await deleteEventWithRetry(deps, booking.id)) return;
+  await requestCalendarCleanup(deps, {
+    bookingId: booking.id,
+    phone,
+    start: booking.start,
+    eventId: booking.googleEventId,
+    now,
+  });
 }

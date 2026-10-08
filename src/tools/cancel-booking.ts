@@ -10,12 +10,8 @@ import { type Deps, fencedStamp } from "../deps.ts";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors.ts";
 import type { Booking } from "../domain/types.ts";
 import { cancellationMessagePt } from "../messages.ts";
-import { deleteEventWithRetry } from "./booking-calendar.ts";
-import {
-  enqueueLateChangeNotice,
-  isLateChange,
-  requestCalendarCleanup,
-} from "./reception-notices.ts";
+import { removeEventOrNotify } from "./booking-calendar.ts";
+import { enqueueLateChangeNotice, isLateChange } from "./reception-notices.ts";
 
 export type CancelOutcome = "cancelled" | "already_cancelled";
 
@@ -117,7 +113,7 @@ export async function cancelBooking(
     client.release();
   }
 
-  await removeEvent(deps, booking, phone, now);
+  await removeEventOrNotify(deps, booking, phone, now);
   if (fresh) return { booking, outcome: "cancelled", late };
   // Replay: while the cancellation message is still queued, the outbox owns the reply (as in
   // confirm and reschedule) — the caller must not add a second message.
@@ -127,16 +123,4 @@ export async function cancelBooking(
     outcome: queued === "pending" ? "cancelled" : "already_cancelled",
     late: false,
   };
-}
-
-/** Remove the cancelled booking's event; one that keeps failing becomes a reception notice. */
-async function removeEvent(deps: Deps, booking: Booking, phone: string, now: Date): Promise<void> {
-  if (await deleteEventWithRetry(deps, booking.id)) return;
-  await requestCalendarCleanup(deps, {
-    bookingId: booking.id,
-    phone,
-    start: booking.start,
-    eventId: booking.googleEventId,
-    now,
-  });
 }

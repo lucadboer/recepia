@@ -5,14 +5,14 @@ import {
   DEFAULT_AGENT_BUDGET_USD,
   isRoutineType,
 } from "../config.ts";
-import { committedTurnWrites } from "../db/repositories/audit-repo.ts";
-import { hasLiveHold } from "../db/repositories/booking-repo.ts";
+import { type CommittedWrite, committedTurnWrites } from "../db/repositories/audit-repo.ts";
+import { getById, hasLiveHold } from "../db/repositories/booking-repo.ts";
 import { pendingRemindersForPhone } from "../db/repositories/reminder-repo.ts";
 import type { Deps } from "../deps.ts";
 import { ConversationConflictError } from "../domain/errors.ts";
 import { dispatchOutbox } from "../jobs/dispatch-outbox.ts";
 import { costUsdFailClosed, loadPricing, type PricingTable } from "../llm/pricing.ts";
-import type { ConversationStorePort } from "../ports/conversation-store-port.ts";
+import type { ConversationStorePort, SaveOptions } from "../ports/conversation-store-port.ts";
 import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port.ts";
 import { log } from "../telemetry/logger.ts";
 import { maskPhone, messageRef, patientRef } from "../telemetry/pseudonym.ts";
@@ -24,6 +24,7 @@ import {
   setAttributes,
   withSpan,
 } from "../telemetry/tracing.ts";
+import { removeEventOrNotify } from "../tools/booking-calendar.ts";
 import { confirmAttendance } from "../tools/confirm-attendance.ts";
 import { escalateToHuman } from "../tools/escalate-to-human.ts";
 import { hasConsent, recordConsent, recordOptOut } from "./consent.ts";
@@ -174,6 +175,24 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   );
 }
 
+/**
+ * A cancel or a reschedule removes the cancelled booking's calendar event after its commit; a turn
+ * that died in between left the event behind (008 review). The replay finishes that removal —
+ * idempotent, and a delete that keeps failing still becomes a reception notice.
+ */
+async function finishCalendarCleanup(
+  deps: AgentDeps,
+  committed: CommittedWrite[],
+  phone: string,
+  now: Date,
+): Promise<void> {
+  for (const w of committed) {
+    if (w.action !== "booking_cancelled" || !w.entityId) continue;
+    const cancelled = await getById(deps.pool, w.entityId);
+    if (cancelled?.status === "cancelled") await removeEventOrNotify(deps, cancelled, phone, now);
+  }
+}
+
 async function runTurn(
   deps: AgentDeps,
   msg: InboundMessage,
@@ -201,11 +220,12 @@ async function runTurn(
   // ConversationConflictError and the turn fails loudly (no retry, no patient message).
   // Provider reasoning blocks are replayed only within this turn and never persisted (004 R1):
   // the history is edited between inbound turns, which would invalidate their signatures.
+  // A turn that lost its message to another worker saves nothing (008 fencing): the store checks
+  // the lease inside the save's own transaction.
+  const lease = deps.lease;
+  const saveOpts: SaveOptions = lease ? { fence: (tx) => lease.fence(tx) } : {};
   const persist = async (s: ConversationState): Promise<ConversationState> => {
-    // A turn that lost its message to another worker saves nothing (008 fencing); the version
-    // compare-and-swap still settles a race with a save already under way.
-    await deps.lease?.fence(deps.pool);
-    const saved = await deps.conversations.save(stripThinking(boundState(s, now)));
+    const saved = await deps.conversations.save(stripThinking(boundState(s, now)), saveOpts);
     seen.conversationStatus = saved.status;
     seen.conversationCostUsd = saved.usage.costUsd;
     return saved;
@@ -224,15 +244,18 @@ async function runTurn(
   const loaded = state; // before this message touches it (see recordSpendOnFailure)
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
-  // Every write of this turn carries the message that caused it (008 replay guard).
-  const msgDeps: AgentDeps = { ...deps, inboundMessageId: msg.providerMessageId };
+  // Every write of this turn carries the message that caused it (008 replay guard): the durable
+  // queue's id, unique across providers (the provider id outside the queue).
+  const turnKey = msg.inboundMessageId ?? msg.providerMessageId;
+  const msgDeps: AgentDeps = { ...deps, inboundMessageId: turnKey };
   // 1b. Replay guard (found by the chaos test): the durable queue re-runs a message whose worker
   //     died after the turn's tools committed but before this state was saved. If that turn
   //     already produced a final write, running it again would duplicate it (a second booking, a
   //     second hand-off): finish the message instead — the outbox still delivers what it committed
   //     — and leave the conversation as that turn would have saved it (a hand-off stays handed off).
-  const committed = await committedTurnWrites(deps.pool, msg.providerMessageId);
+  const committed = await committedTurnWrites(deps.pool, turnKey);
   if (committed.length > 0) {
+    await finishCalendarCleanup(deps, committed, msg.phone, now);
     state = applyCommittedTurn(markProcessed(state, msg.providerMessageId, now), committed, now);
     state = await persist(state);
     await flushOutbox();
@@ -388,13 +411,9 @@ async function runTurn(
    * could spend past the budget (005 FR-510). Best effort: a concurrent save wins.
    */
   const recordSpendOnFailure = async (err: unknown): Promise<never> => {
-    if (
-      state.usage.calls > loaded.usage.calls &&
-      !(err instanceof ConversationConflictError) &&
-      !deps.lease?.signal.aborted // the message's new holder owns the state now (008)
-    ) {
+    if (state.usage.calls > loaded.usage.calls && !(err instanceof ConversationConflictError)) {
       await deps.conversations
-        .save(boundState({ ...loaded, usage: state.usage, updatedAt: now }, now))
+        .save(boundState({ ...loaded, usage: state.usage, updatedAt: now }, now), saveOpts)
         .catch(() => {});
     }
     throw err;
@@ -434,7 +453,7 @@ async function runTurn(
     }
     iterations++;
     // Still this worker's message? A turn that lost it stops before paying for another call (008).
-    await deps.lease?.fence(deps.pool);
+    await deps.lease?.fence();
     const turn = await callModel({
       system: prompt.text,
       systemCacheablePrefix: prompt.cacheablePrefixLength,
@@ -482,7 +501,7 @@ async function runTurn(
       }
       // A turn that lost its message to another worker runs no tool (008): this check spares the
       // external effects (calendar), the write transactions re-check under a row lock.
-      await deps.lease?.fence(deps.pool);
+      await deps.lease?.fence();
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
       // A reschedule writes a new booking with the patient's data, so it needs consent too (006

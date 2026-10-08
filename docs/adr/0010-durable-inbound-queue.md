@@ -22,18 +22,22 @@ one process.
   A worker that died is replaced after the lease.
 - **Fencing** (review): a worker whose lease expired may still be running its turn when the message
   is reclaimed. A heartbeat that finds the message taken over aborts the turn's signal; the turn
-  re-checks the lease before each model call, each tool and the state save; and every final write
-  checks it inside its own transaction with `SELECT … FOR SHARE` on the message row. A takeover's
+  re-checks the lease before each model call and each tool; and every write of the turn — final
+  writes, consent changes and the conversation save — checks it inside its own transaction with
+  `SELECT … FOR SHARE` on the message row. A takeover's
   claim skips locked rows, so it cannot start until such a write has committed — and then the
   replay guard sees the write. A stale turn's calendar event is compensated as any orphan.
 - **Flood guard under a per-phone lock**: the count of a phone's unfinished rows and the insert run
   under `pg_advisory_xact_lock`, so concurrent deliveries cannot pass the limit together.
 - **Retries** with jittered backoff (2 s … 10 min); the 5th failure marks the row dead, audits it
-  and hands the patient to reception in one transaction.
-- **Replay guard** (found by the chaos test): every final write's audit row carries the inbound
-  message id; a reclaimed message whose turn already committed a final write is finished without
-  running the model again, and the conversation gets the status those writes imply (a hand-off
-  stays with reception, a booking finishes it), as the original turn would have saved it.
+  and hands the patient to reception — notice and handed-off conversation state — in one
+  transaction.
+- **Replay guard** (found by the chaos test): every final write's audit row carries the
+  `inbound_message` id (unique across providers, unlike the provider's message id); a reclaimed
+  message whose turn already committed a final write is finished without running the model again:
+  the calendar removal a cancel or reschedule does after its commit is completed, and the
+  conversation gets the status those writes imply (a hand-off stays with reception, a booking
+  finishes it), as the original turn would have saved it.
 - Hand-rolled on Postgres (owner decision), the same pattern as the outbox (ADR 0004).
 
 ## Consequences

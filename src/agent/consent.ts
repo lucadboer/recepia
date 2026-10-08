@@ -37,6 +37,8 @@ async function writeConsent(
   const client = await deps.pool.connect();
   try {
     await client.query("BEGIN");
+    // A turn that lost its message to another worker must not override the patient's choice (008).
+    await deps.lease?.fence(client);
     await insertConsent(client, phone, state, source);
     await appendAudit(client, {
       entity: "consent",

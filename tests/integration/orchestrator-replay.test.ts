@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeConversationStore } from "../../src/adapters/fakes/fake-conversation-store";
 import { FakeLLM, finalTurn, toolUse, toolUseTurn } from "../../src/adapters/fakes/fake-llm";
 import { recordConsent } from "../../src/agent/consent";
@@ -8,7 +9,10 @@ import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { ConversationState } from "../../src/agent/types";
 import type { Pool, PoolClient } from "../../src/db/pool";
 import { committedTurnWrites } from "../../src/db/repositories/audit-repo";
-import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
+import { getById } from "../../src/db/repositories/booking-repo";
+import { confirmBooking } from "../../src/tools/confirm-booking";
+import { holdSlot } from "../../src/tools/hold-slot";
+import { AGENT_NOW, DAY_END, lastBookingId, lastHoldId, makeAgent } from "../helpers/agent";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
 
 // 008, found by the chaos test (seed 17): a turn whose booking committed but whose conversation
@@ -40,6 +44,26 @@ class DyingStore extends FakeConversationStore {
       throw new Error("process killed before the state was saved");
     }
     return super.save(state);
+  }
+}
+
+/** The process dies while removing a calendar event: the first delete never returns. */
+class HangingDeleteCalendar extends FakeCalendar {
+  hung = false;
+  override async deleteEvent(idempotencyKey: string): Promise<void> {
+    if (!this.hung) {
+      this.hung = true;
+      return new Promise<void>(() => {});
+    }
+    return super.deleteEvent(idempotencyKey);
+  }
+}
+
+async function until(cond: () => Promise<boolean>, ms = 5_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > deadline) throw new Error("timed out waiting");
+    await new Promise((r) => setTimeout(r, 10));
   }
 }
 
@@ -156,5 +180,74 @@ describe("replaying a message whose turn already committed (at-least-once delive
     } finally {
       client.release();
     }
+  });
+
+  it("a replayed cancel finishes removing the calendar event the crash left behind", async () => {
+    const calendar = new HangingDeleteCalendar();
+    const h = makeAgent(pool, new FakeLLM([]));
+    h.deps.calendar = calendar;
+    await recordConsent(h.deps, PHONE);
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    const { booking } = await confirmBooking(h.deps, hold.id, { phone: PHONE, name: "Ana Teste" });
+    expect(calendar.events.has(booking.id)).toBe(true);
+
+    h.deps.llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.findBooking, {})),
+      finalTurn("Encontrei sua limpeza. Confirma o cancelamento?"),
+    ]);
+    await handleInbound(h.deps, {
+      phone: PHONE,
+      text: "quero cancelar",
+      providerMessageId: "RC-1",
+    });
+    const msg = { phone: PHONE, text: "sim", providerMessageId: "RC-2" };
+    h.deps.llm = new FakeLLM([
+      (i) =>
+        toolUseTurn(toolUse(TOOL_NAMES.cancelBooking, { booking_id: lastBookingId(i.messages) })),
+      finalTurn("Cancelado!"),
+    ]);
+    // The process dies after the cancellation committed, while removing the calendar event.
+    void handleInbound(h.deps, msg);
+    await until(
+      async () => calendar.hung && (await getById(pool, booking.id))?.status === "cancelled",
+    );
+    expect(calendar.events.has(booking.id)).toBe(true);
+
+    h.deps.llm = new FakeLLM([]); // the replay must not reach the model
+    expect((await handleInbound(h.deps, msg)).status).toBe("noop");
+    expect(calendar.events.has(booking.id)).toBe(false);
+    expect(await countAudit(pool, "booking_cancelled")).toBe(1);
+  });
+
+  it("keys on the durable inbound message, not the provider's id (two providers may reuse one)", async () => {
+    const h = makeAgent(pool, bookingLlm());
+    await recordConsent(h.deps, PHONE);
+    await handleInbound(h.deps, {
+      phone: PHONE,
+      text: "quero marcar uma limpeza",
+      providerMessageId: "SAME-ID",
+      inboundMessageId: "101",
+    });
+    const { rows } = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = 'booking_confirmed'",
+    );
+    expect(rows[0].payload).toMatchObject({ inboundMessageId: "101" });
+
+    // Another patient's message, from the other provider, with the same provider id.
+    const llm = new FakeLLM([finalTurn("Olá! Como posso ajudar?")]);
+    h.deps.llm = llm;
+    const other = await handleInbound(h.deps, {
+      phone: "+5531900000872",
+      text: "oi",
+      providerMessageId: "SAME-ID",
+      inboundMessageId: "102",
+    });
+    expect(other.status).toBe("replied");
+    expect(llm.callCount).toBe(1);
+    expect((await h.conversations.load("+5531900000872"))?.lastConfirmedBookingId).toBeNull();
   });
 });

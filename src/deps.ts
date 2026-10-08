@@ -18,9 +18,10 @@ export interface Deps {
    */
   promptVersion?: string;
   /**
-   * Provider id of the patient message whose turn is running (008). Stamped on every final write's
-   * audit payload so a re-run of the same message (at-least-once delivery after a crash) can tell
-   * the turn already committed and must not run again.
+   * The durable inbound message whose turn is running (008: its `inbound_message` id; the provider
+   * id outside the queue). Stamped on every final write's audit payload so a re-run of the same
+   * message (at-least-once delivery after a crash) can tell the turn already committed and must not
+   * run again.
    */
   inboundMessageId?: string;
   /** The worker's claim on that message (008). Absent outside the durable queue (tests, evals). */
@@ -35,11 +36,11 @@ export interface TurnLease {
   /** Aborted, with a LeaseLostError, once a heartbeat finds the message taken over. */
   readonly signal: AbortSignal;
   /**
-   * Throws LeaseLostError unless this turn still owns its message. Inside a write transaction it
-   * also locks the message row until that transaction ends, so a takeover waits for the write to
-   * commit — and then the replay guard sees it.
+   * Throws LeaseLostError unless this turn still owns its message. Given a write transaction's
+   * client it also locks the message row until that transaction ends, so a takeover waits for the
+   * write to commit — and then the replay guard sees it. Without one it is a plain check.
    */
-  fence(q: Pool | PoolClient): Promise<void>;
+  fence(tx?: PoolClient): Promise<void>;
 }
 
 /** Audit-payload fields that tie a write to its turn: prompt version and inbound message (008). */

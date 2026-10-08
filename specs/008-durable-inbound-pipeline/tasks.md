@@ -44,3 +44,8 @@
 > message is signalled by the heartbeat and every final write is fenced on the lease inside its
 > transaction (`leaseHeld … FOR SHARE`, `orchestrator-lease.test.ts`); flood admission is
 > serialized per phone; the replay lookup repeats its partial index predicate.
+>
+> Second Codex pass, all fixed with tests: the conversation save and the consent writes are fenced
+> inside their own transactions (`ConversationStorePort.save(state, { fence })`); a replayed
+> cancel/reschedule finishes removing the calendar event; the dead letter persists the handed-off
+> conversation state; final writes are stamped with the `inbound_message` id, not the provider's.
