@@ -68,7 +68,7 @@ jobs:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
       TELEMETRY_HASH_KEY: ci-fixed-key-fictitious-data-only # stable pseudonyms across runs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -128,7 +128,7 @@ jobs:
       DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Does this pull request touch the versioned prompt?
