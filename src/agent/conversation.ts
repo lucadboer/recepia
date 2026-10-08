@@ -167,6 +167,26 @@ export function markEscalated(s: ConversationState, now: Date): ConversationStat
   return { ...s, status: "escalated", escalatedAt: now.toISOString(), updatedAt: now };
 }
 
+/**
+ * A replayed message whose turn already committed (008 replay guard): give the conversation the
+ * status those writes imply, as the original turn would have saved it — handed off if it
+ * escalated, finished (with the booking) if it booked or rescheduled, finished if it cancelled or
+ * confirmed attendance.
+ */
+export function applyCommittedTurn(
+  s: ConversationState,
+  committed: { action: string; entityId: string | null }[],
+  now: Date,
+): ConversationState {
+  if (committed.length === 0) return s;
+  if (committed.some((w) => w.action === "escalated")) return markEscalated(s, now);
+  const booked = committed.find(
+    (w) => (w.action === "booking_confirmed" || w.action === "booking_rescheduled") && w.entityId,
+  );
+  if (booked?.entityId) return recordConfirmed(s, booked.entityId, now);
+  return markCompleted(s, now);
+}
+
 // ---------------------------------------------------------------------------
 // Handed-off state (FR-211) and completed-reset (FR-212) — T237.
 // ---------------------------------------------------------------------------

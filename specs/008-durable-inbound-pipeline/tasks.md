@@ -37,4 +37,10 @@
 - [x] T814 Retention purges finished inbound rows after 90 days (extend `retention.test.ts`)
 - [x] T815 [P] ADR 0010 (durable queue: lease + FIFO), update ADR 0005, `docs/observability.md`, README (guarantees, architecture, roadmap), CLAUDE.md
 - [x] T816 Gates: lint, typecheck, `test:coverage`, `evals:fake`, `evals:readme --check`, perf smoke, chaos run
-- [ ] T817 Codex review (xhigh) + self-review; fix all findings; tick this file
+- [x] T817 Codex review (xhigh) + self-review; fix all findings; tick this file
+
+> Codex review (xhigh) findings, all fixed with tests: a replayed escalation now restores the
+> hand-off (`applyCommittedTurn`); every claim has its own lease token; a turn that lost its
+> message is signalled by the heartbeat and every final write is fenced on the lease inside its
+> transaction (`leaseHeld … FOR SHARE`, `orchestrator-lease.test.ts`); flood admission is
+> serialized per phone; the replay lookup repeats its partial index predicate.

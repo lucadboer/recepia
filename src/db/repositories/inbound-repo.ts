@@ -3,6 +3,7 @@
 // FIFO / one-in-flight condition so a patient's messages are handled in order, one at a time,
 // across any number of workers.
 
+import { randomUUID } from "node:crypto";
 import type { InboundMessage } from "../../agent/types.ts";
 import { escalationMessagePt } from "../../messages.ts";
 import { currentTraceparent } from "../../telemetry/tracing.ts";
@@ -23,6 +24,12 @@ export interface InboundRow {
   receivedAt: Date;
   attempts: number;
   traceContext: string | null;
+  /**
+   * This claim's lease token (a fencing token): `<workerId>/<uuid>`, new on every claim, so an
+   * earlier attempt — even from another slot of the same worker — can never renew, finish or
+   * write for a claim it no longer holds.
+   */
+  lease: string;
 }
 
 function toRow(r: Record<string, unknown>): InboundRow {
@@ -35,6 +42,7 @@ function toRow(r: Record<string, unknown>): InboundRow {
     receivedAt: new Date(r.received_at as string),
     attempts: r.attempts as number,
     traceContext: (r.trace_context as string | null) ?? null,
+    lease: r.locked_by as string,
   };
 }
 
@@ -42,6 +50,8 @@ function toRow(r: Record<string, unknown>): InboundRow {
  * Store one verified message (call it in the webhook's transaction, before acknowledging).
  * `duplicate` = this provider id was stored before (redelivery); `dropped` = the phone already has
  * `maxPending` unfinished messages (flood guard, kept for the audit trail, never processed).
+ * The count and the insert run under a per-phone transaction lock, so concurrent deliveries for
+ * one phone are admitted one at a time and never pass the limit together.
  */
 export async function insertInbound(
   client: PoolClient,
@@ -50,6 +60,9 @@ export async function insertInbound(
   now: Date,
   maxPending: number,
 ): Promise<"inserted" | "duplicate" | "dropped"> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", [
+    `inbound:${msg.phone}`,
+  ]);
   const { rows: open } = await client.query(
     "SELECT count(*)::int AS n FROM inbound_message WHERE phone = $1 AND status IN ('pending','processing')",
     [msg.phone],
@@ -80,6 +93,7 @@ export async function insertInbound(
  * Claim the next message a worker may run: pending and due, or processing with an expired lease;
  * the OLDEST unfinished message of its phone; and no live lease on another message of that phone.
  * One statement, SKIP LOCKED: concurrent workers never take the same row nor two rows of a phone.
+ * Each claim gets a fresh lease token (see `InboundRow.lease`).
  */
 export async function claimNext(
   q: Queryable,
@@ -105,23 +119,38 @@ export async function claimNext(
        LIMIT 1
        FOR UPDATE SKIP LOCKED)
      RETURNING *`,
-    [now, workerId, new Date(now.getTime() + leaseMs)],
+    [now, `${workerId}/${randomUUID()}`, new Date(now.getTime() + leaseMs)],
   );
   return rows[0] ? toRow(rows[0]) : null;
 }
 
-/** Extend the holder's lease while its turn runs. False = the lease was taken over. */
+/**
+ * True while `lease` still holds the message. Inside a write transaction it also locks the row
+ * (FOR SHARE) until that transaction ends, so a takeover — whose claim skips locked rows — cannot
+ * start until the write has committed, and then the replay guard sees it.
+ */
+export async function leaseHeld(q: Queryable, id: string, lease: string): Promise<boolean> {
+  const { rows } = await q.query(
+    `SELECT 1 FROM inbound_message
+     WHERE id = $1 AND locked_by = $2 AND status = 'processing'
+     FOR SHARE`,
+    [id, lease],
+  );
+  return rows.length > 0;
+}
+
+/** Extend the holder's lease while its turn runs. False = the message was taken over. */
 export async function heartbeat(
   q: Queryable,
   id: string,
-  workerId: string,
+  lease: string,
   now: Date,
   leaseMs: number,
 ): Promise<boolean> {
   const { rowCount } = await q.query(
     `UPDATE inbound_message SET locked_until = $3
      WHERE id = $1 AND locked_by = $2 AND status = 'processing'`,
-    [id, workerId, new Date(now.getTime() + leaseMs)],
+    [id, lease, new Date(now.getTime() + leaseMs)],
   );
   return (rowCount ?? 0) > 0;
 }
@@ -130,14 +159,14 @@ export async function heartbeat(
 export async function markDone(
   q: Queryable,
   id: string,
-  workerId: string,
+  lease: string,
   now: Date,
 ): Promise<boolean> {
   const { rowCount } = await q.query(
     `UPDATE inbound_message
      SET status = 'done', body = NULL, processed_at = $3, locked_by = NULL, locked_until = NULL
      WHERE id = $1 AND locked_by = $2 AND status = 'processing'`,
-    [id, workerId, now],
+    [id, lease, now],
   );
   return (rowCount ?? 0) > 0;
 }
@@ -146,7 +175,7 @@ export async function markDone(
 export async function markRetry(
   q: Queryable,
   id: string,
-  workerId: string,
+  lease: string,
   nextAt: Date,
   errorType: string,
 ): Promise<boolean> {
@@ -154,7 +183,7 @@ export async function markRetry(
     `UPDATE inbound_message
      SET status = 'pending', next_attempt_at = $3, last_error = $4, locked_by = NULL, locked_until = NULL
      WHERE id = $1 AND locked_by = $2 AND status = 'processing'`,
-    [id, workerId, nextAt, errorType],
+    [id, lease, nextAt, errorType],
   );
   return (rowCount ?? 0) > 0;
 }
@@ -166,7 +195,7 @@ export async function markRetry(
 export async function markDead(
   pool: Pool,
   id: string,
-  workerId: string,
+  lease: string,
   now: Date,
   errorType: string,
   receptionPhone: string,
@@ -180,7 +209,7 @@ export async function markDead(
            locked_by = NULL, locked_until = NULL
        WHERE id = $1 AND locked_by = $2 AND status = 'processing'
        RETURNING phone, provider, attempts`,
-      [id, workerId, now, errorType],
+      [id, lease, now, errorType],
     );
     if (!rows[0]) {
       await client.query("ROLLBACK");

@@ -3,9 +3,11 @@ import { FakeConversationStore } from "../../src/adapters/fakes/fake-conversatio
 import { FakeLLM, finalTurn, toolUse, toolUseTurn } from "../../src/adapters/fakes/fake-llm";
 import { recordConsent } from "../../src/agent/consent";
 import { handleInbound } from "../../src/agent/orchestrator";
+import { reply } from "../../src/agent/reply";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { ConversationState } from "../../src/agent/types";
-import type { Pool } from "../../src/db/pool";
+import type { Pool, PoolClient } from "../../src/db/pool";
+import { committedTurnWrites } from "../../src/db/repositories/audit-repo";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
 
@@ -79,7 +81,12 @@ describe("replaying a message whose turn already committed (at-least-once delive
       "SELECT count(*)::int AS n FROM booking WHERE status = 'confirmed'",
     );
     expect(rows[0].n).toBe(1);
-    expect((await store.load(PHONE))?.processedInboundIds).toContain("REPLAY-1");
+    // The conversation ends as the original turn would have saved it (a booking finishes it).
+    const saved = await store.load(PHONE);
+    expect(saved?.processedInboundIds).toContain("REPLAY-1");
+    expect(saved?.status).toBe("completed");
+    const booked = await pool.query("SELECT id FROM booking WHERE status = 'confirmed'");
+    expect(saved?.lastConfirmedBookingId).toBe(booked.rows[0].id);
     // The patient still gets the confirmation the first run committed to the outbox.
     expect(
       h.messaging.sent
@@ -103,13 +110,51 @@ describe("replaying a message whose turn already committed (at-least-once delive
     expect(rows[0].payload).toMatchObject({ inboundMessageId: "STAMP-1" });
   });
 
-  it("a replay of a message that only escalated does not notify reception twice", async () => {
+  it("a replay of a message that escalated restores the hand-off: reception keeps the conversation", async () => {
     const h = makeAgent(pool, new FakeLLM([]));
     const store = new DyingStore();
     h.deps.conversations = store;
     const msg = { phone: PHONE, text: "estou com muita dor", providerMessageId: "REPLAY-2" };
     await expect(handleInbound(h.deps, msg)).rejects.toThrow(/killed/);
-    await handleInbound(h.deps, msg);
+
+    const replay = await handleInbound(h.deps, msg);
+    expect(replay.status).toBe("escalated");
+    expect((await store.load(PHONE))?.status).toBe("escalated");
+    expect(await countAudit(pool, "escalated")).toBe(1); // reception is not notified twice
+    // The first run died before telling the patient; the replay does, once.
+    expect(h.messaging.sent.filter((m) => m.to === PHONE).map((m) => m.body)).toEqual([
+      reply.escalatedToReception(),
+    ]);
+    // The next message stays with reception: no model call (the script is empty), no new hand-off.
+    const next = await handleInbound(h.deps, {
+      phone: PHONE,
+      text: "alguém aí?",
+      providerMessageId: "REPLAY-3",
+    });
+    expect(next.status).toBe("handed_off");
     expect(await countAudit(pool, "escalated")).toBe(1);
+  });
+
+  it("the replay lookup is served by its partial index", async () => {
+    const client = await pool.connect();
+    try {
+      const seen: { text: string; values: unknown[] }[] = [];
+      const spy = {
+        query: (text: string, values: unknown[]) => {
+          seen.push({ text, values });
+          return client.query(text, values);
+        },
+      };
+      await committedTurnWrites(spy as unknown as PoolClient, "ANY-MESSAGE");
+      await client.query("BEGIN");
+      await client.query("SET LOCAL enable_seqscan = off");
+      const plan = await client.query(`EXPLAIN ${seen[0].text}`, seen[0].values);
+      await client.query("ROLLBACK");
+      expect(plan.rows.map((r) => r["QUERY PLAN"]).join("\n")).toContain(
+        "audit_log_inbound_message_idx",
+      );
+    } finally {
+      client.release();
+    }
   });
 });

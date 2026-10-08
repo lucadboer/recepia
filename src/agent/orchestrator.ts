@@ -5,7 +5,7 @@ import {
   DEFAULT_AGENT_BUDGET_USD,
   isRoutineType,
 } from "../config.ts";
-import { messageAlreadyCommitted } from "../db/repositories/audit-repo.ts";
+import { committedTurnWrites } from "../db/repositories/audit-repo.ts";
 import { hasLiveHold } from "../db/repositories/booking-repo.ts";
 import { pendingRemindersForPhone } from "../db/repositories/reminder-repo.ts";
 import type { Deps } from "../deps.ts";
@@ -31,6 +31,7 @@ import {
   addUsage,
   appendMessage,
   appendUserText,
+  applyCommittedTurn,
   boundState,
   emptyState,
   isAutoReleaseDue,
@@ -201,6 +202,9 @@ async function runTurn(
   // Provider reasoning blocks are replayed only within this turn and never persisted (004 R1):
   // the history is edited between inbound turns, which would invalidate their signatures.
   const persist = async (s: ConversationState): Promise<ConversationState> => {
+    // A turn that lost its message to another worker saves nothing (008 fencing); the version
+    // compare-and-swap still settles a race with a save already under way.
+    await deps.lease?.fence(deps.pool);
     const saved = await deps.conversations.save(stripThinking(boundState(s, now)));
     seen.conversationStatus = saved.status;
     seen.conversationCostUsd = saved.usage.costUsd;
@@ -225,12 +229,19 @@ async function runTurn(
   // 1b. Replay guard (found by the chaos test): the durable queue re-runs a message whose worker
   //     died after the turn's tools committed but before this state was saved. If that turn
   //     already produced a final write, running it again would duplicate it (a second booking, a
-  //     second hand-off): finish the message instead — the outbox still delivers what it committed.
-  if (await messageAlreadyCommitted(deps.pool, msg.providerMessageId)) {
-    state = markProcessed(state, msg.providerMessageId, now);
+  //     second hand-off): finish the message instead — the outbox still delivers what it committed
+  //     — and leave the conversation as that turn would have saved it (a hand-off stays handed off).
+  const committed = await committedTurnWrites(deps.pool, msg.providerMessageId);
+  if (committed.length > 0) {
+    state = applyCommittedTurn(markProcessed(state, msg.providerMessageId, now), committed, now);
     state = await persist(state);
     await flushOutbox();
-    return { status: "noop" };
+    if (state.status !== "escalated") return { status: "noop" };
+    // The hand-off reply goes out after the save the crash prevented, so the patient has not had
+    // it — unless a message that turn committed (a confirmation) owns the reply (T227).
+    if (committed.some((w) => w.action !== "escalated")) return { status: "escalated" };
+    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    return { status: "escalated", reply: reply.escalatedToReception() };
   }
   state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
   state = appendUserText(state, msg.text, now);
@@ -377,7 +388,11 @@ async function runTurn(
    * could spend past the budget (005 FR-510). Best effort: a concurrent save wins.
    */
   const recordSpendOnFailure = async (err: unknown): Promise<never> => {
-    if (state.usage.calls > loaded.usage.calls && !(err instanceof ConversationConflictError)) {
+    if (
+      state.usage.calls > loaded.usage.calls &&
+      !(err instanceof ConversationConflictError) &&
+      !deps.lease?.signal.aborted // the message's new holder owns the state now (008)
+    ) {
       await deps.conversations
         .save(boundState({ ...loaded, usage: state.usage, updatedAt: now }, now))
         .catch(() => {});
@@ -418,6 +433,8 @@ async function runTurn(
       );
     }
     iterations++;
+    // Still this worker's message? A turn that lost it stops before paying for another call (008).
+    await deps.lease?.fence(deps.pool);
     const turn = await callModel({
       system: prompt.text,
       systemCacheablePrefix: prompt.cacheablePrefixLength,
@@ -463,6 +480,9 @@ async function runTurn(
           rejectedBy: "after_handoff",
         };
       }
+      // A turn that lost its message to another worker runs no tool (008): this check spares the
+      // external effects (calendar), the write transactions re-check under a row lock.
+      await deps.lease?.fence(deps.pool);
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
       // A reschedule writes a new booking with the patient's data, so it needs consent too (006

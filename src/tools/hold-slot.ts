@@ -7,7 +7,7 @@ import {
   reclaimExpiredHoldsForSlot,
 } from "../db/repositories/booking-repo.ts";
 import { loadOverrides, loadRules } from "../db/repositories/capacity-repo.ts";
-import { type Deps, turnStamp } from "../deps.ts";
+import { type Deps, fencedStamp } from "../deps.ts";
 import { toHold } from "../domain/booking.ts";
 import { capacityFor } from "../domain/capacity.ts";
 import { OutOfScopeError, SlotOutOfWindowError, SlotUnavailableError } from "../domain/errors.ts";
@@ -105,6 +105,7 @@ export async function holdSlot(deps: Deps, slot: SlotRequest, patient: PatientRe
       expiresAt,
       seat,
     });
+    const stamp = await fencedStamp(client, deps);
     await appendAudit(client, {
       entity: "booking",
       entityId: booking.id,
@@ -115,7 +116,7 @@ export async function holdSlot(deps: Deps, slot: SlotRequest, patient: PatientRe
         phone: patient.phone,
         type: slot.type,
         seat,
-        ...turnStamp(deps),
+        ...stamp,
       },
     });
     await client.query("COMMIT");
