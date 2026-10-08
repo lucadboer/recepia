@@ -1,6 +1,6 @@
-import { SHUTDOWN_TIMEOUT_MS } from "../config";
-import { type JobHandle, stopJobs } from "../jobs/scheduler";
-import { log as defaultLog } from "../telemetry/logger";
+import { SHUTDOWN_TIMEOUT_MS } from "../config.ts";
+import { type JobHandle, stopJobs } from "../jobs/scheduler.ts";
+import { log as defaultLog } from "../telemetry/logger.ts";
 
 /** Anything that can wait (bounded) for the work it already started — the inbound worker (008). */
 export interface Drainable {

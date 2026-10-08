@@ -2,11 +2,11 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROUTINE_TYPES } from "../config";
-import { formatLocalPt, formatOffset, slotLabelPt, toLocalParts } from "../domain/time";
-import type { Booking } from "../domain/types";
-import { typeLabelPt } from "../messages";
-import { toolDefs } from "./tool-schemas";
+import { ROUTINE_TYPES } from "../config.ts";
+import { formatLocalPt, formatOffset, slotLabelPt, toLocalParts } from "../domain/time.ts";
+import type { Booking } from "../domain/types.ts";
+import { typeLabelPt } from "../messages.ts";
+import { toolDefs } from "./tool-schemas.ts";
 
 export interface PromptContext {
   /** The instant the turn is being processed (from the injected Clock, never Date.now()). */

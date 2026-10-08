@@ -4,18 +4,18 @@ import {
   CLINIC_TIMEZONE,
   DEFAULT_AGENT_BUDGET_USD,
   isRoutineType,
-} from "../config";
-import { messageAlreadyCommitted } from "../db/repositories/audit-repo";
-import { hasLiveHold } from "../db/repositories/booking-repo";
-import { pendingRemindersForPhone } from "../db/repositories/reminder-repo";
-import type { Deps } from "../deps";
-import { ConversationConflictError } from "../domain/errors";
-import { dispatchOutbox } from "../jobs/dispatch-outbox";
-import { costUsdFailClosed, loadPricing, type PricingTable } from "../llm/pricing";
-import type { ConversationStorePort } from "../ports/conversation-store-port";
-import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
-import { log } from "../telemetry/logger";
-import { maskPhone, messageRef, patientRef } from "../telemetry/pseudonym";
+} from "../config.ts";
+import { messageAlreadyCommitted } from "../db/repositories/audit-repo.ts";
+import { hasLiveHold } from "../db/repositories/booking-repo.ts";
+import { pendingRemindersForPhone } from "../db/repositories/reminder-repo.ts";
+import type { Deps } from "../deps.ts";
+import { ConversationConflictError } from "../domain/errors.ts";
+import { dispatchOutbox } from "../jobs/dispatch-outbox.ts";
+import { costUsdFailClosed, loadPricing, type PricingTable } from "../llm/pricing.ts";
+import type { ConversationStorePort } from "../ports/conversation-store-port.ts";
+import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port.ts";
+import { log } from "../telemetry/logger.ts";
+import { maskPhone, messageRef, patientRef } from "../telemetry/pseudonym.ts";
 import {
   ATTR,
   type MaybeAttributes,
@@ -23,10 +23,10 @@ import {
   SPAN,
   setAttributes,
   withSpan,
-} from "../telemetry/tracing";
-import { confirmAttendance } from "../tools/confirm-attendance";
-import { escalateToHuman } from "../tools/escalate-to-human";
-import { hasConsent, recordConsent, recordOptOut } from "./consent";
+} from "../telemetry/tracing.ts";
+import { confirmAttendance } from "../tools/confirm-attendance.ts";
+import { escalateToHuman } from "../tools/escalate-to-human.ts";
+import { hasConsent, recordConsent, recordOptOut } from "./consent.ts";
 import {
   addUsage,
   appendMessage,
@@ -46,15 +46,15 @@ import {
   shouldSendHandoffNotice,
   startTurn,
   stripThinking,
-} from "./conversation";
-import { classifyIntent, isAffirmative, isStrictAffirmative } from "./intent";
-import { reply } from "./reply";
-import { summarizeHistory } from "./summary";
-import { buildSystemPrompt, reminderContextLine } from "./system-prompt";
-import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry";
-import { TOOL_NAMES, toolDefs } from "./tool-schemas";
-import { triage } from "./triage";
-import type { ConversationState, InboundMessage, LoopResult } from "./types";
+} from "./conversation.ts";
+import { classifyIntent, isAffirmative, isStrictAffirmative } from "./intent.ts";
+import { reply } from "./reply.ts";
+import { summarizeHistory } from "./summary.ts";
+import { buildSystemPrompt, reminderContextLine } from "./system-prompt.ts";
+import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry.ts";
+import { TOOL_NAMES, toolDefs } from "./tool-schemas.ts";
+import { triage } from "./triage.ts";
+import type { ConversationState, InboundMessage, LoopResult } from "./types.ts";
 
 /** Dependencies for the conversational layer: the deterministic Deps + the LLM and conversation store. */
 export interface AgentDeps extends Deps {

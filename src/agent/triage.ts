@@ -2,7 +2,7 @@
 // runs BEFORE the LLM. Accent-insensitive keyword/regex over the constitution's
 // trigger categories. Conservative by design (assert-tested per category).
 
-import { normalize } from "./text";
+import { normalize } from "./text.ts";
 
 export interface TriageResult {
   escalate: boolean;

@@ -3,12 +3,12 @@
 // FIFO / one-in-flight condition so a patient's messages are handled in order, one at a time,
 // across any number of workers.
 
-import type { InboundMessage } from "../../agent/types";
-import { escalationMessagePt } from "../../messages";
-import { currentTraceparent } from "../../telemetry/tracing";
-import type { Pool, PoolClient } from "../pool";
-import { appendAudit } from "./audit-repo";
-import { enqueueOutbox } from "./outbox-repo";
+import type { InboundMessage } from "../../agent/types.ts";
+import { escalationMessagePt } from "../../messages.ts";
+import { currentTraceparent } from "../../telemetry/tracing.ts";
+import type { Pool, PoolClient } from "../pool.ts";
+import { appendAudit } from "./audit-repo.ts";
+import { enqueueOutbox } from "./outbox-repo.ts";
 
 type Queryable = Pool | PoolClient;
 

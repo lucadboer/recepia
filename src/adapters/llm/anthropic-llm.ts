@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { NotConfigured } from "../../domain/errors";
+import { NotConfigured } from "../../domain/errors.ts";
 import type {
   LLMPort,
   LlmContent,
@@ -7,7 +7,7 @@ import type {
   LlmTurnInput,
   LlmTurnResult,
   LlmUsage,
-} from "../../ports/llm-port";
+} from "../../ports/llm-port.ts";
 
 /** Production model (owner decision 2026-10-06, feature 004 R1). Measured by the eval harness. */
 export const DEFAULT_MODEL = "claude-sonnet-5-5";

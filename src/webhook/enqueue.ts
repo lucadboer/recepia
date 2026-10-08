@@ -1,14 +1,14 @@
 // 008: the webhook's only business action — store a verified message durably, then let the
 // worker know. A throw propagates to the webhook, which answers 503 so the provider retries.
 
-import type { InboundMessage } from "../agent/types";
-import { INBOUND_PHONE_MAX_PENDING } from "../config";
-import type { Pool } from "../db/pool";
-import { insertInbound } from "../db/repositories/inbound-repo";
-import type { Clock } from "../ports/clock";
-import { log } from "../telemetry/logger";
-import { messageRef, patientRef } from "../telemetry/pseudonym";
-import type { InboundChannel } from "./server";
+import type { InboundMessage } from "../agent/types.ts";
+import { INBOUND_PHONE_MAX_PENDING } from "../config.ts";
+import type { Pool } from "../db/pool.ts";
+import { insertInbound } from "../db/repositories/inbound-repo.ts";
+import type { Clock } from "../ports/clock.ts";
+import { log } from "../telemetry/logger.ts";
+import { messageRef, patientRef } from "../telemetry/pseudonym.ts";
+import type { InboundChannel } from "./server.ts";
 
 export interface DurableEnqueueOptions {
   pool: Pool;

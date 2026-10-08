@@ -1,6 +1,11 @@
-import { type calendar_v3, google } from "googleapis";
-import { CalendarWriteError, NotConfigured } from "../../domain/errors";
-import type { CalendarPort, CreateEventInput, CreateEventResult } from "../../ports/calendar-port";
+// The per-API client (ADR 0011): same calendar_v3 surface as `googleapis`, a fraction of its size.
+import { auth, calendar, type calendar_v3 } from "@googleapis/calendar";
+import { CalendarWriteError, NotConfigured } from "../../domain/errors.ts";
+import type {
+  CalendarPort,
+  CreateEventInput,
+  CreateEventResult,
+} from "../../ports/calendar-port.ts";
 
 // Least-privilege scope: manage events on calendars the SA can access, nothing
 // else. The SA must be granted "Make changes to events" on the target calendar.
@@ -37,8 +42,8 @@ export class GoogleCalendar implements CalendarPort {
       );
     }
     // GoogleAuth/keyFile are lazy — no network or file read happens here.
-    const auth = new google.auth.GoogleAuth({ keyFile: credentials, scopes: SCOPES });
-    this.calendar = google.calendar({ version: "v3", auth });
+    const googleAuth = new auth.GoogleAuth({ keyFile: credentials, scopes: SCOPES });
+    this.calendar = calendar({ version: "v3", auth: googleAuth });
     this.calendarId = calendarId;
   }
 

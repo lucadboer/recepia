@@ -1,6 +1,6 @@
-import { MessagingSendError, NotConfigured } from "../../domain/errors";
-import type { MessageTemplate, MessagingPort } from "../../ports/messaging-port";
-import { maskPhonesIn } from "../../telemetry/pseudonym";
+import { MessagingSendError, NotConfigured } from "../../domain/errors.ts";
+import type { MessageTemplate, MessagingPort } from "../../ports/messaging-port.ts";
+import { maskPhonesIn } from "../../telemetry/pseudonym.ts";
 
 /**
  * Narrow structural fetch type — decouples from DOM lib types and is trivial to fake.

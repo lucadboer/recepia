@@ -5,19 +5,19 @@
 // find_my_booking showed in this conversation, and never in the turn it was first shown
 // (006). The patient phone is injected from context — never taken from LLM args.
 
-import { AVAILABILITY_MAX_SLOTS } from "../config";
-import type { Deps } from "../deps";
-import { hasEscalatedFlag } from "../domain/errors";
-import { slotLabelPt, toLocalIso } from "../domain/time";
-import { errorTypeOf } from "../telemetry/tracing";
-import { cancelBooking } from "../tools/cancel-booking";
-import { confirmAttendance } from "../tools/confirm-attendance";
-import { confirmBooking } from "../tools/confirm-booking";
-import { escalateToHuman } from "../tools/escalate-to-human";
-import { findMyBooking } from "../tools/find-my-booking";
-import { getAvailability } from "../tools/get-availability";
-import { holdSlot } from "../tools/hold-slot";
-import { rescheduleBooking } from "../tools/reschedule-booking";
+import { AVAILABILITY_MAX_SLOTS } from "../config.ts";
+import type { Deps } from "../deps.ts";
+import { hasEscalatedFlag } from "../domain/errors.ts";
+import { slotLabelPt, toLocalIso } from "../domain/time.ts";
+import { errorTypeOf } from "../telemetry/tracing.ts";
+import { cancelBooking } from "../tools/cancel-booking.ts";
+import { confirmAttendance } from "../tools/confirm-attendance.ts";
+import { confirmBooking } from "../tools/confirm-booking.ts";
+import { escalateToHuman } from "../tools/escalate-to-human.ts";
+import { findMyBooking } from "../tools/find-my-booking.ts";
+import { getAvailability } from "../tools/get-availability.ts";
+import { holdSlot } from "../tools/hold-slot.ts";
+import { rescheduleBooking } from "../tools/reschedule-booking.ts";
 import {
   hasActiveHold,
   holdTurnOf,
@@ -30,12 +30,12 @@ import {
   recordOfferedSlots,
   recordSurfacedBooking,
   surfacedTurnOf,
-} from "./conversation";
-import { isChangeRequest } from "./intent";
-import { errorReply } from "./reply";
-import { summarizeHistory } from "./summary";
-import { TOOL_NAMES } from "./tool-schemas";
-import type { ConversationState } from "./types";
+} from "./conversation.ts";
+import { isChangeRequest } from "./intent.ts";
+import { errorReply } from "./reply.ts";
+import { summarizeHistory } from "./summary.ts";
+import { TOOL_NAMES } from "./tool-schemas.ts";
+import type { ConversationState } from "./types.ts";
 
 export interface ToolContext {
   deps: Deps;

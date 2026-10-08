@@ -1,6 +1,6 @@
-import type { ConversationState } from "../../agent/types";
-import { ConversationConflictError } from "../../domain/errors";
-import type { ConversationStorePort } from "../../ports/conversation-store-port";
+import type { ConversationState } from "../../agent/types.ts";
+import { ConversationConflictError } from "../../domain/errors.ts";
+import type { ConversationStorePort } from "../../ports/conversation-store-port.ts";
 
 /**
  * In-memory ConversationStorePort for tests/dev. Stores copies to avoid aliasing and

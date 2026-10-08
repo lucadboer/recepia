@@ -4,15 +4,15 @@
 
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
-import type { InboundMessage } from "../agent/types";
+import type { InboundMessage } from "../agent/types.ts";
 import {
   INBOUND_BACKOFF_MS,
   INBOUND_CONCURRENCY,
   INBOUND_LEASE_MS,
   INBOUND_MAX_ATTEMPTS,
   INBOUND_POLL_MS,
-} from "../config";
-import type { Pool } from "../db/pool";
+} from "../config.ts";
+import type { Pool } from "../db/pool.ts";
 import {
   claimNext,
   heartbeat,
@@ -20,11 +20,11 @@ import {
   markDead,
   markDone,
   markRetry,
-} from "../db/repositories/inbound-repo";
-import type { Clock } from "../ports/clock";
-import { log } from "../telemetry/logger";
-import { messageRef } from "../telemetry/pseudonym";
-import { ATTR, errorTypeOf, SPAN, withRemoteParent } from "../telemetry/tracing";
+} from "../db/repositories/inbound-repo.ts";
+import type { Clock } from "../ports/clock.ts";
+import { log } from "../telemetry/logger.ts";
+import { messageRef } from "../telemetry/pseudonym.ts";
+import { ATTR, errorTypeOf, SPAN, withRemoteParent } from "../telemetry/tracing.ts";
 
 /** Delay before retry `attempt` (1-based): the backoff step × uniform(0.8, 1.2), capped. */
 export function inboundBackoff(attempt: number, random: () => number = Math.random): number {

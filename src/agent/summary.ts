@@ -2,7 +2,7 @@
 // the summary must be reproducible and must never be a place where the model can
 // inject text that reception would trust.
 
-import type { LlmMessage } from "../ports/llm-port";
+import type { LlmMessage } from "../ports/llm-port.ts";
 
 export const SUMMARY_MAX_LINES = 6;
 export const SUMMARY_MAX_CHARS = 160;

@@ -1,6 +1,6 @@
-import type { Booking } from "../../domain/types";
-import type { Pool, PoolClient } from "../pool";
-import { rowToBooking } from "./booking-repo";
+import type { Booking } from "../../domain/types.ts";
+import type { Pool, PoolClient } from "../pool.ts";
+import { rowToBooking } from "./booking-repo.ts";
 
 type Queryable = Pool | PoolClient;
 

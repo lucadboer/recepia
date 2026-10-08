@@ -1,6 +1,6 @@
-import { appendAudit } from "../db/repositories/audit-repo";
-import { expireDueHolds } from "../db/repositories/booking-repo";
-import type { Deps } from "../deps";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { expireDueHolds } from "../db/repositories/booking-repo.ts";
+import type { Deps } from "../deps.ts";
 
 /**
  * Sweep: expire all holds past their TTL and audit each release (Constitution V).

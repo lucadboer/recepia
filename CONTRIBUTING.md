@@ -118,3 +118,13 @@ pnpm evals:readme [--check]                       # regenerate / verify the READ
 
 Operational scripts live in `scripts/` and run with `node --import tsx` (no `tsx` relay process, so
 signals reach the script). They are linted and type-checked like `src/`.
+
+### Container image
+
+`docker build -t recepia .` (or `docker compose --profile app up --build`). The image runs the
+`tsc` output: relative imports under `src/` carry their `.ts` extension (Biome's
+`useImportExtensions` enforces it and `pnpm exec biome check --write` adds it) and
+`rewriteRelativeImportExtensions` turns them into `.js` on `pnpm build`. Files read at runtime
+relative to the code must be copied into the image at the same path (see the `Dockerfile`). Base
+images are pinned by digest and bumped by Dependabot; `docker.yml` must stay green (Trivy has no
+fixable HIGH/CRITICAL finding, the smoke test boots the image as `nonroot`).

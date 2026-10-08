@@ -5,13 +5,13 @@ import {
   REMINDERS_INTERVAL_MS,
   RETENTION_FIRST_RUN_MS,
   RETENTION_INTERVAL_MS,
-} from "../config";
-import type { Deps } from "../deps";
-import { log } from "../telemetry/logger";
-import { dispatchOutbox } from "./dispatch-outbox";
-import { expireHolds } from "./expire-holds";
-import { enqueueDueReminders, notifyUnconfirmed, type ReminderSettings } from "./reminders";
-import { purgeInactive } from "./retention";
+} from "../config.ts";
+import type { Deps } from "../deps.ts";
+import { log } from "../telemetry/logger.ts";
+import { dispatchOutbox } from "./dispatch-outbox.ts";
+import { expireHolds } from "./expire-holds.ts";
+import { enqueueDueReminders, notifyUnconfirmed, type ReminderSettings } from "./reminders.ts";
+import { purgeInactive } from "./retention.ts";
 
 export interface ScheduledJob {
   name: string;

@@ -25,5 +25,23 @@
       "!evals/reports",
       "!evals/baseline.json"
     ]
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["src/**"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useImportExtensions": {
+              "level": "error",
+              "fix": "safe",
+              "options": {
+                "forceJsExtensions": false
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

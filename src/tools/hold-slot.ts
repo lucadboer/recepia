@@ -1,18 +1,18 @@
-import { HOLD_TTL_MS, isRoutineType, SLOT_MINUTES } from "../config";
-import { appendAudit } from "../db/repositories/audit-repo";
+import { HOLD_TTL_MS, isRoutineType, SLOT_MINUTES } from "../config.ts";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
 import {
   findActiveHold,
   insertHold,
   occupiedSeats,
   reclaimExpiredHoldsForSlot,
-} from "../db/repositories/booking-repo";
-import { loadOverrides, loadRules } from "../db/repositories/capacity-repo";
-import { type Deps, turnStamp } from "../deps";
-import { toHold } from "../domain/booking";
-import { capacityFor } from "../domain/capacity";
-import { OutOfScopeError, SlotOutOfWindowError, SlotUnavailableError } from "../domain/errors";
-import { addMinutes, alignUpToSlot, bookingWindow, toLocalParts } from "../domain/time";
-import type { Hold, PatientRef } from "../domain/types";
+} from "../db/repositories/booking-repo.ts";
+import { loadOverrides, loadRules } from "../db/repositories/capacity-repo.ts";
+import { type Deps, turnStamp } from "../deps.ts";
+import { toHold } from "../domain/booking.ts";
+import { capacityFor } from "../domain/capacity.ts";
+import { OutOfScopeError, SlotOutOfWindowError, SlotUnavailableError } from "../domain/errors.ts";
+import { addMinutes, alignUpToSlot, bookingWindow, toLocalParts } from "../domain/time.ts";
+import type { Hold, PatientRef } from "../domain/types.ts";
 
 export interface SlotRequest {
   start: Date;

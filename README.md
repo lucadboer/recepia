@@ -241,6 +241,11 @@ median turn p95 must stay under budget. The numbers live in the job summary and 
 [`codeql.yml`](.github/workflows/codeql.yml) runs static analysis; [Dependabot](.github/dependabot.yml)
 keeps dependencies on their latest audited versions with a short cooldown.
 
+[`docker.yml`](.github/workflows/docker.yml) builds the image with the GitHub Actions cache,
+scans the repository and the image with Trivy (fails on fixable HIGH/CRITICAL; SARIF to the Security
+tab), smoke-tests the image against Postgres (`/healthz`, `/readyz`, non-root) and, on `main`,
+pushes it to GHCR with an SBOM and provenance; a weekly run rescans.
+
 ## Running locally
 
 ```bash
@@ -263,8 +268,21 @@ pnpm conversation:release +5511999998888   # reception hands a conversation back
 pnpm test:live                       # opt-in live tests, one LIVE_* flag per external system
 ```
 
-Background jobs (outbox retries every 15 s, hold-expiry sweep every 60 s) start with the server;
+Background jobs start with the server: the inbound worker, outbox retries every 15 s, the
+hold-expiry sweep every 60 s, reminders and unconfirmed notices every 15 min, retention daily.
 `SIGTERM` stops accepting, drains in-flight turns and closes the pool within a 15 s budget.
+
+### Container image
+
+```bash
+docker compose --profile app up --build   # builds the image, runs the migrations once, starts the app on :3000
+docker build -t recepia .                 # the image alone: distroless Node 24, non-root, ~210 MB
+docker run --rm -e DATABASE_URL=… recepia src/db/migrate.js   # migrations are a one-off command
+```
+
+The image runs the `tsc` output (no `tsx`), as `nonroot`, with a `HEALTHCHECK` on `/healthz`;
+credentials come from the environment, never from the image ([ADR 0011](docs/adr/0011-container-image.md)).
+CI scans it with Trivy and publishes it to `ghcr.io/lucadboer/recepia` from `main`.
 
 ## Design decisions
 
@@ -305,9 +323,11 @@ Every slice starts as a spec and ends as tasks, with Claude Code as the implemen
 5. ~~**Appointment reminders** (007)~~ — a reminder 24 h before, "SIM" confirms attendance with no
    model call, "remarcar" uses 006, no reply notifies reception, WhatsApp templates
 6. ~~**Reliability at the edge** (008)~~ — store-then-ack inbound queue, FIFO per phone with a
-   lease, retries and dead letter, flood guard, replay guard, a `kill -9` chaos test (this)
-7. **Container** — optimized Dockerfile, image pipeline and Trivy scans. Later, with a real clinic:
-   a pilot, multi-tenancy with row-level security.
+   lease, retries and dead letter, flood guard, replay guard, a `kill -9` chaos test
+7. ~~**Container**~~ — distroless non-root image built with `tsc`, Trivy-scanned, smoke-tested and
+   published to GHCR with an SBOM and provenance (this)
+8. **With a real clinic** — the pilot (official WhatsApp number, approved reminder template, no-show
+   metrics), then multi-tenancy with row-level security.
 
 ## Contributing
 

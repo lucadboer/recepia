@@ -1,4 +1,4 @@
-import type { ConversationState } from "../agent/types";
+import type { ConversationState } from "../agent/types.ts";
 
 /**
  * Persist per-phone conversation state. `save` is a compare-and-swap on `state.version`:

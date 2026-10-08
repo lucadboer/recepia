@@ -1,4 +1,4 @@
-import type { InboundMessage } from "../../../agent/types";
+import type { InboundMessage } from "../../../agent/types.ts";
 
 // Minimal shape of a WhatsApp Cloud API webhook payload (text and quick-reply buttons).
 interface CloudApiPayload {

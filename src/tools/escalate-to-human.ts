@@ -1,7 +1,7 @@
-import { appendAudit } from "../db/repositories/audit-repo";
-import { enqueueOutbox } from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
-import { escalationMessagePt } from "../messages";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { enqueueOutbox } from "../db/repositories/outbox-repo.ts";
+import { type Deps, turnStamp } from "../deps.ts";
+import { escalationMessagePt } from "../messages.ts";
 
 /** What reception needs to pick the conversation up (FR-204). */
 export interface Escalation {

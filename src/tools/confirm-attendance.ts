@@ -1,10 +1,10 @@
-import { appendAudit } from "../db/repositories/audit-repo";
-import { lockBookingForUpdate } from "../db/repositories/booking-repo";
-import { enqueueOutbox, supersedePending } from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
-import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
-import type { Booking } from "../domain/types";
-import { attendanceConfirmedMessagePt } from "../messages";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { lockBookingForUpdate } from "../db/repositories/booking-repo.ts";
+import { enqueueOutbox, supersedePending } from "../db/repositories/outbox-repo.ts";
+import { type Deps, turnStamp } from "../deps.ts";
+import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors.ts";
+import type { Booking } from "../domain/types.ts";
+import { attendanceConfirmedMessagePt } from "../messages.ts";
 
 export type AttendanceOutcome = "confirmed" | "already_confirmed";
 

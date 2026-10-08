@@ -1,0 +1,11 @@
+# Allowlist: only what the image build needs enters the context — never .env, secrets/, tests,
+# reports or local tooling.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.npmrc
+!tsconfig.json
+!tsconfig.build.json
+!src/**
+!prompts/**

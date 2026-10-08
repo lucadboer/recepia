@@ -1,17 +1,17 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { SpanKind } from "@opentelemetry/api";
-import type { CloudStatus } from "../adapters/messaging/inbound/cloud-api-parser";
-import type { InboundMessage } from "../agent/types";
+import type { CloudStatus } from "../adapters/messaging/inbound/cloud-api-parser.ts";
+import type { InboundMessage } from "../agent/types.ts";
 import {
   WEBHOOK_HEADERS_TIMEOUT_MS,
   WEBHOOK_MAX_BODY_BYTES,
   WEBHOOK_REQUEST_TIMEOUT_MS,
-} from "../config";
-import { log } from "../telemetry/logger";
-import { messageRef, patientRef } from "../telemetry/pseudonym";
-import { ATTR, SPAN, startRootSpan } from "../telemetry/tracing";
-import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch";
-import { parseAndAccept } from "./dispatch";
+} from "../config.ts";
+import { log } from "../telemetry/logger.ts";
+import { messageRef, patientRef } from "../telemetry/pseudonym.ts";
+import { ATTR, SPAN, startRootSpan } from "../telemetry/tracing.ts";
+import { parseAndAcceptCloud, verifyChallenge } from "./cloud-dispatch.ts";
+import { parseAndAccept } from "./dispatch.ts";
 
 export type InboundChannel = "evolution" | "cloud";
 

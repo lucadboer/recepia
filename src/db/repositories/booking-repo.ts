@@ -1,6 +1,6 @@
-import type { AppointmentType } from "../../config";
-import type { Booking } from "../../domain/types";
-import type { Pool, PoolClient } from "../pool";
+import type { AppointmentType } from "../../config.ts";
+import type { Booking } from "../../domain/types.ts";
+import type { Pool, PoolClient } from "../pool.ts";
 
 type Queryable = Pool | PoolClient;
 

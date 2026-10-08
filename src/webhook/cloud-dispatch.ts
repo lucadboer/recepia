@@ -3,9 +3,9 @@ import {
   type CloudStatus,
   parseCloudApiInbound,
   parseCloudApiStatuses,
-} from "../adapters/messaging/inbound/cloud-api-parser";
-import type { InboundMessage } from "../agent/types";
-import { safeEqual } from "./dispatch";
+} from "../adapters/messaging/inbound/cloud-api-parser.ts";
+import type { InboundMessage } from "../agent/types.ts";
+import { safeEqual } from "./dispatch.ts";
 
 /**
  * WhatsApp Cloud API webhook routing — distinct from Evolution (dispatch.ts):

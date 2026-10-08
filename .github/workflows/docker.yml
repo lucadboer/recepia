@@ -1,0 +1,149 @@
+# Container image (ADR 0011).
+#  - trivy-fs: dependencies, committed secrets and IaC/Dockerfile misconfiguration in the repository.
+#  - image: build with the GitHub Actions cache, scan the image, smoke-test it against Postgres
+#    (one-off migration, then /healthz and /readyz), and on main push it to GHCR with an SBOM and
+#    provenance. Both gates fail on HIGH/CRITICAL findings that have a fix; results go to the
+#    Security tab as SARIF (gate: --severity HIGH,CRITICAL --ignore-unfixed). A weekly run rescans
+#    for newly published vulnerabilities.
+name: docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 7 * * 1" # Monday 07:00 UTC — weekly rescan
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/lucadboer/recepia
+  TRIVY: aquasec/trivy:0.70.0
+
+jobs:
+  trivy-fs:
+    name: trivy — dependencies, secrets, misconfiguration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan the repository (SARIF for the Security tab)
+        run: |
+          docker run --rm -v "$PWD:/src" -v "$HOME/.cache/trivy:/root/.cache/trivy" -w /src "$TRIVY" \
+            fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output trivy-fs.sarif .
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-fs.sarif') != ''
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+      - name: Gate — no fixable HIGH/CRITICAL finding
+        run: |
+          docker run --rm -v "$PWD:/src" -v "$HOME/.cache/trivy:/root/.cache/trivy" -w /src "$TRIVY" \
+            fs --scanners vuln,secret,misconfig --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 .
+
+  image:
+    name: image — build, scan, smoke (push on main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      id-token: write # provenance attestation
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: recepia
+          POSTGRES_PASSWORD: recepia
+          POSTGRES_DB: recepia
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U recepia -d recepia"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - name: "Image metadata (tags: commit sha; latest on main)"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Build (cached) and load for the scan and the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: recepia:ci
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan the image (SARIF for the Security tab)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" \
+            image --severity HIGH,CRITICAL --ignore-unfixed --format sarif --output /out/trivy-image.sarif recepia:ci
+      - uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-image.sarif') != ''
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+      - name: Gate — no fixable HIGH/CRITICAL vulnerability in the image
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY" \
+            image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 recepia:ci
+      - name: Smoke — one-off migration, then the service answers /healthz and /readyz
+        env:
+          DATABASE_URL: postgres://recepia:recepia@localhost:5432/recepia
+        run: |
+          docker run --rm --network host -e DATABASE_URL recepia:ci src/db/migrate.js
+          # Fictitious credentials: the adapters connect lazily; the smoke only proves the image boots.
+          docker run -d --name recepia --network host -e DATABASE_URL -e PORT=3000 \
+            -e WEBHOOK_SECRET=ci -e RECEPTION_PHONE=+5511999990000 -e ANTHROPIC_API_KEY=ci \
+            -e GOOGLE_CALENDAR_CREDENTIALS=/nonexistent.json -e GOOGLE_CALENDAR_ID=ci \
+            -e EVOLUTION_BASE_URL=http://127.0.0.1:9 -e EVOLUTION_API_KEY=ci -e EVOLUTION_INSTANCE=ci \
+            recepia:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/healthz >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:3000/healthz
+          curl -fsS http://127.0.0.1:3000/readyz
+          test "$(docker inspect --format '{{.Config.User}}' recepia)" = "nonroot"
+      - name: Container logs
+        if: always()
+        run: docker logs recepia 2>&1 | tail -50 || true
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push to GHCR with SBOM and provenance (main only; layers come from the cache)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          sbom: true
+          provenance: mode=max

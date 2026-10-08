@@ -5,8 +5,8 @@
 
 import { isSpanContextValid, trace } from "@opentelemetry/api";
 import pino, { type DestinationStream, type Logger } from "pino";
-import { maskPhonesIn } from "./pseudonym";
-import { errorTypeOf } from "./tracing";
+import { maskPhonesIn } from "./pseudonym.ts";
+import { errorTypeOf } from "./tracing.ts";
 
 const DROPPED_KEYS = new Set(["text", "body", "content", "patient_name", "patientName"]);
 const MAX_DEPTH = 8;

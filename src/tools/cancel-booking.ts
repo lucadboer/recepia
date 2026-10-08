@@ -1,17 +1,21 @@
-import { appendAudit } from "../db/repositories/audit-repo";
-import { cancelActive, lockBookingForUpdate } from "../db/repositories/booking-repo";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { cancelActive, lockBookingForUpdate } from "../db/repositories/booking-repo.ts";
 import {
   enqueueOutbox,
   messageStatus,
   releasedBookingMessages,
   supersedePending,
-} from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
-import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
-import type { Booking } from "../domain/types";
-import { cancellationMessagePt } from "../messages";
-import { deleteEventWithRetry } from "./booking-calendar";
-import { enqueueLateChangeNotice, isLateChange, requestCalendarCleanup } from "./reception-notices";
+} from "../db/repositories/outbox-repo.ts";
+import { type Deps, turnStamp } from "../deps.ts";
+import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors.ts";
+import type { Booking } from "../domain/types.ts";
+import { cancellationMessagePt } from "../messages.ts";
+import { deleteEventWithRetry } from "./booking-calendar.ts";
+import {
+  enqueueLateChangeNotice,
+  isLateChange,
+  requestCalendarCleanup,
+} from "./reception-notices.ts";
 
 export type CancelOutcome = "cancelled" | "already_cancelled";
 

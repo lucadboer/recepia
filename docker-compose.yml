@@ -25,3 +25,31 @@ services:
     ports:
       - "16686:16686" # UI
       - "4318:4318" # OTLP/HTTP
+
+  # The service image (ADR 0011): `docker compose --profile app up --build`. `migrate` runs the
+  # migrations once and exits; `app` starts only after it succeeded. Credentials come from your
+  # local .env (never baked into the image); inside the network the database is `db:5432`.
+  migrate:
+    build: .
+    image: recepia:local
+    profiles: ["app"]
+    command: ["src/db/migrate.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://recepia:recepia@db:5432/recepia
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: recepia:local
+    profiles: ["app"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://recepia:recepia@db:5432/recepia
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully

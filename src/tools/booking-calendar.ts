@@ -1,9 +1,9 @@
 // Calendar writes shared by the booking tools (confirm, reschedule, cancel — 006): short retries
 // outside any database transaction. Postgres owns capacity; the calendar may lag, never lead.
 
-import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config";
-import type { Deps } from "../deps";
-import type { Booking } from "../domain/types";
+import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config.ts";
+import type { Deps } from "../deps.ts";
+import type { Booking } from "../domain/types.ts";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

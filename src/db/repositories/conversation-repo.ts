@@ -1,8 +1,8 @@
-import { emptyUsage } from "../../agent/conversation";
-import type { ConversationState } from "../../agent/types";
-import { ConversationConflictError } from "../../domain/errors";
-import type { ConversationStorePort } from "../../ports/conversation-store-port";
-import type { Pool, PoolClient } from "../pool";
+import { emptyUsage } from "../../agent/conversation.ts";
+import type { ConversationState } from "../../agent/types.ts";
+import { ConversationConflictError } from "../../domain/errors.ts";
+import type { ConversationStorePort } from "../../ports/conversation-store-port.ts";
+import type { Pool, PoolClient } from "../pool.ts";
 
 type Queryable = Pool | PoolClient;
 

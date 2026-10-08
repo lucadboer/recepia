@@ -1,7 +1,7 @@
-import type { Pool } from "./db/pool";
-import type { CalendarPort } from "./ports/calendar-port";
-import type { Clock } from "./ports/clock";
-import type { MessagingPort } from "./ports/messaging-port";
+import type { Pool } from "./db/pool.ts";
+import type { CalendarPort } from "./ports/calendar-port.ts";
+import type { Clock } from "./ports/clock.ts";
+import type { MessagingPort } from "./ports/messaging-port.ts";
 
 /** Dependencies injected into every deterministic tool (no globals). */
 export interface Deps {

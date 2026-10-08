@@ -1,7 +1,7 @@
 // Patient-facing strings — Portuguese only (FR-019, constitution).
 
-import type { AppointmentType } from "./config";
-import { formatLocalPt } from "./domain/time";
+import type { AppointmentType } from "./config.ts";
+import { formatLocalPt } from "./domain/time.ts";
 
 const TYPE_LABELS_PT: Record<AppointmentType, string> = {
   evaluation: "avaliação",

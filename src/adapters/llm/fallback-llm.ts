@@ -2,10 +2,10 @@
 // returned as is; a non-transient error (bad request, auth) is rethrown untouched.
 
 import { trace } from "@opentelemetry/api";
-import type { LLMPort, LlmTurnInput, LlmTurnResult } from "../../ports/llm-port";
-import { log } from "../../telemetry/logger";
-import { ATTR, errorTypeOf } from "../../telemetry/tracing";
-import { isTransientLlmError } from "./errors";
+import type { LLMPort, LlmTurnInput, LlmTurnResult } from "../../ports/llm-port.ts";
+import { log } from "../../telemetry/logger.ts";
+import { ATTR, errorTypeOf } from "../../telemetry/tracing.ts";
+import { isTransientLlmError } from "./errors.ts";
 
 export class FallbackExhaustedError extends Error {
   constructor(

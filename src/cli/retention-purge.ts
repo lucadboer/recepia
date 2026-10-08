@@ -2,9 +2,9 @@
 // (it also runs daily inside the service). Prints counts only.
 
 import { fileURLToPath } from "node:url";
-import { loadEnv } from "../db/env";
-import { makePool } from "../db/pool";
-import { purgeInactive, RETENTION_DAYS } from "../jobs/retention";
+import { loadEnv } from "../db/env.ts";
+import { makePool } from "../db/pool.ts";
+import { purgeInactive, RETENTION_DAYS } from "../jobs/retention.ts";
 
 export interface RetentionArgs {
   dryRun: boolean;

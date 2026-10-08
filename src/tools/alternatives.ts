@@ -1,8 +1,8 @@
-import type { Deps } from "../deps";
-import { bookingWindow } from "../domain/time";
-import type { Slot } from "../domain/types";
-import { escalateToHuman } from "./escalate-to-human";
-import { getAvailability, type Period } from "./get-availability";
+import type { Deps } from "../deps.ts";
+import { bookingWindow } from "../domain/time.ts";
+import type { Slot } from "../domain/types.ts";
+import { escalateToHuman } from "./escalate-to-human.ts";
+import { getAvailability, type Period } from "./get-availability.ts";
 
 /**
  * Slots for the requested window if it has capacity; otherwise the next real free

@@ -2,10 +2,10 @@
 // unconditionally, so this gate (called by the orchestrator BEFORE confirm) is the
 // enforcement point. Consent changes are audited.
 
-import { appendAudit } from "../db/repositories/audit-repo";
-import { insertConsent, latestConsent } from "../db/repositories/consent-repo";
-import { cancelPendingForRecipient } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { insertConsent, latestConsent } from "../db/repositories/consent-repo.ts";
+import { cancelPendingForRecipient } from "../db/repositories/outbox-repo.ts";
+import type { Deps } from "../deps.ts";
 
 export async function hasConsent(deps: Deps, phone: string): Promise<boolean> {
   return (await latestConsent(deps.pool, phone)) === "opted_in";

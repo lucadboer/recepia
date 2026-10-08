@@ -2,9 +2,9 @@
 // terminal outbox messages and finished inbound messages (008) are deleted after 90 days. The consent ledger and the
 // audit log are kept; pending messages are never deleted. Every run is audited with counts only.
 
-import type { Pool } from "../db/pool";
-import { appendAudit } from "../db/repositories/audit-repo";
-import { SPAN, setAttributes, withSpan } from "../telemetry/tracing";
+import type { Pool } from "../db/pool.ts";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { SPAN, setAttributes, withSpan } from "../telemetry/tracing.ts";
 
 export const RETENTION_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1000;

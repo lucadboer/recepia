@@ -4,7 +4,7 @@
 // messages/stack traces are dropped (our own code never records them; see recordError).
 
 import type { ReadableSpan, SpanExporter, TimedEvent } from "@opentelemetry/sdk-trace-node";
-import { maskPhonesIn } from "./pseudonym";
+import { maskPhonesIn } from "./pseudonym.ts";
 
 const DROPPED_EVENT_KEYS = new Set(["exception.message", "exception.stacktrace"]);
 const MAX_STATUS = 200;

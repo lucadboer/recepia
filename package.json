@@ -16,6 +16,7 @@
     "conversation:release": "tsx src/cli/conversation-release.ts",
     "retention:purge": "node --import tsx src/cli/retention-purge.ts",
     "start": "node --import tsx --import ./src/telemetry/register.ts src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
@@ -34,13 +35,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
+    "@googleapis/calendar": "^20.1.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.223.0",
     "@opentelemetry/instrumentation": "^0.223.0",
     "@opentelemetry/instrumentation-pg": "^0.75.0",
     "@opentelemetry/resources": "^2.12.0",
     "@opentelemetry/sdk-trace-node": "^2.12.0",
-    "googleapis": "^183.0.0",
     "pg": "^8.23.1",
     "pino": "^10.4.0"
   },

@@ -10,7 +10,7 @@ import {
   OutOfScopeError,
   SlotOutOfWindowError,
   SlotUnavailableError,
-} from "../domain/errors";
+} from "../domain/errors.ts";
 
 export const reply = {
   escalatedToReception: () =>

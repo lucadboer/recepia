@@ -9,7 +9,7 @@ import { registerInstrumentations } from "@opentelemetry/instrumentation";
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchSpanProcessor, NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { RedactingSpanExporter } from "./redacting-exporter";
+import { RedactingSpanExporter } from "./redacting-exporter.ts";
 
 let provider: NodeTracerProvider | null = null;
 

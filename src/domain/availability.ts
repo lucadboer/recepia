@@ -1,6 +1,6 @@
-import { SLOT_MINUTES } from "../config";
-import type { CapacityOverrideRow, CapacityRuleRow } from "../db/repositories/capacity-repo";
-import { addMinutes, alignUpToSlot, timeToMinutes, toLocalParts } from "./time";
+import { SLOT_MINUTES } from "../config.ts";
+import type { CapacityOverrideRow, CapacityRuleRow } from "../db/repositories/capacity-repo.ts";
+import { addMinutes, alignUpToSlot, timeToMinutes, toLocalParts } from "./time.ts";
 
 /**
  * All 30-min grid slot-starts in [from, to) that fit entirely inside a business

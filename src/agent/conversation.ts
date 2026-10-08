@@ -7,9 +7,9 @@ import {
   OFFERED_SLOTS_MAX,
   PROCESSED_IDS_MAX,
   SURFACED_BOOKINGS_MAX,
-} from "../config";
-import type { LlmMessage, LlmUsage } from "../ports/llm-port";
-import type { ConversationState, ConversationUsage } from "./types";
+} from "../config.ts";
+import type { LlmMessage, LlmUsage } from "../ports/llm-port.ts";
+import type { ConversationState, ConversationUsage } from "./types.ts";
 
 export function emptyUsage(): ConversationUsage {
   return {

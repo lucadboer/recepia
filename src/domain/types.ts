@@ -1,4 +1,4 @@
-import type { AppointmentType } from "../config";
+import type { AppointmentType } from "../config.ts";
 
 export type { AppointmentType };
 

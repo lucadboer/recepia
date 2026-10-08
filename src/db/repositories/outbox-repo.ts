@@ -1,6 +1,6 @@
-import type { MessageTemplate } from "../../ports/messaging-port";
-import { currentTraceparent } from "../../telemetry/tracing";
-import type { Pool, PoolClient } from "../pool";
+import type { MessageTemplate } from "../../ports/messaging-port.ts";
+import { currentTraceparent } from "../../telemetry/tracing.ts";
+import type { Pool, PoolClient } from "../pool.ts";
 
 type Queryable = Pool | PoolClient;
 

@@ -1,5 +1,5 @@
-import { MessagingSendError } from "../../domain/errors";
-import type { MessageTemplate, MessagingPort } from "../../ports/messaging-port";
+import { MessagingSendError } from "../../domain/errors.ts";
+import type { MessageTemplate, MessagingPort } from "../../ports/messaging-port.ts";
 
 /**
  * In-memory MessagingPort that records every sent message. Failure is configurable:

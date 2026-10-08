@@ -1,6 +1,6 @@
-import type { PoolClient } from "../db/pool";
-import { appendAudit } from "../db/repositories/audit-repo";
-import { latestConsent } from "../db/repositories/consent-repo";
+import type { PoolClient } from "../db/pool.ts";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { latestConsent } from "../db/repositories/consent-repo.ts";
 import {
   claimDue,
   enqueueOutbox,
@@ -8,9 +8,9 @@ import {
   markRetry,
   markSent,
   type OutboxRow,
-} from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
-import { escalationMessagePt } from "../messages";
+} from "../db/repositories/outbox-repo.ts";
+import type { Deps } from "../deps.ts";
+import { escalationMessagePt } from "../messages.ts";
 import {
   ATTR,
   errorTypeOf,
@@ -19,7 +19,7 @@ import {
   SPAN,
   setAttributes,
   withSpan,
-} from "../telemetry/tracing";
+} from "../telemetry/tracing.ts";
 
 /** Delay before attempt n+1 after the n-th failure (n = 1..). The last value repeats. */
 export const OUTBOX_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000];
