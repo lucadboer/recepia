@@ -31,6 +31,7 @@ import {
   recordSurfacedBooking,
   surfacedTurnOf,
 } from "./conversation";
+import { isChangeRequest } from "./intent";
 import { errorReply } from "./reply";
 import { summarizeHistory } from "./summary";
 import { TOOL_NAMES } from "./tool-schemas";
@@ -41,6 +42,8 @@ export interface ToolContext {
   phone: string;
   state: ConversationState;
   now: Date;
+  /** The patient message of this turn (007: attendance is never confirmed by a change request). */
+  inboundText?: string;
 }
 
 export interface ToolDispatchResult {
@@ -67,7 +70,8 @@ export type RejectedBy =
   | "foreign_hold"
   | "invalid_args"
   | "not_surfaced"
-  | "confirmation_required";
+  | "confirmation_required"
+  | "change_requested";
 
 function result(
   state: ConversationState,
@@ -326,6 +330,15 @@ export async function dispatchTool(
             "Essa consulta não foi encontrada nesta conversa; use find_my_booking primeiro.",
             true,
             { rejectedBy: "not_surfaced" },
+          );
+        }
+        // "Sim, mas preciso mudar" is a change request, never a confirmation (007 live run).
+        if (ctx.inboundText !== undefined && isChangeRequest(ctx.inboundText)) {
+          return result(
+            state,
+            "O paciente pediu uma mudança nesta mensagem; não confirme a presença. Siga o fluxo de cancelar ou remarcar.",
+            true,
+            { rejectedBy: "change_requested" },
           );
         }
         const { booking, outcome } = await confirmAttendance(deps, bookingId, phone, "model");

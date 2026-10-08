@@ -40,6 +40,12 @@ beforeEach(async () => {
 async function reminded(_h: AgentHarness, start = START, seat = 0): Promise<string> {
   const id = await seedBooking(pool, { start, phone: PHONE, name: "Ana Teste", seat });
   await pool.query("UPDATE booking SET reminder_sent_at = $2 WHERE id = $1", [id, AGENT_NOW]);
+  // Delivered (only a delivered reminder is one the patient can be answering — 007 review).
+  await pool.query(
+    `INSERT INTO outbox_message (kind, to_phone, conversation_phone, body, dedupe_key, status, attempts, next_attempt_at, sent_at)
+     VALUES ('appointment_reminder', $1, $1, 'lembrete', $2, 'sent', 1, $3, $3)`,
+    [PHONE, `appointment_reminder:${id}`, AGENT_NOW],
+  );
   return id;
 }
 
@@ -182,5 +188,49 @@ describe("the model path: the appointment is in context and counted as shown", (
     ]);
     await handleInbound(h.deps, msg("confirma minha presença", "r11"));
     expect((await getById(pool, other))?.status).toBe("confirmed");
+  });
+});
+
+describe("007 review / live-run findings", () => {
+  it("a 'sim' after the agent spoke since the reminder answers the agent, not the reminder", async () => {
+    const llm = new FakeLLM([finalTurn("Certo, vou cancelar então?")]);
+    const h = await setup(llm);
+    const id = await reminded(h);
+    // The agent already talked to the patient after the reminder went out.
+    await h.conversations.save({ ...emptyState(PHONE, new Date(AGENT_NOW.getTime() + 60_000)) });
+    h.clock.advance(2 * 60_000);
+    await handleInbound(h.deps, msg("Confirmo.", "f1"));
+    expect(llm.callCount).toBe(1); // routed to the model with the reminder in context
+    expect((await getById(pool, id))?.status).toBe("confirmed");
+  });
+
+  it("an undelivered reminder is not one the patient can be answering", async () => {
+    const llm = new FakeLLM([finalTurn("Oi!")]);
+    const h = await setup(llm);
+    const id = await seedBooking(pool, { start: START, phone: PHONE, name: "Ana Teste" });
+    await pool.query("UPDATE booking SET reminder_sent_at = $2 WHERE id = $1", [id, AGENT_NOW]);
+    await handleInbound(h.deps, msg("sim", "f2"));
+    expect(llm.callCount).toBe(1);
+    expect((await getById(pool, id))?.status).toBe("confirmed");
+  });
+
+  it("confirm_attendance is refused when the same message asks for a change (change_requested)", async () => {
+    const h = await setup();
+    const id = await reminded(h);
+    h.deps.llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.confirmAttendance, { booking_id: id })),
+      finalTurn("Para quando quer mudar?"),
+    ]);
+    await handleInbound(h.deps, msg("Sim, mas preciso mudar o horário", "f3"));
+    expect((await getById(pool, id))?.status).toBe("confirmed");
+    expect(await countAudit(pool, "attendance_confirmed")).toBe(0);
+  });
+
+  it("'Me tira!' (bare, with punctuation) is still an opt-out", async () => {
+    const llm = new FakeLLM([]);
+    const h = await setup(llm);
+    await reminded(h);
+    await handleInbound(h.deps, msg("Me tira!", "f4"));
+    expect(await countAudit(pool, "consent_revoked")).toBe(1);
   });
 });

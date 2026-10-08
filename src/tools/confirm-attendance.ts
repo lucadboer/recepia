@@ -1,6 +1,6 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { lockBookingForUpdate } from "../db/repositories/booking-repo";
-import { enqueueOutbox } from "../db/repositories/outbox-repo";
+import { enqueueOutbox, supersedePending } from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
@@ -41,6 +41,8 @@ export async function confirmAttendance(
       "UPDATE booking SET status = 'patient_confirmed', updated_at = now() WHERE id = $1 RETURNING *",
       [row.id],
     );
+    // A "did not confirm" notice still queued for reception is now wrong (007 review).
+    await supersedePending(client, [`unconfirmed:${row.id}`]);
     const outboxId = await enqueueOutbox(client, {
       kind: "booking_confirmation",
       toPhone: phone,

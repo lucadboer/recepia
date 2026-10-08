@@ -88,7 +88,30 @@ describe("opt-out is not fooled by an appointment (007 FR-708)", () => {
     const { classifyIntent } = await import("../../src/agent/intent");
     expect(classifyIntent("me tira da lista, por favor")).toBe("opt_out");
     expect(classifyIntent("me tira daqui")).toBe("opt_out");
+    expect(classifyIntent("Me tira!")).toBe("opt_out");
+    expect(classifyIntent("  me tira  ")).toBe("opt_out");
+    expect(classifyIntent("Me tira, por favor.")).toBe("opt_out");
     expect(classifyIntent("me tira dessa consulta, não vou poder ir")).not.toBe("opt_out");
     expect(classifyIntent("pode me tirar do horário de amanhã?")).not.toBe("opt_out");
   });
+});
+
+describe("isChangeRequest (007 review)", () => {
+  it.each([
+    "sim, mas preciso mudar o horário",
+    "quero remarcar",
+    "não vou poder ir",
+    "pode cancelar",
+    "outro dia",
+  ])("%j asks for a change", async (t) => {
+    const { isChangeRequest } = await import("../../src/agent/intent");
+    expect(isChangeRequest(t)).toBe(true);
+  });
+  it.each(["sim, estarei lá", "confirmo minha presença", "ok, até amanhã"])(
+    "%j does not",
+    async (t) => {
+      const { isChangeRequest } = await import("../../src/agent/intent");
+      expect(isChangeRequest(t)).toBe(false);
+    },
+  );
 });
