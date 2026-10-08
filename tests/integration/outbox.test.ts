@@ -206,22 +206,25 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     expect(await countAudit(pool, "escalated")).toBe(1);
   });
 
-  it("a dead-lettered escalation only audits — no infinite escalation loop", async () => {
-    const clock = new FakeClock(NOW);
-    const messaging = new FakeMessaging();
-    messaging.failAlways = true;
-    await enqueueOutbox(pool, { kind: "escalation", toPhone: RECEPTION, body: "help", now: NOW });
+  it.each(["escalation", "reception_notice"] as const)(
+    "a dead-lettered %s (to reception) only audits — no infinite escalation loop",
+    async (kind) => {
+      const clock = new FakeClock(NOW);
+      const messaging = new FakeMessaging();
+      messaging.failAlways = true;
+      await enqueueOutbox(pool, { kind, toPhone: RECEPTION, body: "help", now: NOW });
 
-    for (let attempt = 1; attempt <= OUTBOX_MAX_ATTEMPTS; attempt++) {
-      await dispatchOutbox(makeDeps(clock, messaging));
-      clock.advance(OUTBOX_BACKOFF_MS[Math.min(attempt - 1, OUTBOX_BACKOFF_MS.length - 1)]);
-    }
-    const all = await rows();
-    expect(all).toHaveLength(1);
-    expect(all[0].status).toBe("failed");
-    expect(await countAudit(pool, "outbox_dead_letter")).toBe(1);
-    expect(await countAudit(pool, "escalated")).toBe(0);
-  });
+      for (let attempt = 1; attempt <= OUTBOX_MAX_ATTEMPTS; attempt++) {
+        await dispatchOutbox(makeDeps(clock, messaging));
+        clock.advance(OUTBOX_BACKOFF_MS[Math.min(attempt - 1, OUTBOX_BACKOFF_MS.length - 1)]);
+      }
+      const all = await rows();
+      expect(all).toHaveLength(1);
+      expect(all[0].status).toBe("failed");
+      expect(await countAudit(pool, "outbox_dead_letter")).toBe(1);
+      expect(await countAudit(pool, "escalated")).toBe(0);
+    },
+  );
 
   it("two concurrent dispatchers deliver each of N rows exactly once (SKIP LOCKED)", async () => {
     const clock = new FakeClock(NOW);

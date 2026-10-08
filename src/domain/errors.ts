@@ -7,6 +7,25 @@ export class SlotUnavailableError extends Error {
   }
 }
 
+/**
+ * No such booking for this patient (unknown id or another phone's booking — deliberately
+ * indistinguishable to the caller, so a guessed id reveals nothing). 006.
+ */
+export class BookingNotFoundError extends Error {
+  constructor(message = "Não encontrei essa consulta.") {
+    super(message);
+    this.name = "BookingNotFoundError";
+  }
+}
+
+/** The booking can no longer be cancelled or moved (already started, past, or not active). 006. */
+export class BookingNotChangeableError extends Error {
+  constructor(message = "Essa consulta não pode mais ser alterada.") {
+    super(message);
+    this.name = "BookingNotChangeableError";
+  }
+}
+
 /** The requested start is outside [now + lead, now + horizon] or off the 30-min grid. */
 export class SlotOutOfWindowError extends Error {
   constructor(message = "O horário está fora da janela de agendamento.") {

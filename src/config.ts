@@ -31,6 +31,8 @@ export const HISTORY_MAX_MESSAGES = 40;
 export const AVAILABILITY_MAX_SLOTS = 40;
 export const OFFERED_SLOTS_MAX = 3 * AVAILABILITY_MAX_SLOTS;
 export const ACTIVE_HOLDS_MAX = 10;
+/** Bookings find_my_booking showed in one conversation (006); only one is ever acted on. */
+export const SURFACED_BOOKINGS_MAX = 5;
 export const PROCESSED_IDS_MAX = 200;
 
 // Handed-off conversations (FR-211, T237): the patient gets at most one "reception will

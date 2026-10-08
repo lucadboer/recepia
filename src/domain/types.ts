@@ -30,6 +30,10 @@ export interface Booking {
   attendedBy: string | null;
   createdVia: "ai" | "human";
   consentAt: Date | null;
+  /** When it was cancelled (by the patient or replaced by a reschedule); null otherwise. 006. */
+  cancelledAt: Date | null;
+  /** The booking this one replaced through a reschedule; null otherwise. 006. */
+  rescheduledFrom: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

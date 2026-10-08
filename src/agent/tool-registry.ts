@@ -51,7 +51,13 @@ export interface ToolDispatchResult {
   errorType?: string;
 }
 
-export type RejectedBy = "unknown_tool" | "not_offered" | "foreign_hold" | "invalid_args";
+export type RejectedBy =
+  | "unknown_tool"
+  | "not_offered"
+  | "foreign_hold"
+  | "invalid_args"
+  | "not_surfaced"
+  | "confirmation_required";
 
 function result(
   state: ConversationState,

@@ -6,6 +6,7 @@ import {
   HISTORY_MAX_MESSAGES,
   OFFERED_SLOTS_MAX,
   PROCESSED_IDS_MAX,
+  SURFACED_BOOKINGS_MAX,
 } from "../config";
 import type { LlmMessage, LlmUsage } from "../ports/llm-port";
 import type { ConversationState, ConversationUsage } from "./types";
@@ -61,9 +62,46 @@ export function emptyState(phone: string, now: Date): ConversationState {
     handoffNoticeAt: null,
     promptVersion: null,
     usage: emptyUsage(),
+    turnSeq: 0,
+    surfacedBookings: [],
+    holdSeqs: [],
     version: 0,
     updatedAt: now,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Confirmation memory (006): what the patient was shown, and in which inbound turn.
+// ---------------------------------------------------------------------------
+
+/** One accepted inbound message = one turn (006 FR-603). */
+export function startTurn(s: ConversationState, now: Date): ConversationState {
+  return { ...s, turnSeq: s.turnSeq + 1, updatedAt: now };
+}
+
+/** find_my_booking showed this booking. The FIRST turn is kept: re-showing never resets it. */
+export function recordSurfacedBooking(
+  s: ConversationState,
+  bookingId: string,
+  now: Date,
+): ConversationState {
+  if (s.surfacedBookings.some((b) => b.bookingId === bookingId)) return s;
+  const next = [...s.surfacedBookings, { bookingId, turn: s.turnSeq }];
+  return { ...s, surfacedBookings: capTail(next, SURFACED_BOOKINGS_MAX), updatedAt: now };
+}
+
+export function surfacedTurnOf(s: ConversationState, bookingId: string): number | null {
+  return s.surfacedBookings.find((b) => b.bookingId === bookingId)?.turn ?? null;
+}
+
+/** hold_slot created this hold in the current turn (once). */
+export function recordHoldTurn(s: ConversationState, holdId: string, now: Date): ConversationState {
+  if (s.holdSeqs.some((h) => h.holdId === holdId)) return s;
+  return { ...s, holdSeqs: [...s.holdSeqs, { holdId, turn: s.turnSeq }], updatedAt: now };
+}
+
+export function holdTurnOf(s: ConversationState, holdId: string): number | null {
+  return s.holdSeqs.find((h) => h.holdId === holdId)?.turn ?? null;
 }
 
 /** Record which prompt artifact the model is being driven with this turn (FR-409). */
@@ -246,8 +284,21 @@ export function boundState(s: ConversationState, now: Date): ConversationState {
   out = pruneOfferedSlots(out, now);
   const holds = capTail(out.activeHoldIds, ACTIVE_HOLDS_MAX);
   const processed = capTail(out.processedInboundIds, PROCESSED_IDS_MAX);
-  if (holds !== out.activeHoldIds || processed !== out.processedInboundIds) {
-    out = { ...out, activeHoldIds: holds, processedInboundIds: processed };
+  const holdSeqs = capTail(out.holdSeqs, ACTIVE_HOLDS_MAX);
+  const surfaced = capTail(out.surfacedBookings, SURFACED_BOOKINGS_MAX);
+  if (
+    holds !== out.activeHoldIds ||
+    processed !== out.processedInboundIds ||
+    holdSeqs !== out.holdSeqs ||
+    surfaced !== out.surfacedBookings
+  ) {
+    out = {
+      ...out,
+      activeHoldIds: holds,
+      processedInboundIds: processed,
+      holdSeqs,
+      surfacedBookings: surfaced,
+    };
   }
   return out;
 }

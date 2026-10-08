@@ -3,7 +3,11 @@ import type { Pool, PoolClient } from "../pool";
 
 type Queryable = Pool | PoolClient;
 
-export type OutboxKind = "booking_confirmation" | "escalation";
+export type OutboxKind =
+  | "booking_confirmation"
+  | "escalation"
+  | "booking_cancellation"
+  | "reception_notice";
 
 export type OutboxStatus = "pending" | "sent" | "failed" | "cancelled";
 

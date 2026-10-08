@@ -17,6 +17,8 @@ interface BookingRow {
   attended_by: string | null;
   created_via: "ai" | "human";
   consent_at: Date | null;
+  cancelled_at: Date | null;
+  rescheduled_from: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -35,6 +37,8 @@ export function rowToBooking(r: BookingRow): Booking {
     attendedBy: r.attended_by,
     createdVia: r.created_via,
     consentAt: r.consent_at,
+    cancelledAt: r.cancelled_at,
+    rescheduledFrom: r.rescheduled_from,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };

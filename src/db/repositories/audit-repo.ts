@@ -12,7 +12,10 @@ export type AuditAction =
   | "outbox_dead_letter"
   | "outbox_cancelled"
   | "conversation_released"
-  | "retention_purged";
+  | "retention_purged"
+  | "booking_cancelled"
+  | "booking_rescheduled"
+  | "calendar_delete_failed";
 
 export interface AuditEntry {
   entity: string;
