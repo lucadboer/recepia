@@ -12,7 +12,7 @@
 | `status` | `text` | `pending` \| `processing` \| `done` \| `dead` \| `dropped` |
 | `attempts` | `int` | incremented on claim |
 | `next_attempt_at` | `timestamptz` | due time for pending rows |
-| `locked_by` / `locked_until` | `text` / `timestamptz` | lease of a processing row |
+| `locked_by` / `locked_until` | `text` / `timestamptz` | lease of a processing row: the current claim's token (`<worker>/<uuid>`, new per claim) and its expiry |
 | `last_error` | `text NULL` | error type only (no content) |
 | `trace_context` | `text NULL` | W3C traceparent of the webhook span |
 | `processed_at` | `timestamptz NULL` | when done/dead |

@@ -3,6 +3,7 @@ import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import type { InboundMessage } from "../../src/agent/types";
 import type { Pool } from "../../src/db/pool";
 import { insertInbound } from "../../src/db/repositories/inbound-repo";
+import { LeaseLostError } from "../../src/domain/errors";
 import { createInboundWorker, inboundBackoff } from "../../src/jobs/inbound-worker";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
 
@@ -170,5 +171,41 @@ describe("createInboundWorker", () => {
     setTimeout(release, 30);
     expect(await drained).toBe(true);
     expect(await statusOf("d1")).toBe("done");
+  });
+
+  it("a turn whose message was taken over is told to stop, and its attempt records nothing", async () => {
+    await put("+5531900000811", "lost-1");
+    let aborted = false;
+    let fenced: unknown = null;
+    const worker = createInboundWorker({
+      pool,
+      clock: new FakeClock(NOW),
+      receptionPhone: RECEPTION,
+      concurrency: 1,
+      pollMs: 10,
+      leaseMs: 3_000, // a heartbeat every second
+      handler: async (_m, lease) => {
+        await lease.fence(pool); // still ours
+        await pool.query(
+          "UPDATE inbound_message SET locked_by = 'w2/other-claim' WHERE provider_message_id = 'lost-1'",
+        );
+        await new Promise<void>((resolve) =>
+          lease.signal.addEventListener("abort", () => resolve(), { once: true }),
+        );
+        aborted = true;
+        fenced = await lease.fence(pool).catch((err: unknown) => err);
+        throw fenced;
+      },
+    });
+    worker.start();
+    await until(async () => aborted);
+    expect(await worker.drain(2_000)).toBe(true);
+    expect(fenced).toBeInstanceOf(LeaseLostError);
+    const { rows } = await pool.query(
+      "SELECT status, locked_by, attempts FROM inbound_message WHERE provider_message_id = 'lost-1'",
+    );
+    // The new holder's claim is untouched: no retry scheduled, no dead letter by the stale attempt.
+    expect(rows[0]).toEqual({ status: "processing", locked_by: "w2/other-claim", attempts: 1 });
+    expect(await countAudit(pool, "inbound_dead_letter")).toBe(0);
   });
 });

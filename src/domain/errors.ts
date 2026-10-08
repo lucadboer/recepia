@@ -99,6 +99,18 @@ export class ConversationConflictError extends Error {
   }
 }
 
+/**
+ * The worker running this turn no longer owns its inbound message: its lease expired and another
+ * worker reclaimed it (008). The turn stops before any further write; the new holder runs the
+ * message, and the replay guard keeps it from repeating what this turn already committed.
+ */
+export class LeaseLostError extends Error {
+  constructor() {
+    super("This turn's inbound message was taken over by another worker.");
+    this.name = "LeaseLostError";
+  }
+}
+
 const ESCALATED_FLAG = Symbol.for("recepia.escalated");
 
 /**

@@ -1,6 +1,6 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { enqueueOutbox } from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { escalationMessagePt } from "../messages";
 
 /** What reception needs to pick the conversation up (FR-204). */
@@ -37,6 +37,7 @@ export async function escalateToHuman(deps: Deps, escalation: Escalation): Promi
       body: escalationMessagePt({ ...escalation, summary }),
       now,
     });
+    const stamp = await fencedStamp(client, deps);
     await appendAudit(client, {
       entity: "escalation",
       entityId: null,
@@ -49,7 +50,7 @@ export async function escalateToHuman(deps: Deps, escalation: Escalation): Promi
         summary,
         outboxId,
         ...(escalation.details ?? {}),
-        ...turnStamp(deps),
+        ...stamp,
       },
     });
     await client.query("COMMIT");

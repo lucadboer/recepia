@@ -30,7 +30,7 @@ const worker = createInboundWorker({
   pool: deps.pool,
   clock: deps.clock,
   receptionPhone: deps.receptionPhone,
-  handler: (msg) => handleInbound(deps, msg),
+  handler: (msg, lease) => handleInbound({ ...deps, lease }, msg),
 });
 const enqueue = createDurableEnqueue({
   pool: deps.pool,

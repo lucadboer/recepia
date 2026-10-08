@@ -16,13 +16,24 @@ one process.
   is claimable when pending and due, or processing with an expired lease, it is the oldest
   unfinished row of its phone, and no other row of that phone holds a live lease. FIFO per phone
   and one turn in flight per phone across any number of workers, without session state.
-- **Lease + heartbeat**, holder-only finish (`WHERE locked_by = $worker`): a worker that died is
-  replaced after the lease; a worker whose lease was taken over cannot finish the message.
+- **Lease + heartbeat, one token per claim.** Each claim writes a fresh `locked_by` token
+  (`<worker>/<uuid>`); heartbeat, done, retry and dead all match that token, so an earlier attempt
+  — even one from another slot of the same worker — can neither renew nor finish a later claim.
+  A worker that died is replaced after the lease.
+- **Fencing** (review): a worker whose lease expired may still be running its turn when the message
+  is reclaimed. A heartbeat that finds the message taken over aborts the turn's signal; the turn
+  re-checks the lease before each model call, each tool and the state save; and every final write
+  checks it inside its own transaction with `SELECT … FOR SHARE` on the message row. A takeover's
+  claim skips locked rows, so it cannot start until such a write has committed — and then the
+  replay guard sees the write. A stale turn's calendar event is compensated as any orphan.
+- **Flood guard under a per-phone lock**: the count of a phone's unfinished rows and the insert run
+  under `pg_advisory_xact_lock`, so concurrent deliveries cannot pass the limit together.
 - **Retries** with jittered backoff (2 s … 10 min); the 5th failure marks the row dead, audits it
   and hands the patient to reception in one transaction.
 - **Replay guard** (found by the chaos test): every final write's audit row carries the inbound
   message id; a reclaimed message whose turn already committed a final write is finished without
-  running the model again.
+  running the model again, and the conversation gets the status those writes imply (a hand-off
+  stays with reception, a booking finishes it), as the original turn would have saved it.
 - Hand-rolled on Postgres (owner decision), the same pattern as the outbox (ADR 0004).
 
 ## Consequences

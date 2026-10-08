@@ -52,19 +52,33 @@ const FINAL_ACTIONS = [
   "escalated",
 ] as const;
 
+export type FinalAction = (typeof FINAL_ACTIONS)[number];
+
+/** A final write a turn committed for its inbound message (008 replay guard). */
+export interface CommittedWrite {
+  action: FinalAction;
+  entityId: string | null;
+}
+
 /**
- * True when the turn for this inbound message already committed a final write (008: a message is
- * reclaimed after a crash between the tools' commit and the conversation save).
+ * The final writes the turn for this inbound message already committed (008: a
+ * message is reclaimed after a crash between the tools' commit and the conversation save). Empty
+ * when the turn has not committed one. Served by the partial index of migration 013, whose
+ * predicate the query repeats so the planner can use it.
  */
-export async function messageAlreadyCommitted(
+export async function committedTurnWrites(
   q: PoolClient | Pool,
   inboundMessageId: string,
-): Promise<boolean> {
+): Promise<CommittedWrite[]> {
   const { rows } = await q.query(
-    `SELECT 1 FROM audit_log
-     WHERE (payload->>'inboundMessageId') = $1 AND action = ANY($2::text[])
-     LIMIT 1`,
+    `SELECT action, entity_id FROM audit_log
+     WHERE payload ? 'inboundMessageId'
+       AND (payload->>'inboundMessageId') = $1
+       AND action = ANY($2::text[])`,
     [inboundMessageId, FINAL_ACTIONS],
   );
-  return rows.length > 0;
+  return rows.map((r) => ({
+    action: r.action as FinalAction,
+    entityId: (r.entity_id as string | null) ?? null,
+  }));
 }

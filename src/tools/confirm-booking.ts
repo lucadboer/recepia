@@ -1,7 +1,7 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { isExpired } from "../domain/booking";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
 import type { Booking, Patient } from "../domain/types";
@@ -115,6 +115,7 @@ export async function confirmBooking(
         dedupeKey: `booking_confirmation:${flipped.id}`,
         now,
       });
+      const stamp = await fencedStamp(client, deps);
       await appendAudit(client, {
         entity: "booking",
         entityId: flipped.id,
@@ -124,7 +125,7 @@ export async function confirmBooking(
           eventId,
           start: flipped.start.toISOString(),
           outboxId,
-          ...turnStamp(deps),
+          ...stamp,
         },
       });
       await client.query("COMMIT");

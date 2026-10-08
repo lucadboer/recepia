@@ -1,8 +1,9 @@
 // 008 durable inbound pipeline: the in-process worker between the queue and the orchestrator.
 // `concurrency` slots each loop claim → run → finish; a heartbeat keeps the lease alive while a
 // turn runs; failures retry with jittered backoff and the last one dead-letters to reception.
+// Every claim carries its own lease token: a turn that lost its message to another worker is
+// signalled to stop, its writes are fenced on that token, and it finishes nothing.
 
-import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import type { InboundMessage } from "../agent/types";
 import {
@@ -17,10 +18,13 @@ import {
   claimNext,
   heartbeat,
   type InboundRow,
+  leaseHeld,
   markDead,
   markDone,
   markRetry,
 } from "../db/repositories/inbound-repo";
+import type { TurnLease } from "../deps";
+import { LeaseLostError } from "../domain/errors";
 import type { Clock } from "../ports/clock";
 import { log } from "../telemetry/logger";
 import { messageRef } from "../telemetry/pseudonym";
@@ -35,8 +39,11 @@ export function inboundBackoff(attempt: number, random: () => number = Math.rand
 export interface InboundWorkerOptions {
   pool: Pool;
   clock: Clock;
-  /** The orchestrator turn (`handleInbound`). A throw means "retry this message". */
-  handler: (msg: InboundMessage) => Promise<unknown>;
+  /**
+   * The orchestrator turn (`handleInbound`, given the lease as `deps.lease`). A throw means "retry
+   * this message"; a LeaseLostError means another worker owns it now.
+   */
+  handler: (msg: InboundMessage, lease: TurnLease) => Promise<unknown>;
   receptionPhone: string;
   concurrency?: number;
   leaseMs?: number;
@@ -55,12 +62,32 @@ export interface InboundWorker {
   readonly inFlight: number;
 }
 
+/** The lease of one claim, handed to its turn. `lose()` is called when a heartbeat finds it gone. */
+export function createTurnLease(
+  row: Pick<InboundRow, "id" | "lease">,
+): TurnLease & { lose(): void } {
+  const controller = new AbortController();
+  const lose = () => {
+    if (!controller.signal.aborted) controller.abort(new LeaseLostError());
+  };
+  return {
+    signal: controller.signal,
+    lose,
+    async fence(q) {
+      controller.signal.throwIfAborted();
+      if (await leaseHeld(q, row.id, row.lease)) return;
+      lose();
+      controller.signal.throwIfAborted();
+    },
+  };
+}
+
 export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
   const concurrency = opts.concurrency ?? INBOUND_CONCURRENCY;
   const leaseMs = opts.leaseMs ?? INBOUND_LEASE_MS;
   const maxAttempts = opts.maxAttempts ?? INBOUND_MAX_ATTEMPTS;
   const pollMs = opts.pollMs ?? INBOUND_POLL_MS;
-  const workerId = opts.workerId ?? `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
+  const workerId = opts.workerId ?? `${hostname()}:${process.pid}`; // + a uuid per claim
 
   let stopping = false;
   let inFlight = 0;
@@ -84,16 +111,29 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       waiters.add(done);
     });
 
+  const leaseLost = (row: InboundRow) =>
+    log.warn(
+      {
+        event: "inbound.lease_lost",
+        messageRef: messageRef(row.providerMessageId),
+        attempts: row.attempts,
+      },
+      "inbound message taken over by another worker; this attempt finishes nothing",
+    );
+
   async function finish(row: InboundRow, err: unknown): Promise<void> {
     const now = opts.clock.now();
     if (err === null) {
-      await markDone(opts.pool, row.id, workerId, now);
+      if (!(await markDone(opts.pool, row.id, row.lease, now))) leaseLost(row);
       return;
     }
     const type = errorTypeOf(err);
     const ref = messageRef(row.providerMessageId);
     if (row.attempts >= maxAttempts) {
-      await markDead(opts.pool, row.id, workerId, now, type, opts.receptionPhone);
+      if (!(await markDead(opts.pool, row.id, row.lease, now, type, opts.receptionPhone))) {
+        leaseLost(row);
+        return;
+      }
       log.error(
         { event: "inbound.dead_letter", messageRef: ref, attempts: row.attempts, errorType: type },
         "inbound message dead-lettered to reception",
@@ -101,7 +141,10 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       return;
     }
     const nextAt = new Date(now.getTime() + inboundBackoff(row.attempts));
-    await markRetry(opts.pool, row.id, workerId, nextAt, type);
+    if (!(await markRetry(opts.pool, row.id, row.lease, nextAt, type))) {
+      leaseLost(row);
+      return;
+    }
     log.info(
       { event: "inbound.retry", messageRef: ref, attempts: row.attempts, errorType: type },
       "inbound retry scheduled",
@@ -109,9 +152,14 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
   }
 
   async function run(row: InboundRow): Promise<void> {
+    const lease = createTurnLease(row);
     const beat = setInterval(
       () => {
-        heartbeat(opts.pool, row.id, workerId, opts.clock.now(), leaseMs).catch(() => {});
+        heartbeat(opts.pool, row.id, row.lease, opts.clock.now(), leaseMs)
+          .then((held) => {
+            if (!held) lease.lose(); // taken over: the turn stops at its next check
+          })
+          .catch(() => {}); // a failed heartbeat is not a lost lease; the fence decides
       },
       Math.max(1_000, Math.floor(leaseMs / 3)),
     );
@@ -128,12 +176,15 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
         },
         async () => {
           try {
-            return await opts.handler({
-              phone: row.phone,
-              text: row.text,
-              providerMessageId: row.providerMessageId,
-              receivedAt: row.receivedAt,
-            });
+            return await opts.handler(
+              {
+                phone: row.phone,
+                text: row.text,
+                providerMessageId: row.providerMessageId,
+                receivedAt: row.receivedAt,
+              },
+              lease,
+            );
           } catch (err) {
             // Logged inside the span so the line carries the message's trace id (masked by the
             // logger's PII backstop); the span records the error type only.
@@ -154,6 +205,10 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       failure = err;
     } finally {
       clearInterval(beat);
+    }
+    if (failure instanceof LeaseLostError || lease.signal.aborted) {
+      leaseLost(row); // the new holder runs (or already ran) the message
+      return;
     }
     await finish(row, failure);
   }

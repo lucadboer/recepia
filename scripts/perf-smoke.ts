@@ -24,6 +24,7 @@ import { loadEnv } from "../src/db/env";
 import { migrate } from "../src/db/migrate";
 import { makePool } from "../src/db/pool";
 import { DbConversationStore } from "../src/db/repositories/conversation-repo";
+import type { TurnLease } from "../src/deps";
 import { ConversationConflictError } from "../src/domain/errors";
 import { createInboundWorker } from "../src/jobs/inbound-worker";
 import { systemClock } from "../src/ports/clock";
@@ -196,10 +197,10 @@ async function runOnce(rep: number): Promise<RunResult> {
     clock: systemClock,
     receptionPhone: deps.receptionPhone,
     pollMs: 20,
-    handler: async (msg: InboundMessage) => {
+    handler: async (msg: InboundMessage, lease: TurnLease) => {
       const t0 = performance.now();
       try {
-        const r = await handleInbound(deps, msg);
+        const r = await handleInbound({ ...deps, lease }, msg);
         turnMs.push(performance.now() - t0);
         statuses[r.status] = (statuses[r.status] ?? 0) + 1;
         return r;

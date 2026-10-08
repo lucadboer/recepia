@@ -21,13 +21,14 @@
 - **Alternatives**: advisory lock per phone (session-bound, no ordering); a library (owner decision: hand-rolled).
 
 ## R3 — Lease and heartbeat
-- **Decision**: lease 5 min; heartbeat every lease/3 extends it while the handler runs; `markDone/markRetry/markDead` include `WHERE locked_by = $w` so a worker whose lease was taken over cannot finish the message.
+- **Decision**: lease 5 min; heartbeat every lease/3 extends it while the handler runs; `markDone/markRetry/markDead` include `WHERE locked_by = $lease` so a worker whose lease was taken over cannot finish the message.
+- **Review amendment (Codex)**: the token is per claim (`<worker>/<uuid>`), not per worker — two slots of one process share the worker id, so a slot that reclaimed an expired message would otherwise let the earlier attempt renew or finish it. A heartbeat that matches nothing aborts the turn's `TurnLease.signal`, and writes are fenced: the turn checks `leaseHeld` before each model call, tool and state save, and every stamped write checks it inside its transaction with `FOR SHARE`, which also holds off a takeover (its claim uses `SKIP LOCKED`) until the write commits. Alternatives: a session advisory lock per turn (one pooled connection pinned per turn for the whole model loop); fencing only on heartbeat (a window of up to lease/3 with writes still allowed).
 
 ## R4 — Retries and dead letter
 - **Decision**: backoff [2 s, 10 s, 30 s, 2 min, 10 min] × uniform(0.8, 1.2); after 5 attempts → `dead`, audit `inbound_dead_letter`, `escalateToHuman('inbound_failed')` in the same transaction. A dead row is finished, so the phone's next message becomes claimable.
 
 ## R5 — Flood guard and retention
-- **Decision**: count unfinished rows of the phone inside the insert transaction; ≥ 20 → insert as `dropped` + `log.warn`. Done → `body = NULL`; `purgeInactive` deletes `done|dead|dropped` rows older than 90 days.
+- **Decision**: count unfinished rows of the phone inside the insert transaction, under `pg_advisory_xact_lock(hashtext('inbound:' || phone))` so concurrent deliveries are admitted one at a time (review: without it, READ COMMITTED lets them all see the same count); ≥ 20 → insert as `dropped` + `log.warn`. Done → `body = NULL`; `purgeInactive` deletes `done|dead|dropped` rows older than 90 days.
 
 ## R6 — Tracing
 - **Decision**: store `currentTraceparent()` on insert; the worker runs the turn inside a root span linked to it (same helper as the outbox).
@@ -37,5 +38,5 @@
 
 ## R8 — Replay guard (found by the chaos test)
 - **Finding**: with seed 17 a worker died after a turn's booking committed but before the conversation state (with the processed message id) was saved; the reclaimed message ran again and the scripted model booked a second appointment.
-- **Decision**: every final write (`booking_confirmed`, `booking_rescheduled`, `booking_cancelled`, `attendance_confirmed`, `escalated`) stamps `inboundMessageId` in its audit payload (`turnStamp(deps)`); at the start of a turn the orchestrator asks `messageAlreadyCommitted(id)` and, if so, marks the message processed, flushes the outbox and stops — the patient still receives what the first run committed. An expression index on `payload->>'inboundMessageId'` keeps the check cheap.
+- **Decision**: every final write (`booking_confirmed`, `booking_rescheduled`, `booking_cancelled`, `attendance_confirmed`, `escalated`) stamps `inboundMessageId` in its audit payload (`fencedStamp(client, deps)`); at the start of a turn the orchestrator asks `committedTurnWrites(id)` and, if any, marks the message processed, gives the conversation the status those writes imply (`applyCommittedTurn`: escalated → handed off, booked/rescheduled → completed with the booking, cancelled/attendance → completed — review: a replayed escalation used to leave the conversation `active`), flushes the outbox and stops; a replayed hand-off also sends the patient the hand-off reply the crash prevented. The patient still receives what the first run committed. A partial expression index on `payload->>'inboundMessageId'` keeps the check cheap; the query repeats the index predicate so the planner can use it.
 - **Alternatives**: saving the conversation state in the tools' transactions (couples every tool to the conversation store); idempotency keys per tool call (the model's second run is a different call).

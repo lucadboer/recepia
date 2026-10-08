@@ -4,6 +4,7 @@ import {
   claimNext,
   heartbeat,
   insertInbound,
+  leaseHeld,
   markDead,
   markDone,
   markRetry,
@@ -105,6 +106,32 @@ describe("insertInbound", () => {
       "pending",
     ]);
   });
+
+  it("concurrent deliveries for one phone never pass the limit (admission is serialized per phone)", async () => {
+    const deliver = async (i: number) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const outcome = await insertInbound(
+          client,
+          { phone: A, text: "x", providerMessageId: `c${i}`, receivedAt: NOW },
+          "evolution",
+          NOW,
+          5,
+        );
+        await client.query("COMMIT");
+        return outcome;
+      } catch (err) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    };
+    const outcomes = await Promise.all(Array.from({ length: 16 }, (_, i) => deliver(i)));
+    expect(outcomes.filter((o) => o === "inserted")).toHaveLength(5);
+    expect(outcomes.filter((o) => o === "dropped")).toHaveLength(11);
+  });
 });
 
 describe("claimNext — FIFO per phone, one in flight per phone", () => {
@@ -117,7 +144,7 @@ describe("claimNext — FIFO per phone, one in flight per phone", () => {
     const third = await claimNext(pool, "w3", NOW, LEASE);
     expect([first?.providerMessageId, second?.providerMessageId]).toEqual(["a1", "b1"]);
     expect(third).toBeNull(); // a2 waits for a1
-    await markDone(pool, must(first).id, "w1", NOW);
+    await markDone(pool, must(first).id, must(first).lease, NOW);
     expect((await claimNext(pool, "w3", NOW, LEASE))?.providerMessageId).toBe("a2");
   });
 
@@ -134,7 +161,7 @@ describe("claimNext — FIFO per phone, one in flight per phone", () => {
   it("respects the due time of a retried message", async () => {
     await put(A, "a1");
     const c = await claimNext(pool, "w1", NOW, LEASE);
-    await markRetry(pool, must(c).id, "w1", new Date(NOW.getTime() + 10_000), "Error");
+    await markRetry(pool, must(c).id, must(c).lease, new Date(NOW.getTime() + 10_000), "Error");
     expect(await claimNext(pool, "w2", NOW, LEASE)).toBeNull();
     expect(
       (await claimNext(pool, "w2", new Date(NOW.getTime() + 10_001), LEASE))?.providerMessageId,
@@ -149,17 +176,54 @@ describe("claimNext — FIFO per phone, one in flight per phone", () => {
     const again = await claimNext(pool, "w2", later, LEASE);
     expect(again?.id).toBe(must(c).id);
     expect(again?.attempts).toBe(2);
-    expect(await markDone(pool, must(c).id, "dead-worker", later)).toBe(false);
-    expect(await markDone(pool, must(c).id, "w2", later)).toBe(true);
+    expect(await markDone(pool, must(c).id, must(c).lease, later)).toBe(false);
+    expect(await markDone(pool, must(c).id, must(again).lease, later)).toBe(true);
   });
 
   it("a heartbeat extends the lease of the holder only", async () => {
     await put(A, "a1");
     const c = await claimNext(pool, "w1", NOW, LEASE);
     const soon = new Date(NOW.getTime() + LEASE - 1_000);
-    expect(await heartbeat(pool, must(c).id, "w1", soon, LEASE)).toBe(true);
+    expect(await heartbeat(pool, must(c).id, must(c).lease, soon, LEASE)).toBe(true);
     expect(await heartbeat(pool, must(c).id, "intruder", soon, LEASE)).toBe(false);
     expect(await claimNext(pool, "w2", new Date(NOW.getTime() + LEASE + 1), LEASE)).toBeNull();
+  });
+});
+
+describe("leases are per claim (fencing token)", () => {
+  it("a reclaim by another slot of the SAME worker owns the message; the earlier attempt can neither renew nor finish it", async () => {
+    await put(A, "a1");
+    const first = must(await claimNext(pool, "w1", NOW, LEASE));
+    const later = new Date(NOW.getTime() + LEASE + 1);
+    const second = must(await claimNext(pool, "w1", later, LEASE));
+    expect(second.id).toBe(first.id);
+    expect(second.lease).not.toBe(first.lease);
+    expect(await heartbeat(pool, first.id, first.lease, later, LEASE)).toBe(false);
+    expect(await markRetry(pool, first.id, first.lease, later, "Error")).toBe(false);
+    expect(await markDone(pool, first.id, first.lease, later)).toBe(false);
+    expect(await markDead(pool, first.id, first.lease, later, "Error", RECEPTION)).toBe(false);
+    expect(await leaseHeld(pool, first.id, first.lease)).toBe(false);
+    expect(await leaseHeld(pool, second.id, second.lease)).toBe(true);
+    expect(await markDone(pool, second.id, second.lease, later)).toBe(true);
+    expect(await leaseHeld(pool, second.id, second.lease)).toBe(false); // finished
+  });
+
+  it("a write fenced on its lease holds off a takeover until it commits", async () => {
+    await put(A, "a1");
+    const c = must(await claimNext(pool, "w1", NOW, LEASE));
+    const expired = new Date(NOW.getTime() + LEASE + 1);
+    const writer = await pool.connect();
+    try {
+      await writer.query("BEGIN");
+      expect(await leaseHeld(writer, c.id, c.lease)).toBe(true);
+      // While the fenced write is open nobody can take the message over...
+      expect(await claimNext(pool, "w2", expired, LEASE)).toBeNull();
+      await writer.query("COMMIT");
+    } finally {
+      writer.release();
+    }
+    // ...and once it committed the takeover proceeds (and the replay guard sees that write).
+    expect((await claimNext(pool, "w2", expired, LEASE))?.id).toBe(c.id);
   });
 });
 
@@ -167,7 +231,7 @@ describe("finishing a message", () => {
   it("done clears the text", async () => {
     await put(A, "a1");
     const c = await claimNext(pool, "w1", NOW, LEASE);
-    await markDone(pool, must(c).id, "w1", NOW);
+    await markDone(pool, must(c).id, must(c).lease, NOW);
     expect(await rows()).toEqual([{ provider_message_id: "a1", status: "done", body: null }]);
   });
 
@@ -175,7 +239,7 @@ describe("finishing a message", () => {
     await put(A, "a1");
     await put(A, "a2");
     const c = await claimNext(pool, "w1", NOW, LEASE);
-    expect(await markDead(pool, must(c).id, "w1", NOW, "TypeError", RECEPTION)).toBe(true);
+    expect(await markDead(pool, must(c).id, must(c).lease, NOW, "TypeError", RECEPTION)).toBe(true);
     expect((await rows())[0]).toMatchObject({ status: "dead", body: null });
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(1);
     expect(await countAudit(pool, "escalated")).toBe(1);

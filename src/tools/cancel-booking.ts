@@ -6,7 +6,7 @@ import {
   releasedBookingMessages,
   supersedePending,
 } from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { cancellationMessagePt } from "../messages";
@@ -88,6 +88,7 @@ export async function cancelBooking(
           now,
         });
       }
+      const stamp = await fencedStamp(client, deps);
       await appendAudit(client, {
         entity: "booking",
         entityId: row.id,
@@ -98,7 +99,7 @@ export async function cancelBooking(
           start: row.start.toISOString(),
           late,
           outboxId,
-          ...turnStamp(deps),
+          ...stamp,
         },
       });
       await client.query("COMMIT");

@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { type AgentDeps, handleInbound } from "../../src/agent/orchestrator";
 import type { InboundMessage } from "../../src/agent/types";
 import type { Pool } from "../../src/db/pool";
+import type { TurnLease } from "../../src/deps";
 import { createInboundWorker, type InboundWorker } from "../../src/jobs/inbound-worker";
 import { createDurableEnqueue } from "../../src/webhook/enqueue";
 import { createWebhookServer, type WebhookServerOptions } from "../../src/webhook/server";
@@ -15,7 +16,7 @@ export async function startPipeline(
   deps: AgentDeps,
   opts: {
     secret: string;
-    handler?: (m: InboundMessage) => Promise<unknown>;
+    handler?: (m: InboundMessage, lease: TurnLease) => Promise<unknown>;
     server?: Partial<WebhookServerOptions>;
   },
 ): Promise<{ base: string; server: Server; worker: InboundWorker; stop(): Promise<void> }> {
@@ -24,7 +25,7 @@ export async function startPipeline(
     clock: deps.clock,
     receptionPhone: deps.receptionPhone,
     pollMs: 10,
-    handler: opts.handler ?? ((m) => handleInbound(deps, m)),
+    handler: opts.handler ?? ((m, lease) => handleInbound({ ...deps, lease }, m)),
   });
   const server = createWebhookServer({
     secret: opts.secret,

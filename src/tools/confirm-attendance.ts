@@ -1,7 +1,7 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { lockBookingForUpdate } from "../db/repositories/booking-repo";
 import { enqueueOutbox, supersedePending } from "../db/repositories/outbox-repo";
-import { type Deps, turnStamp } from "../deps";
+import { type Deps, fencedStamp } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
 import { attendanceConfirmedMessagePt } from "../messages";
@@ -51,6 +51,7 @@ export async function confirmAttendance(
       dedupeKey: `attendance_confirmation:${row.id}`,
       now,
     });
+    const stamp = await fencedStamp(client, deps, { prompt: via === "model" });
     await appendAudit(client, {
       entity: "booking",
       entityId: row.id,
@@ -60,7 +61,7 @@ export async function confirmAttendance(
         via,
         start: row.start.toISOString(),
         outboxId,
-        ...turnStamp(deps, { prompt: via === "model" }),
+        ...stamp,
       },
     });
     await client.query("COMMIT");
