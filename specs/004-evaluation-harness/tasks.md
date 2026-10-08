@@ -181,6 +181,14 @@ description: "Task list for 004-evaluation-harness"
 - [x] T453 Measure `evals/lib/**` coverage and add it to `vitest.config.ts` `coverage.include` (ratchet the thresholds only upwards; drop the T402 exclusion comment)
 - [x] T454 Self-review + Codex review of the PR; fix findings; update `specs/004-evaluation-harness/tasks.md` checkboxes — 2026-10-06: Codex (gpt-6.1-sol, xhigh) 6 findings + self-review 13 findings, all addressed in the PR (strict `liveExpect` with `$between` windows, cap re-checked after every execution and during judging, bookings/own holds from this execution's audit rows, `inj-05` slot with capacity, mode-independent label for `inj-10`, publish-on-regression workflow, no CI bypass in the truncate guard, refusal `stop_details`, Opus cache-read price)
 
+### Amendment 2026-10-08 — owner budget (see spec Clarifications, Session 2026-10-08)
+
+- [x] T455 [P] `tests/unit/evals-case-selection.test.ts`: cheap live defaults (1 repetition, US$ 0.75) with env/flag overrides; `--case a,b` lists; repeatable `--category` (unknown rejected); `--write-baseline` refused on any subset; `selectCases` union in golden-set order, unknown id / empty category fail loudly; subset reports never go to the published folder. `tests/unit/evals-metrics.test.ts`: a category missing from a subset run is never a regression
+- [x] T456 `evals/run.ts`: `DEFAULT_LIVE_REPETITIONS = 1`, `DEFAULT_CAP_USD = 0.75`, `caseIds`/`categories`, `selectCases`, `isSubsetRun`, `reportsDirFor` (`evals/reports/subset/`, git-ignored) — make T455 pass
+- [x] T457 `.github/workflows/evals.yml`: PR live runs only on the `live-evals` label (`types: [opened, synchronize, reopened, labeled]`, one paid run per application, cases from `evals/live-subset.txt`, cap US$ 0.40); fake job skips the `labeled` action and warns when `prompts/**` changed; concurrency group includes action + label; dispatch defaults 1 / 0.75 plus a `cases` input; only full-set runs on main are published
+- [x] T458 `evals/cases/optout-03-after-completed-booking.json`: drop `mustNotInclude: ["escalate_to_human"]` from `liveExpect` (constitution IV; same as optout-02); keep the first booking and its calendar event
+- [x] T459 [P] Docs: README (Evaluation, Quality gates), CONTRIBUTING (CI), this spec (Clarifications, SC-406, Assumptions), plan, research, quickstart, `.env.example`
+
 ---
 
 ## Dependencies & Execution Order

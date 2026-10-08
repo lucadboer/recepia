@@ -1,9 +1,9 @@
 // Evaluation harness CLI (feature 004). `pnpm evals:fake` is the deterministic CI gate;
 // `pnpm evals:live` measures the production model behind ANTHROPIC_API_KEY.
 //
-//   node --import tsx evals/run.ts [--mode fake|live] [--case <id>] [--verbose]
-//                                  [--repetitions N] [--cap-usd X] [--model <id>] [--judge]
-//                                  [--write-baseline]
+//   node --import tsx evals/run.ts [--mode fake|live] [--case <id>[,<id>…]] [--category <c>]…
+//                                  [--verbose] [--repetitions N] [--cap-usd X] [--model <id>]
+//                                  [--judge] [--write-baseline]
 //   node --import tsx evals/run.ts readme [--check]
 
 import { execSync } from "node:child_process";
@@ -18,7 +18,7 @@ import { migrate } from "../src/db/migrate";
 import { makePool } from "../src/db/pool";
 import type { LLMPort } from "../src/ports/llm-port";
 import { type Assertion, score } from "./lib/assertions";
-import { type EvalCase, loadCases } from "./lib/case-schema";
+import { CATEGORIES, type Category, type EvalCase, loadCases } from "./lib/case-schema";
 import { type JudgeResult, judgeModelFor, judgeTranscript, loadRubric } from "./lib/judge";
 import {
   type Baseline,
@@ -43,16 +43,22 @@ export const CASES_DIR = fileURLToPath(new URL("./cases/", import.meta.url));
 /** Live reports are the published numbers (committed through a PR); fake reports are CI artifacts. */
 export const REPORTS_DIR = fileURLToPath(new URL("./reports/", import.meta.url));
 export const FAKE_REPORTS_DIR = fileURLToPath(new URL("./reports/fake/", import.meta.url));
+/** A live run over part of the golden set never overwrites the published report (the README reads it). */
+export const SUBSET_REPORTS_DIR = fileURLToPath(new URL("./reports/subset/", import.meta.url));
 export const BASELINE_PATH = fileURLToPath(new URL("./baseline.json", import.meta.url));
 export const README_PATH = fileURLToPath(new URL("../README.md", import.meta.url));
 export const LATEST_LIVE_REPORT = fileURLToPath(new URL("./reports/latest.json", import.meta.url));
-export const DEFAULT_CAP_USD = 5;
-export const DEFAULT_LIVE_REPETITIONS = 3;
+// Owner budget (004 amendment, 2026-10-08): live runs default to one execution per case under a
+// US$ 0.75 cap; more repetitions or a higher cap are always an explicit choice.
+export const DEFAULT_CAP_USD = 0.75;
+export const DEFAULT_LIVE_REPETITIONS = 1;
 
 export interface Args {
   command: "run" | "readme";
   mode: Mode;
-  caseId?: string;
+  /** Selected case ids (`--case a,b`); with `categories`, the selection is their union. */
+  caseIds?: string[];
+  categories?: Category[];
   verbose: boolean;
   repetitions: number;
   capUsd: number;
@@ -98,9 +104,22 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
         args.mode = m;
         break;
       }
-      case "--case":
-        args.caseId = next();
+      case "--case": {
+        const ids = next()
+          .split(",")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
+        args.caseIds = [...new Set([...(args.caseIds ?? []), ...ids])];
         break;
+      }
+      case "--category": {
+        const c = next();
+        if (!(CATEGORIES as readonly string[]).includes(c)) {
+          throw new Error(`--category: "${c}" is not one of ${CATEGORIES.join(", ")}`);
+        }
+        args.categories = [...new Set([...(args.categories ?? []), c as Category])];
+        break;
+      }
       case "--verbose":
         args.verbose = true;
         break;
@@ -148,13 +167,45 @@ export function parseArgs(argv: string[], env: NodeJS.ProcessEnv = {}): Args {
       "--repetitions applies to live mode only (the deterministic mode is exactly repeatable)",
     );
   }
-  if (args.writeBaseline && args.caseId) {
+  if (args.writeBaseline && isSubsetRun(args)) {
     throw new Error("--write-baseline needs the whole golden set (drop --case)");
   }
   if (args.writeBaseline && args.mode !== "live") {
     throw new Error("--write-baseline applies to live mode only");
   }
   return args;
+}
+
+/** True when the run covers only part of the golden set. */
+export function isSubsetRun(args: Pick<Args, "caseIds" | "categories">): boolean {
+  return (args.caseIds?.length ?? 0) > 0 || (args.categories?.length ?? 0) > 0;
+}
+
+/** Where a live run writes its report: the published one only for the whole golden set. */
+export function reportsDirFor(args: Pick<Args, "caseIds" | "categories">): string {
+  return isSubsetRun(args) ? SUBSET_REPORTS_DIR : REPORTS_DIR;
+}
+
+/**
+ * The cases a run executes: the whole set, or the union of the listed ids and categories in
+ * golden-set order. An unknown id or a category that selects nothing is an error — a typo must
+ * never silently shrink a paid run.
+ */
+export function selectCases(
+  all: EvalCase[],
+  args: Pick<Args, "caseIds" | "categories">,
+): EvalCase[] {
+  if (!isSubsetRun(args)) return all;
+  const known = new Set(all.map((c) => c.id));
+  const missing = (args.caseIds ?? []).filter((id) => !known.has(id));
+  if (missing.length > 0)
+    throw new Error(`no case matches ${missing.map((m) => `"${m}"`).join(", ")}`);
+  for (const cat of args.categories ?? []) {
+    if (!all.some((c) => c.category === cat)) throw new Error(`no case in category "${cat}"`);
+  }
+  const ids = new Set(args.caseIds ?? []);
+  const cats = new Set<string>(args.categories ?? []);
+  return all.filter((c) => ids.has(c.id) || cats.has(c.category));
 }
 
 export interface Io {
@@ -473,13 +524,14 @@ function formatRow(s: ScoredExecution, verbose: boolean): string {
 async function runCommand(args: Args, io: Io): Promise<number> {
   const { PROMPT_VERSION } = await import("../src/agent/system-prompt");
   if (args.mode === "live") return liveCommand(args, io, PROMPT_VERSION);
-  assertDisposableDatabase(io.env.DATABASE_URL, io.env, "EVALS_ALLOW_TRUNCATE", "the eval harness");
-  const all = loadCases(CASES_DIR);
-  const cases = args.caseId ? all.filter((c) => c.id === args.caseId) : all;
-  if (cases.length === 0) {
-    io.error(`no case matches "${args.caseId}"`);
+  let cases: EvalCase[];
+  try {
+    cases = selectCases(loadCases(CASES_DIR), args);
+  } catch (e) {
+    io.error(`evals: ${(e as Error).message}`);
     return 2;
   }
+  assertDisposableDatabase(io.env.DATABASE_URL, io.env, "EVALS_ALLOW_TRUNCATE", "the eval harness");
   const pool = makePool();
   const startedAt = new Date();
   const t0 = performance.now();
@@ -560,10 +612,11 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
       return 2;
     }
   }
-  const all = loadCases(CASES_DIR);
-  const cases = args.caseId ? all.filter((c) => c.id === args.caseId) : all;
-  if (cases.length === 0) {
-    io.error(`no case matches "${args.caseId}"`);
+  let cases: EvalCase[];
+  try {
+    cases = selectCases(loadCases(CASES_DIR), args);
+  } catch (e) {
+    io.error(`evals: ${(e as Error).message}`);
     return 2;
   }
   const guard = capGuard(args.capUsd, (ex) => costUsd(pricing, model, ex.llm.usage, io.error));
@@ -638,7 +691,7 @@ async function liveCommand(args: Args, io: Io, promptVersion: string): Promise<n
       metrics,
       baseline: comparison,
     });
-    const paths = writeReports(REPORTS_DIR, report);
+    const paths = writeReports(reportsDirFor(args), report);
     if (args.writeBaseline) {
       if (partial) {
         io.error("refusing to write a baseline from a partial run");

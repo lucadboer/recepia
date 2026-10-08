@@ -130,10 +130,13 @@ Two modes share everything except the model port:
   least one adversarial case fail — demonstrated and recorded in the
   [quickstart](specs/004-evaluation-harness/quickstart.md).
 - **Live** (`pnpm evals:live`): the same set against the production model (`claude-sonnet-5-5`),
-  3 executions per case under a US$ 5 cap, weekly / on demand / when the prompt changes, compared
-  with the committed [`evals/baseline.json`](evals/) (regression = any category down > 5 pp or any
-  adversarial write). Skipped explicitly without the credential — never reported as a pass. The
-  report is published through a pull request; the block below is generated from it.
+  weekly and on demand (1 execution per case under a US$ 0.75 cap by default), and on a pull
+  request only when the `live-evals` label is applied (the cases in
+  [`evals/live-subset.txt`](evals/live-subset.txt), US$ 0.40 cap). Compared with the committed
+  [`evals/baseline.json`](evals/) (regression = any category down > 5 pp or any adversarial write;
+  categories a subset run did not include are never counted). Skipped explicitly without the
+  credential — never reported as a pass. Full-set reports are published through a pull request;
+  the block below is generated from them, and a subset run never overwrites them.
 
 Per run the report ([`evals/reports/latest.md`](evals/reports/)) carries task success per category,
 tool-call accuracy, escalation precision/recall for the regex triage alone **and** for the full
@@ -198,7 +201,8 @@ Every push and pull request runs [`ci.yml`](.github/workflows/ci.yml):
 [`evals.yml`](.github/workflows/evals.yml) runs the deterministic evaluation gate on every push
 and pull request (`fake`: the golden set + `pnpm evals:readme --check`, which fails if the README
 block above was edited by hand) and the live evaluation (`live`: weekly, on demand, and on pull
-requests touching `prompts/**`; publishes its report through a PR, never a direct commit).
+requests labelled `live-evals` — a push never spends; full-set runs publish their report through a
+PR, never a direct commit).
 
 [`perf.yml`](.github/workflows/perf.yml) runs [`scripts/perf-smoke.ts`](scripts/perf-smoke.ts) on
 `main`, nightly and on demand: real webhook + orchestrator + Postgres with fake LLM/calendar/WhatsApp,

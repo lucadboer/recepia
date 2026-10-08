@@ -10,3 +10,4 @@ perf-report.json
 coverage/
 evals/reports/*.tmp
 evals/reports/fake/
+evals/reports/subset/

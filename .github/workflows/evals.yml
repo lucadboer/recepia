@@ -2,17 +2,21 @@
 #  - `fake`: the deterministic guardrail gate — the golden set runs through the real orchestrator
 #    with the scripted stand-in on every push to main and every pull request; any failing case
 #    fails the job (SC-401: < 2 min, exactly repeatable).
-#  - `live`: the same golden set against the production model (claude-sonnet-5-5) weekly, on
-#    demand, and on pull requests that touch prompts/**; compared with evals/baseline.json; under a
-#    spend cap. Skipped explicitly (never a pass) when ANTHROPIC_API_KEY is not configured as a
-#    repository secret. Scheduled/dispatched runs publish their report through a pull request —
-#    never a direct commit; the baseline is never written by automation (FR-406, FR-407).
+#  - `live`: the golden set against the production model (claude-sonnet-5-5), compared with
+#    evals/baseline.json under a spend cap. Owner budget (004 amendment, 2026-10-08): weekly and on
+#    demand at 1 repetition / US$ 0.75 by default; on a pull request ONLY when the `live-evals`
+#    label is applied (one paid run per application, a push never spends), over the cases in
+#    evals/live-subset.txt under US$ 0.40. Skipped explicitly (never a pass) when ANTHROPIC_API_KEY
+#    is not configured as a repository secret. Full-set scheduled/dispatched runs publish their
+#    report through a pull request — never a direct commit; a subset run is never published; the
+#    baseline is never written by automation (FR-406, FR-407).
 name: evals
 
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   schedule:
     - cron: "0 6 * * 0" # Sunday 06:00 UTC — weekly live run
   workflow_dispatch:
@@ -24,18 +28,24 @@ on:
       repetitions:
         description: "Executions per case"
         required: false
-        default: "3"
+        default: "1"
       cap_usd:
         description: "Spend cap for this run (USD)"
         required: false
-        default: "5"
+        default: "0.75"
+      cases:
+        description: "Comma-separated case ids (empty = the whole golden set; a subset run is never published)"
+        required: false
+        default: ""
       judge:
         description: "Also run the tone/clarity judge (different model, never a gate)"
         type: boolean
         default: false
 
+# The action and label are part of the group: a push (synchronize) or another label never cancels
+# a live run that is already being paid for.
 concurrency:
-  group: evals-${{ github.ref }}-${{ github.event_name }}
+  group: evals-${{ github.ref }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.label.name }}
   cancel-in-progress: true
 
 permissions:
@@ -47,7 +57,7 @@ env:
 jobs:
   fake:
     name: deterministic gate (scripted stand-in, every case)
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     services:
@@ -69,6 +79,14 @@ jobs:
       TELEMETRY_HASH_KEY: ci-fixed-key-fictitious-data-only # stable pseudonyms across runs
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Prompt changed? (the live run is opt-in through the live-evals label)
+        if: github.event_name == 'pull_request'
+        run: |
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^prompts/'; then
+            echo "::warning::prompts/** changed — apply the live-evals label to measure this prompt against the baseline (1 repetition, cap US\$ 0.40)"
+          fi
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -104,7 +122,9 @@ jobs:
 
   live:
     name: live metrics (production model vs committed baseline)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'live-evals')
     runs-on: ubuntu-latest
     timeout-minutes: 25 # SC-406: a full run must finish under 20 minutes
     permissions:
@@ -131,63 +151,59 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Does this pull request touch the versioned prompt?
-        id: prompt
-        if: github.event_name == 'pull_request'
-        run: |
-          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^prompts/'; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::prompts/** unchanged — the live run is not required for this pull request"
-          fi
       - name: Credential check
-        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "::warning::ANTHROPIC_API_KEY is not configured as a repository secret — the live evaluation is SKIPPED (this is not a pass)"
           fi
       - uses: pnpm/action-setup@v6
-        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
       - uses: actions/setup-node@v7
-        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
       - name: Live run (the CLI exits 0 with a notice when the key is absent)
-        if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
         env:
-          EVALS_REPETITIONS: ${{ github.event.inputs.repetitions || '3' }}
-          EVALS_CAP_USD: ${{ github.event.inputs.cap_usd || '5' }}
+          EVALS_REPETITIONS: ${{ github.event.inputs.repetitions || '1' }}
+          EVALS_CAP_USD: ${{ github.event_name == 'pull_request' && '0.40' || github.event.inputs.cap_usd || '0.75' }}
           EVALS_MODEL_INPUT: ${{ github.event.inputs.model }}
           EVALS_JUDGE_INPUT: ${{ github.event.inputs.judge }}
+          EVALS_CASES_INPUT: ${{ github.event.inputs.cases }}
         run: |
           args=()
           if [ -n "$EVALS_MODEL_INPUT" ]; then args+=(--model "$EVALS_MODEL_INPUT"); fi
           if [ "$EVALS_JUDGE_INPUT" = "true" ]; then args+=(--judge); fi
+          cases="$EVALS_CASES_INPUT"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            cases="$(grep -vE '^[[:space:]]*(#|$)' evals/live-subset.txt | paste -sd, -)"
+          fi
+          if [ -n "$cases" ]; then
+            args+=(--case "$cases")
+            echo "REPORT_DIR=evals/reports/subset" >> "$GITHUB_ENV"
+          fi
           pnpm evals:live "${args[@]}"
       - name: Report summary
         if: always()
+        env:
+          DIR: ${{ env.REPORT_DIR || 'evals/reports' }}
         run: |
-          if [ -f evals/reports/latest.md ]; then
-            cat evals/reports/latest.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f "$DIR/latest.md" ]; then
+            cat "$DIR/latest.md" >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload report (90 days)
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: evals-live-${{ github.run_id }}
-          path: evals/reports/latest.*
+          path: ${{ env.REPORT_DIR || 'evals/reports' }}/latest.*
           retention-days: 90
           if-no-files-found: ignore
           overwrite: true
-      # Every completed scheduled/dispatched run is published — a regression or a partial run is
-      # exactly what a reviewer must see (FR-406); runs on a non-production model stay artifacts, so
-      # the README never shows another model's numbers as "the agent's".
-      - name: Publish the report through a pull request (scheduled / dispatched runs only)
-        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && env.ANTHROPIC_API_KEY != '' && github.event.inputs.model == '' && hashFiles('evals/reports/latest.json') != '' }}
+      # Every completed full-set scheduled/dispatched run on main is published — a regression or a
+      # partial run is exactly what a reviewer must see (FR-406); runs on a non-production model or
+      # over a subset stay artifacts, so the README never shows numbers that are not "the agent's".
+      - name: Publish the report through a pull request (scheduled / dispatched full runs only)
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && env.ANTHROPIC_API_KEY != '' && github.event.inputs.model == '' && github.event.inputs.cases == '' && hashFiles('evals/reports/latest.json') != '' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

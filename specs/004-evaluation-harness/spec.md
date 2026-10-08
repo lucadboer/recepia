@@ -20,6 +20,13 @@
 - Q: Where does the history of live reports live? → A: The repository keeps only the latest report and the committed baseline; every run's full report is kept as an automation artifact (90 days). An automated live run publishes its result through a pull request that updates the latest report and the regenerated README block — never a direct commit — and the baseline changes only through an explicit, reviewed change.
 - Q: Should the tone/clarity judge run by default in live runs? → A: Off by default, enabled per run by a flag; when enabled it uses a model different from the one under evaluation (e.g. the current Opus judging the Sonnet under test).
 
+### Session 2026-10-08 (amendment — owner budget)
+
+- Q: The owner's API credit is small; how much may live runs spend? → A: 1 execution per case and a US$ 0.75 cap by default (a full run costs ≈ US$ 0.41 at the measured US$ 0.009 per conversation); the weekly run uses these defaults. More repetitions or a higher cap are an explicit per-run choice. This supersedes the 2026-10-06 answers on cap/repetitions and on automatic runs for prompt changes.
+- Q: When does a pull request spend money? → A: Only when the `live-evals` label is applied — one run per application, over the cases listed in `evals/live-subset.txt`, capped at US$ 0.40. A push never spends; a pull request that touches the versioned prompt gets a warning asking for the label.
+- Q: What does a run over part of the golden set publish? → A: Nothing: its report goes to a separate, ignored folder, it can never write the baseline, and categories it did not include never count as regressions.
+- Q: optout-03 forbade a hand-off after the opt-out, but the live model hands off when the opted-out patient asks for another booking. Is that a failure? → A: No — escalating on doubt is allowed by the constitution (IV) and no booking happens without consent; the live expectation now requires only the first booking to stand, as already done for optout-02.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Guardrail regression gate on every change (Priority: P1)
@@ -153,7 +160,7 @@ As the maintainer, I want an optional second-model judgement of the patient-faci
 - **SC-403**: A deliberately disabled structural guardrail is caught by the deterministic run before merge (demonstrated once and recorded in the report history).
 - **SC-404**: Every live report contains all metrics in FR-405 plus date, model id, prompt version and commit; the README numbers always equal the latest report's.
 - **SC-405**: A hand-edited number in the README is detected by the automated checks.
-- **SC-406**: A live run completes in under 20 minutes and under the configured spend cap (default US$ 5 per run, decided 2026-10-06) with the default golden set and 3 executions per case.
+- **SC-406**: A live run completes in under 20 minutes and under the configured spend cap (default US$ 0.75 per run with 1 execution per case, amended 2026-10-08; the 2026-10-06 defaults were US$ 5 and 3 executions) with the default golden set.
 - **SC-407**: Every booking or escalation initiated through the model can be traced to a prompt version from its audit row.
 
 ## Assumptions
@@ -161,8 +168,8 @@ As the maintainer, I want an optional second-model judgement of the patient-faci
 - The golden set is authored by the project owner and the coding agent; there is no production data and none is implied.
 - The deterministic mode uses the existing scripted stand-in model, so "what the model tried to do" is part of each fixture; the live mode uses the project's configured model provider with `claude-sonnet-5-5` as the default (and production) model.
 - Model credentials for live runs are provided as a secret in the repository's automation (to be added by the owner) and locally in the environment; they are never available to changes proposed from outside the repository.
-- Live-mode non-determinism is handled by repetitions (default 3 per case) and success-rate metrics, not by exact-match expectations.
+- Live-mode non-determinism is handled by success-rate metrics and, when a decision needs it, extra repetitions (default 1 per case since 2026-10-08, for budget), not by exact-match expectations. With 1 repetition, one failure in a 3–4 case category moves it 25–33 points; small-category deltas are read as signals, not proof.
 - Reschedule and cancel capabilities do not exist yet (SPEC.md US3); their cases expect a hand-off and are labelled as a current limitation to be revisited.
 - The pricing table is maintained by hand with its date; estimated cost is an estimate, labelled as such.
 - The judge is off by default; when enabled, it uses a model different from the one under evaluation (e.g. the current Opus judging the Sonnet under test) to reduce self-preference.
-- Tolerances and caps (5 percentage points, 3 repetitions, US$ 5 — decided 2026-10-06) are starting defaults, adjustable in configuration, and recorded in each report.
+- Tolerances and caps (5 percentage points; 1 repetition and US$ 0.75 since the 2026-10-08 amendment, previously 3 and US$ 5) are starting defaults, adjustable in configuration, and recorded in each report.

@@ -1,0 +1,14 @@
+# Cases for a pull-request live run (applied with the `live-evals` label; 1 repetition, cap US$ 0.40).
+# One line per case id; `#` starts a comment. A feature PR edits this list to cover what it changes;
+# the full golden set runs weekly and for the re-baseline. A subset run is never published.
+happy-01-cleaning-tomorrow-morning
+happy-06-consent-asked-then-given
+alt-01-requested-slot-full-next-same-day
+date-02-depois-do-almoco
+consent-01-nao-autorizo
+oos-02-dor-urgencia
+optout-03-after-completed-booking
+inj-01-ignore-rules-confirm-anything
+inj-05-hold-never-offered-after-availability
+inj-06-confirm-other-conversation-hold
+resched-02-cancelar

@@ -38,7 +38,7 @@ All unknowns from the plan's Technical Context are resolved below. Decisions are
 - **Rationale**: FR-408/FR-412; hand edits are impossible to miss.
 
 ## R8 — CI workflow and publication
-- **Decision**: `.github/workflows/evals.yml`: job `fake` on every push/PR (postgres service, `pnpm evals:fake`, README check, uploads `evals/reports/*` as artifact); job `live` on `schedule` (weekly, Sunday 06:00 UTC), `workflow_dispatch` (inputs: model, repetitions, judge, cap), and `pull_request` with `paths: [prompts/**]` — skipped with a notice when `ANTHROPIC_API_KEY` is absent; on scheduled/dispatch success it creates or updates a branch `evals/report-<date>` with `evals/reports/latest.*` + regenerated README block and opens a PR via `gh` (no third-party action). Baseline is never written by automation.
+- **Decision**: `.github/workflows/evals.yml`: job `fake` on every push/PR (postgres service, `pnpm evals:fake`, README check, uploads `evals/reports/*` as artifact); job `live` on `schedule` (weekly, Sunday 06:00 UTC), `workflow_dispatch` (inputs: model, repetitions, judge, cap), and `pull_request` with `paths: [prompts/**]` (amended 2026-10-08: PRs run live only when the `live-evals` label is applied, over `evals/live-subset.txt`; defaults 1 repetition / US$ 0.75) — skipped with a notice when `ANTHROPIC_API_KEY` is absent; on scheduled/dispatch success it creates or updates a branch `evals/report-<date>` with `evals/reports/latest.*` + regenerated README block and opens a PR via `gh` (no third-party action). Baseline is never written by automation.
 - **Rationale**: spec Clarifications (cadence, repo keeps latest + baseline, PR publication); secrets never reach fork PRs by GitHub's rules.
 
 ## R9 — Judge

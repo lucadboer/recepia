@@ -325,6 +325,16 @@ describe("compareWithBaseline", () => {
     expect(compareWithBaseline(current({ happy: 0.1 }), nullBase).pass).toBe(true);
   });
 
+  it("a category the run did not include (subset run) is never a regression", () => {
+    const subset = {
+      ...current(),
+      taskSuccess: { overall: 1, byCategory: { injection: 1 } },
+    };
+    const r = compareWithBaseline(subset, baseline);
+    expect(r.pass).toBe(true);
+    expect(r.regressions).toEqual([]);
+  });
+
   it("records whether the run used the baseline's model and prompt (informational, never a failure)", () => {
     const same = compareWithBaseline(current(), baseline, 5, {
       model: "claude-sonnet-5-5",

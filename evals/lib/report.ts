@@ -2,7 +2,7 @@
 // comparison); the Markdown mirrors it for humans. Deterministic key order so two renders of
 // the same run are byte-identical.
 
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Assertion } from "./assertions";
 import type { Category } from "./case-schema";
@@ -249,6 +249,7 @@ export function renderReport(run: RunReport): { json: string; markdown: string }
 export function writeReports(dir: string, run: RunReport): { json: string; markdown: string } {
   const { json, markdown } = renderReport(run);
   const paths = { json: join(dir, "latest.json"), markdown: join(dir, "latest.md") };
+  mkdirSync(dir, { recursive: true });
   writeFileSync(paths.json, json);
   writeFileSync(paths.markdown, markdown);
   return paths;
