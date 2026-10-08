@@ -16,9 +16,9 @@ const upsert = (id: string) =>
     },
   });
 
-function start(onInbound: (m: InboundMessage) => Promise<unknown>) {
+function start(enqueue: (m: InboundMessage) => Promise<void>) {
   return new Promise<{ server: Server; port: number }>((resolve) => {
-    const server = createWebhookServer({ secret: SECRET, onInbound });
+    const server = createWebhookServer({ secret: SECRET, enqueue });
     server.listen(0, "127.0.0.1", () => {
       const port = (server.address() as AddressInfo).port;
       resolve({ server, port });
@@ -26,7 +26,7 @@ function start(onInbound: (m: InboundMessage) => Promise<unknown>) {
   });
 }
 
-const settle = () => new Promise((r) => setTimeout(r, 30)); // let background onInbound run
+const settle = () => new Promise((r) => setTimeout(r, 30));
 
 function startSrv(opts: Parameters<typeof createWebhookServer>[0]) {
   return new Promise<{ server: Server; port: number }>((resolve) => {
@@ -44,7 +44,7 @@ describe("webhook server (node:http)", () => {
     server = null;
   });
 
-  it("accepts a valid signed inbound (200) and calls onInbound exactly once", async () => {
+  it("accepts a valid signed inbound (200) and stores it exactly once", async () => {
     const seen: InboundMessage[] = [];
     const s = await start(async (m) => {
       seen.push(m);
@@ -65,7 +65,7 @@ describe("webhook server (node:http)", () => {
     });
   });
 
-  it("rejects a wrong secret with 401 and never calls onInbound", async () => {
+  it("rejects a wrong secret with 401 and never stores it", async () => {
     let calls = 0;
     const s = await start(async () => {
       calls++;
@@ -81,26 +81,39 @@ describe("webhook server (node:http)", () => {
     expect(calls).toBe(0);
   });
 
-  it("edge-dedupes a redelivered providerMessageId (onInbound once)", async () => {
-    let calls = 0;
+  it("acknowledges only after the message is stored (008: an ack is a promise)", async () => {
+    let stored = false;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
     const s = await start(async () => {
-      calls++;
+      await gate;
+      stored = true;
     });
     server = s.server;
-    const url = `http://127.0.0.1:${s.port}${BASE}/${SECRET}`;
-    const headers = { "content-type": "application/json", authorization: SECRET };
-    await fetch(url, { method: "POST", headers, body: upsert("DUP-1") });
-    await fetch(url, { method: "POST", headers, body: upsert("DUP-1") });
+    let answered = false;
+    const res = fetch(`http://127.0.0.1:${s.port}${BASE}/${SECRET}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: SECRET },
+      body: upsert("ACK-1"),
+    }).then((r) => {
+      answered = true;
+      return r;
+    });
     await settle();
-    expect(calls).toBe(1);
+    expect(answered).toBe(false); // still storing
+    release();
+    expect((await res).status).toBe(200);
+    expect(stored).toBe(true);
   });
 
-  it("routes a background onInbound rejection to onError, still acking 200", async () => {
-    const sentinel = new Error("boom");
+  it("answers a retryable 503 when the message cannot be stored, and reports it", async () => {
+    const sentinel = new Error("db down");
     let captured: unknown = null;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: () => Promise.reject(sentinel),
+      enqueue: () => Promise.reject(sentinel),
       onError: (e) => {
         captured = e;
       },
@@ -111,55 +124,16 @@ describe("webhook server (node:http)", () => {
       headers: { "content-type": "application/json", authorization: SECRET },
       body: upsert("ERR-1"),
     });
-    expect(res.status).toBe(200); // ack is independent of background processing
-    await settle();
+    expect(res.status).toBe(503); // the provider retries; nothing was promised
+    expect(res.headers.get("retry-after")).toBe("5");
     expect(captured).toBe(sentinel);
-  });
-
-  it("serializes inbound processing PER PHONE but overlaps across phones [T240]", async () => {
-    const upsertFrom = (jid: string, id: string) =>
-      JSON.stringify({
-        event: "messages.upsert",
-        data: {
-          key: { remoteJid: `${jid}@s.whatsapp.net`, fromMe: false, id },
-          message: { conversation: "oi" },
-        },
-      });
-    let active = 0;
-    let maxActive = 0;
-    const perPhoneMax = new Map<string, number>();
-    const perPhoneActive = new Map<string, number>();
-    const s = await startSrv({
-      secret: SECRET,
-      onInbound: async (m) => {
-        active++;
-        maxActive = Math.max(maxActive, active);
-        const a = (perPhoneActive.get(m.phone) ?? 0) + 1;
-        perPhoneActive.set(m.phone, a);
-        perPhoneMax.set(m.phone, Math.max(perPhoneMax.get(m.phone) ?? 0, a));
-        await new Promise((r) => setTimeout(r, 40));
-        perPhoneActive.set(m.phone, a - 1);
-        active--;
-      },
-    });
-    server = s.server;
-    const url = `http://127.0.0.1:${s.port}${BASE}/${SECRET}`;
-    const headers = { "content-type": "application/json", authorization: SECRET };
-    await Promise.all([
-      fetch(url, { method: "POST", headers, body: upsertFrom("5531999990001", "P1-a") }),
-      fetch(url, { method: "POST", headers, body: upsertFrom("5531999990001", "P1-b") }),
-      fetch(url, { method: "POST", headers, body: upsertFrom("5531999990002", "P2-a") }),
-    ]);
-    await new Promise((r) => setTimeout(r, 200));
-    expect(perPhoneMax.get("+5531999990001")).toBe(1); // same phone: never concurrent
-    expect(maxActive).toBeGreaterThanOrEqual(2); // different phones: overlapped
   });
 
   it("returns 404 for a path that merely shares the prefix (/webhook/evolutionary) [T229]", async () => {
     let calls = 0;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: async () => {
+      enqueue: async () => {
         calls++;
       },
     });
@@ -178,7 +152,7 @@ describe("webhook server (node:http)", () => {
     let calls = 0;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: async () => {
+      enqueue: async () => {
         calls++;
       },
     });
@@ -193,11 +167,11 @@ describe("webhook server (node:http)", () => {
     expect(calls).toBe(0);
   });
 
-  it("rejects an oversized body with 413 and never calls onInbound [T246]", async () => {
+  it("rejects an oversized body with 413 and never stores it [T246]", async () => {
     let calls = 0;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: async () => {
+      enqueue: async () => {
         calls++;
       },
     });
@@ -219,35 +193,11 @@ describe("webhook server (node:http)", () => {
     expect(calls).toBe(0);
   });
 
-  it("re-processes a redelivery after a FAILED turn, and skips it only after a successful one [T230]", async () => {
-    let calls = 0;
-    const s = await startSrv({
-      secret: SECRET,
-      onInbound: async () => {
-        calls++;
-        if (calls === 1) throw new Error("transient");
-      },
-      onError: () => {},
-    });
-    server = s.server;
-    const url = `http://127.0.0.1:${s.port}${BASE}/${SECRET}`;
-    const headers = { "content-type": "application/json", authorization: SECRET };
-    await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // fails
-    await settle();
-    expect(calls).toBe(1);
-    await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // redelivery → processed again
-    await settle();
-    expect(calls).toBe(2);
-    await fetch(url, { method: "POST", headers, body: upsert("RD-1") }); // now deduped at the edge
-    await settle();
-    expect(calls).toBe(2);
-  });
-
   it("answers 400 to a request target WHATWG URL cannot parse (e.g. '//') and stays alive", async () => {
     let calls = 0;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: async () => {
+      enqueue: async () => {
         calls++;
       },
     });
@@ -275,11 +225,11 @@ describe("webhook server (node:http)", () => {
     expect(calls).toBe(1);
   });
 
-  it("returns 404 for non-POST methods and never calls onInbound", async () => {
+  it("returns 404 for non-POST methods and never stores it", async () => {
     let calls = 0;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: async () => {
+      enqueue: async () => {
         calls++;
       },
     });
@@ -292,11 +242,11 @@ describe("webhook server (node:http)", () => {
     expect(calls).toBe(0);
   });
 
-  it("returns 404 for an unrelated path and never calls onInbound", async () => {
+  it("returns 404 for an unrelated path and never stores it", async () => {
     let calls = 0;
     const s = await startSrv({
       secret: SECRET,
-      onInbound: async () => {
+      enqueue: async () => {
         calls++;
       },
     });

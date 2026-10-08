@@ -3,33 +3,6 @@ import { parseEvolutionInbound } from "../adapters/messaging/inbound/evolution-p
 import type { InboundMessage } from "../agent/types";
 
 /**
- * Bounded FIFO set of recently-seen provider message ids for EDGE dedupe. This is
- * an optimization to avoid redundant LLM work on webhook re-delivery; it is in-memory
- * and does NOT survive a restart. The real idempotency guarantee is the orchestrator's
- * DB-backed dedupe by providerMessageId (FR-207). Ids are recorded by the server only
- * AFTER onInbound succeeded (T230): a redelivery after a failed turn is re-processed.
- */
-export class RecentIds {
-  private readonly ids = new Set<string>();
-  private readonly order: string[] = [];
-  constructor(private readonly max = 500) {}
-
-  has(id: string): boolean {
-    return this.ids.has(id);
-  }
-
-  add(id: string): void {
-    if (this.ids.has(id)) return;
-    this.ids.add(id);
-    this.order.push(id);
-    if (this.order.length > this.max) {
-      const evicted = this.order.shift();
-      if (evicted !== undefined) this.ids.delete(evicted);
-    }
-  }
-}
-
-/**
  * Timing-safe secret comparison. Evolution webhooks are NOT HMAC-signed, so origin
  * is verified with a shared secret. NEVER use `===` (it short-circuits and leaks
  * length/match timing). A length mismatch fails as unauthorized WITHOUT a
@@ -51,7 +24,6 @@ export interface DispatchInput {
   pathToken: string | undefined;
   /** The expected shared secret (WEBHOOK_SECRET). */
   secret: string;
-  seen: RecentIds;
 }
 
 export interface DispatchResult {
@@ -60,10 +32,9 @@ export interface DispatchResult {
 }
 
 /**
- * Pure webhook routing: verify origin, parse, normalize, edge-dedupe. Contains NO
- * business logic — it never calls the orchestrator; it only decides the HTTP status
- * and, when the request is a fresh patient text message, returns the normalized
- * InboundMessage for the caller to hand to handleInbound.
+ * Pure webhook routing: verify origin, parse, normalize. Contains NO business logic — it only
+ * decides the HTTP status and, when the request is a patient text message, returns the normalized
+ * InboundMessage for the caller to store (008: the durable queue's unique key dedupes redeliveries).
  */
 export function parseAndAccept(input: DispatchInput): DispatchResult {
   // 1. Origin check (defense in depth): BOTH the path token AND the Authorization
@@ -84,10 +55,6 @@ export function parseAndAccept(input: DispatchInput): DispatchResult {
   // 3. Normalize. Non-text / status / group / own-echo events are ignored (200 no-op).
   const msg = parseEvolutionInbound(payload);
   if (!msg) return { status: 200 };
-
-  // 4. Edge dedupe by providerMessageId (optimization; DB idempotency is the guarantee).
-  //    Consult only — the server records the id after onInbound succeeds (T230).
-  if (input.seen.has(msg.providerMessageId)) return { status: 200 };
   return { status: 200, msg };
 }
 

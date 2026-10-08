@@ -18,6 +18,12 @@ const A = "+5531900000801";
 const B = "+5531900000802";
 const RECEPTION = "+5511999999999";
 
+/** Narrow a value the test just asserted exists (no non-null assertions). */
+function must<T>(v: T | null | undefined): T {
+  if (v === null || v === undefined) throw new Error("expected a value");
+  return v;
+}
+
 let pool: Pool;
 beforeAll(async () => {
   pool = testPool();
@@ -111,7 +117,7 @@ describe("claimNext — FIFO per phone, one in flight per phone", () => {
     const third = await claimNext(pool, "w3", NOW, LEASE);
     expect([first?.providerMessageId, second?.providerMessageId]).toEqual(["a1", "b1"]);
     expect(third).toBeNull(); // a2 waits for a1
-    await markDone(pool, first!.id, "w1", NOW);
+    await markDone(pool, must(first).id, "w1", NOW);
     expect((await claimNext(pool, "w3", NOW, LEASE))?.providerMessageId).toBe("a2");
   });
 
@@ -121,14 +127,14 @@ describe("claimNext — FIFO per phone, one in flight per phone", () => {
     const claims = await Promise.all(
       Array.from({ length: 8 }, (_, i) => claimNext(pool, `w${i}`, NOW, LEASE)),
     );
-    const got = claims.filter((c) => c !== null).map((c) => c!.phone);
+    const got = claims.filter((c) => c !== null).map((c) => must(c).phone);
     expect(got.sort()).toEqual([A, B]);
   });
 
   it("respects the due time of a retried message", async () => {
     await put(A, "a1");
     const c = await claimNext(pool, "w1", NOW, LEASE);
-    await markRetry(pool, c!.id, "w1", new Date(NOW.getTime() + 10_000), "Error");
+    await markRetry(pool, must(c).id, "w1", new Date(NOW.getTime() + 10_000), "Error");
     expect(await claimNext(pool, "w2", NOW, LEASE)).toBeNull();
     expect(
       (await claimNext(pool, "w2", new Date(NOW.getTime() + 10_001), LEASE))?.providerMessageId,
@@ -141,18 +147,18 @@ describe("claimNext — FIFO per phone, one in flight per phone", () => {
     expect(await claimNext(pool, "w2", new Date(NOW.getTime() + LEASE - 1), LEASE)).toBeNull();
     const later = new Date(NOW.getTime() + LEASE + 1);
     const again = await claimNext(pool, "w2", later, LEASE);
-    expect(again?.id).toBe(c!.id);
+    expect(again?.id).toBe(must(c).id);
     expect(again?.attempts).toBe(2);
-    expect(await markDone(pool, c!.id, "dead-worker", later)).toBe(false);
-    expect(await markDone(pool, c!.id, "w2", later)).toBe(true);
+    expect(await markDone(pool, must(c).id, "dead-worker", later)).toBe(false);
+    expect(await markDone(pool, must(c).id, "w2", later)).toBe(true);
   });
 
   it("a heartbeat extends the lease of the holder only", async () => {
     await put(A, "a1");
     const c = await claimNext(pool, "w1", NOW, LEASE);
     const soon = new Date(NOW.getTime() + LEASE - 1_000);
-    expect(await heartbeat(pool, c!.id, "w1", soon, LEASE)).toBe(true);
-    expect(await heartbeat(pool, c!.id, "intruder", soon, LEASE)).toBe(false);
+    expect(await heartbeat(pool, must(c).id, "w1", soon, LEASE)).toBe(true);
+    expect(await heartbeat(pool, must(c).id, "intruder", soon, LEASE)).toBe(false);
     expect(await claimNext(pool, "w2", new Date(NOW.getTime() + LEASE + 1), LEASE)).toBeNull();
   });
 });
@@ -161,7 +167,7 @@ describe("finishing a message", () => {
   it("done clears the text", async () => {
     await put(A, "a1");
     const c = await claimNext(pool, "w1", NOW, LEASE);
-    await markDone(pool, c!.id, "w1", NOW);
+    await markDone(pool, must(c).id, "w1", NOW);
     expect(await rows()).toEqual([{ provider_message_id: "a1", status: "done", body: null }]);
   });
 
@@ -169,7 +175,7 @@ describe("finishing a message", () => {
     await put(A, "a1");
     await put(A, "a2");
     const c = await claimNext(pool, "w1", NOW, LEASE);
-    expect(await markDead(pool, c!.id, "w1", NOW, "TypeError", RECEPTION)).toBe(true);
+    expect(await markDead(pool, must(c).id, "w1", NOW, "TypeError", RECEPTION)).toBe(true);
     expect((await rows())[0]).toMatchObject({ status: "dead", body: null });
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(1);
     expect(await countAudit(pool, "escalated")).toBe(1);

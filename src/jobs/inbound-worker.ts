@@ -95,16 +95,16 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
     if (row.attempts >= maxAttempts) {
       await markDead(opts.pool, row.id, workerId, now, type, opts.receptionPhone);
       log.error(
-        { event: "inbound.dead_letter", messageRef: ref, attempts: row.attempts, err },
+        { event: "inbound.dead_letter", messageRef: ref, attempts: row.attempts, errorType: type },
         "inbound message dead-lettered to reception",
       );
       return;
     }
     const nextAt = new Date(now.getTime() + inboundBackoff(row.attempts));
     await markRetry(opts.pool, row.id, workerId, nextAt, type);
-    log.warn(
-      { event: "inbound.retry", messageRef: ref, attempts: row.attempts, err },
-      "inbound turn failed; retry scheduled",
+    log.info(
+      { event: "inbound.retry", messageRef: ref, attempts: row.attempts, errorType: type },
+      "inbound retry scheduled",
     );
   }
 
@@ -126,13 +126,29 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
           [ATTR.messageRef]: messageRef(row.providerMessageId),
           [ATTR.inboundAttempt]: row.attempts,
         },
-        () =>
-          opts.handler({
-            phone: row.phone,
-            text: row.text,
-            providerMessageId: row.providerMessageId,
-            receivedAt: row.receivedAt,
-          }),
+        async () => {
+          try {
+            return await opts.handler({
+              phone: row.phone,
+              text: row.text,
+              providerMessageId: row.providerMessageId,
+              receivedAt: row.receivedAt,
+            });
+          } catch (err) {
+            // Logged inside the span so the line carries the message's trace id (masked by the
+            // logger's PII backstop); the span records the error type only.
+            log.warn(
+              {
+                event: "inbound.turn_failed",
+                messageRef: messageRef(row.providerMessageId),
+                attempts: row.attempts,
+                err,
+              },
+              "inbound turn failed",
+            );
+            throw err;
+          }
+        },
       );
     } catch (err) {
       failure = err;

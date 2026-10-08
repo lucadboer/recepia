@@ -87,13 +87,13 @@ function start(
   return new Promise<{ server: Server; port: number }>((resolve) => {
     const server = createWebhookServer({
       secret: EVO_SECRET,
-      onInbound: async () => {}, // evolution sink (unused unless evolution path hit)
+      // One durable store for both channels (008); only Cloud messages are captured here.
+      enqueue: async (m, channel) => {
+        if (channel === "cloud") captured.inbound.push(m);
+      },
       cloud: {
         verifyToken: VT,
         appSecret: APP_SECRET,
-        onInbound: async (m) => {
-          captured.inbound.push(m);
-        },
         onStatus: (s) => {
           captured.statuses.push(s);
         },
@@ -134,7 +134,7 @@ describe("webhook server — Cloud API path", () => {
     expect(res.status).toBe(403);
   });
 
-  it("POST inbound (valid HMAC) → 200 + onInbound once, no statuses", async () => {
+  it("POST inbound (valid HMAC) → 200 + stored once, no statuses", async () => {
     const cap = { inbound: [] as InboundMessage[], statuses: [] as CloudStatus[] };
     const s = await start({}, cap);
     server = s.server;
@@ -154,7 +154,7 @@ describe("webhook server — Cloud API path", () => {
     expect(cap.statuses).toHaveLength(0);
   });
 
-  it("POST status-only (valid HMAC) → 200, ZERO onInbound, status logged", async () => {
+  it("POST status-only (valid HMAC) → 200, nothing stored, status logged", async () => {
     const cap = { inbound: [] as InboundMessage[], statuses: [] as CloudStatus[] };
     const s = await start({}, cap);
     server = s.server;
@@ -166,13 +166,13 @@ describe("webhook server — Cloud API path", () => {
     });
     expect(res.status).toBe(200);
     await settle();
-    expect(cap.inbound).toHaveLength(0); // statuses NEVER reach onInbound
+    expect(cap.inbound).toHaveLength(0); // statuses are never stored
     expect(cap.statuses).toHaveLength(1);
     expect(cap.statuses[0]).toMatchObject({ id: "wamid.ST1", status: "failed" });
     expect(cap.statuses[0].errors?.[0]?.code).toBe(131031);
   });
 
-  it("POST with a bad signature → 401, onInbound never called", async () => {
+  it("POST with a bad signature → 401, nothing stored", async () => {
     const cap = { inbound: [] as InboundMessage[], statuses: [] as CloudStatus[] };
     const s = await start({}, cap);
     server = s.server;
@@ -211,7 +211,7 @@ describe("webhook server — Cloud API path", () => {
     const evo: InboundMessage[] = [];
     const s = await start(
       {
-        onInbound: async (m) => {
+        enqueue: async (m) => {
           evo.push(m);
         },
       },

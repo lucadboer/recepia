@@ -25,10 +25,11 @@ import { migrate } from "../src/db/migrate";
 import { makePool } from "../src/db/pool";
 import { DbConversationStore } from "../src/db/repositories/conversation-repo";
 import { ConversationConflictError } from "../src/domain/errors";
+import { createInboundWorker } from "../src/jobs/inbound-worker";
 import { systemClock } from "../src/ports/clock";
 import type { LLMPort, LlmTurnInput, LlmTurnResult } from "../src/ports/llm-port";
 import { shutdownTelemetry } from "../src/telemetry/register";
-import { PerKeyQueue } from "../src/webhook/per-key-queue";
+import { createDurableEnqueue } from "../src/webhook/enqueue";
 import { createWebhookServer } from "../src/webhook/server";
 
 const CONVERSATIONS = Number(process.env.PERF_CONVERSATIONS ?? 40);
@@ -161,7 +162,7 @@ async function runOnce(rep: number): Promise<RunResult> {
   try {
     await client.query("ALTER TABLE audit_log DISABLE TRIGGER USER");
     await client.query(
-      "TRUNCATE booking, audit_log, capacity_rule, capacity_override, patient_consent, conversation_state, outbox_message RESTART IDENTITY",
+      "TRUNCATE booking, audit_log, capacity_rule, capacity_override, patient_consent, conversation_state, outbox_message, inbound_message RESTART IDENTITY",
     );
   } finally {
     await client.query("ALTER TABLE audit_log ENABLE TRIGGER USER").catch(() => {});
@@ -189,22 +190,46 @@ async function runOnce(rep: number): Promise<RunResult> {
   const statuses: Record<string, number> = {};
   let errors = 0;
   let conflicts = 0;
-  const queue = new PerKeyQueue();
-  const server = createWebhookServer({
-    secret: SECRET,
-    queue,
-    onError: (err) => {
-      if (err instanceof ConversationConflictError) conflicts++;
-      else errors++;
-    },
-    onInbound: async (msg: InboundMessage) => {
+  // 008: the webhook stores each message; the worker runs the turns (FIFO per phone).
+  const worker = createInboundWorker({
+    pool,
+    clock: systemClock,
+    receptionPhone: deps.receptionPhone,
+    pollMs: 20,
+    handler: async (msg: InboundMessage) => {
       const t0 = performance.now();
-      const r = await handleInbound(deps, msg);
-      turnMs.push(performance.now() - t0);
-      statuses[r.status] = (statuses[r.status] ?? 0) + 1;
-      return r;
+      try {
+        const r = await handleInbound(deps, msg);
+        turnMs.push(performance.now() - t0);
+        statuses[r.status] = (statuses[r.status] ?? 0) + 1;
+        return r;
+      } catch (err) {
+        if (err instanceof ConversationConflictError) conflicts++;
+        else errors++;
+        throw err; // the worker retries it
+      }
     },
   });
+  const server = createWebhookServer({
+    secret: SECRET,
+    enqueue: createDurableEnqueue({ pool, clock: systemClock, onStored: () => worker.wake() }),
+    onError: () => {
+      errors++;
+    },
+  });
+  worker.start();
+  /** Every stored message reached a terminal state (or the budget ran out). */
+  const queueSettled = async (budgetMs: number): Promise<boolean> => {
+    const deadline = Date.now() + budgetMs;
+    while (Date.now() < deadline) {
+      const { rows } = await pool.query(
+        "SELECT count(*)::int AS n FROM inbound_message WHERE status IN ('pending','processing')",
+      );
+      if (rows[0].n === 0) return true;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return false;
+  };
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
   const port = (server.address() as AddressInfo).port;
   const url = `http://127.0.0.1:${port}/webhook/evolution/${SECRET}`;
@@ -231,7 +256,7 @@ async function runOnce(rep: number): Promise<RunResult> {
 
   // Warm-up (excluded from the measurement).
   for (let i = 0; i < WARMUP; i++) await post(phones[i], `w${rep}-${i}`, `aquecimento #${i}`);
-  await queue.drain(60_000);
+  await queueSettled(60_000);
   turnMs.length = 0;
   for (const k of Object.keys(statuses)) delete statuses[k];
 
@@ -246,9 +271,10 @@ async function runOnce(rep: number): Promise<RunResult> {
       if (res.status !== 200) errors++;
     }),
   );
-  const drained = await queue.drain(120_000);
+  const drained = await queueSettled(120_000);
   const wallMs = performance.now() - wall0;
   if (!drained) errors++;
+  await worker.drain(10_000);
 
   const over = await pool.query(
     `SELECT start_ts, count(*)::int AS n FROM booking

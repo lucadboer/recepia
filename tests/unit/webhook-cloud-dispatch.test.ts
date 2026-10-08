@@ -5,7 +5,6 @@ import {
   verifyChallenge,
   verifySignature,
 } from "../../src/webhook/cloud-dispatch";
-import { RecentIds } from "../../src/webhook/dispatch";
 
 const SECRET = "app-secret-abc";
 
@@ -111,7 +110,6 @@ describe("parseAndAcceptCloud — messages[] vs statuses[] are distinct", () => 
       rawBody: Buffer.from(body),
       signatureHeader: sign(body),
       appSecret: SECRET,
-      seen: new RecentIds(),
     });
     expect(r.status).toBe(200);
     expect(r.msgs).toHaveLength(1);
@@ -129,7 +127,6 @@ describe("parseAndAcceptCloud — messages[] vs statuses[] are distinct", () => 
       rawBody: Buffer.from(body),
       signatureHeader: sign(body),
       appSecret: SECRET,
-      seen: new RecentIds(),
     });
     expect(r.status).toBe(200);
     expect(r.msgs).toHaveLength(0); // never routed to onInbound
@@ -144,7 +141,6 @@ describe("parseAndAcceptCloud — messages[] vs statuses[] are distinct", () => 
       rawBody: Buffer.from(body),
       signatureHeader: "sha256=deadbeef",
       appSecret: SECRET,
-      seen: new RecentIds(),
     });
     expect(r.status).toBe(401);
     expect(r.msgs).toHaveLength(0);
@@ -157,26 +153,16 @@ describe("parseAndAcceptCloud — messages[] vs statuses[] are distinct", () => 
       rawBody: Buffer.from(body),
       signatureHeader: sign(body),
       appSecret: SECRET,
-      seen: new RecentIds(),
     });
     expect(r.status).toBe(400);
   });
 
-  it("skips ids already recorded in `seen` but does NOT record them itself [T230]", () => {
-    const seen = new RecentIds();
+  it("returns the messages on every valid delivery — redeliveries are deduped by the durable store (008)", () => {
     const body = inbound("wamid.DUP");
     const sig = sign(body);
     const parse = () =>
-      parseAndAcceptCloud({
-        rawBody: Buffer.from(body),
-        signatureHeader: sig,
-        appSecret: SECRET,
-        seen,
-      });
+      parseAndAcceptCloud({ rawBody: Buffer.from(body), signatureHeader: sig, appSecret: SECRET });
     expect(parse().msgs).toHaveLength(1);
-    expect(seen.has("wamid.DUP")).toBe(false); // the server records after onInbound succeeds
     expect(parse().msgs).toHaveLength(1);
-    seen.add("wamid.DUP");
-    expect(parse().msgs).toHaveLength(0);
   });
 });

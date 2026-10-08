@@ -1,7 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
 import type { JobHandle } from "../../src/jobs/scheduler";
-import { PerKeyQueue } from "../../src/webhook/per-key-queue";
 import { createShutdown } from "../../src/webhook/shutdown";
+
+/** A worker stand-in (008): work it started, drained with a bound — the shape shutdown relies on. */
+class FakeDrainable {
+  private readonly running = new Set<Promise<unknown>>();
+  run(fn: () => Promise<unknown>): void {
+    const p = fn().finally(() => this.running.delete(p));
+    this.running.add(p);
+  }
+  async drain(timeoutMs: number): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<false>((r) => {
+      timer = setTimeout(() => r(false), timeoutMs);
+    });
+    try {
+      return await Promise.race([
+        Promise.all([...this.running]).then(() => true as const),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
 
 function fakeServer() {
   const close = vi.fn((cb?: (err?: Error) => void) => {
@@ -23,9 +45,9 @@ describe("createShutdown — graceful stop (T246)", () => {
     });
     const job = fakeJob("outbox");
     job.stop.mockImplementation(() => order.push("job.stop"));
-    const queue = new PerKeyQueue();
+    const queue = new FakeDrainable();
     let release!: () => void;
-    void queue.run("p", () =>
+    void queue.run(() =>
       new Promise<void>((r) => (release = r)).then(() => order.push("work.done")),
     );
     const close = vi.fn(async () => {
@@ -54,12 +76,12 @@ describe("createShutdown — graceful stop (T246)", () => {
 
   it("drains work enqueued by a request that finishes WHILE the listener is closing (no lost ack)", async () => {
     const order: string[] = [];
-    const queue = new PerKeyQueue();
+    const queue = new FakeDrainable();
     // The server's close callback fires only after an in-flight request completed and
     // handed its message to the queue — exactly the SIGTERM-during-upload race.
     const server = {
       close: vi.fn((cb?: (err?: Error) => void) => {
-        void queue.run("late", async () => {
+        void queue.run(async () => {
           await new Promise((r) => setTimeout(r, 10));
           order.push("late-turn.done");
         });
@@ -87,7 +109,7 @@ describe("createShutdown — graceful stop (T246)", () => {
     const shutdown = createShutdown({
       server: neverClosing,
       jobs: [],
-      queue: new PerKeyQueue(),
+      queue: new FakeDrainable(),
       close,
       timeoutMs: 40,
       log: () => {},
@@ -100,7 +122,7 @@ describe("createShutdown — graceful stop (T246)", () => {
     const shutdown = createShutdown({
       server: fakeServer(),
       jobs: [],
-      queue: new PerKeyQueue(),
+      queue: new FakeDrainable(),
       close: () => new Promise<void>(() => {}), // never resolves
       timeoutMs: 40,
       log: () => {},
@@ -111,8 +133,8 @@ describe("createShutdown — graceful stop (T246)", () => {
   });
 
   it("spends at most ONE budget even when both the queue and the server hang", async () => {
-    const queue = new PerKeyQueue();
-    void queue.run("p", () => new Promise<void>(() => {})); // never settles
+    const queue = new FakeDrainable();
+    void queue.run(() => new Promise<void>(() => {})); // never settles
     const neverClosing = { close: vi.fn() }; // never calls back
     const shutdown = createShutdown({
       server: neverClosing,
@@ -128,8 +150,8 @@ describe("createShutdown — graceful stop (T246)", () => {
   });
 
   it("returns false when in-flight work does not drain within the budget, but still closes deps", async () => {
-    const queue = new PerKeyQueue();
-    void queue.run("p", () => new Promise<void>(() => {})); // never settles
+    const queue = new FakeDrainable();
+    void queue.run(() => new Promise<void>(() => {})); // never settles
     const close = vi.fn(async () => {});
     const shutdown = createShutdown({
       server: fakeServer(),
