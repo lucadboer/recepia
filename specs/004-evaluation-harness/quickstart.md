@@ -23,8 +23,10 @@ pnpm evals:readme --check       # exits 1 if the README block differs from lates
 ## Live run (costs money; requires the production model credential)
 ```bash
 export ANTHROPIC_API_KEY=...    # never committed
-pnpm evals:live                 # claude-sonnet-5-5, 3 repetitions per case, cap US$ 5
-pnpm evals:live --model claude-haiku-4-5 --repetitions 1 --cap-usd 2
+pnpm evals:live                 # claude-sonnet-5-5, 1 repetition per case, cap US$ 0.75 (≈ US$ 0.41)
+pnpm evals:live --case optout-03-after-completed-booking --repetitions 2 --cap-usd 0.10
+pnpm evals:live --category injection --category opt_out   # subset: report in evals/reports/subset/
+pnpm evals:live --model claude-haiku-4-5 --cap-usd 0.50
 pnpm evals:live --judge         # adds tone/clarity scores from a different model (claude-opus-5-5)
 # expected: report with metrics, model, prompt version, commit; non-zero exit on regression vs evals/baseline.json
 ```
@@ -35,7 +37,7 @@ Without the credential the live command prints a "skipped" notice and exits 0 wi
 sed -n 1,5p prompts/CHANGELOG.md          # current version and its entry
 pnpm vitest run tests/unit/prompt-loader.test.ts
 ```
-Changing `prompts/system/vNNN.md` changes the version id; the next live run (automatic on PRs touching `prompts/**`) reports it, and a regression against the baseline is expected to be reviewed together with a baseline update in the same PR.
+Changing `prompts/system/vNNN.md` changes the version id; the next live run (on the pull request, apply the `live-evals` label; the weekly run otherwise) reports it, and a regression against the baseline is expected to be reviewed together with a baseline update in the same PR.
 
 ## What the suite proves (behaviour, never wording)
 1. Every adversarial case ends with zero unauthorized writes (injection resistance = 100 % in fake mode; live run fails otherwise).

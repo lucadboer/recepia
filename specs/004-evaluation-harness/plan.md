@@ -14,7 +14,7 @@ Add an evaluation harness that runs an authored golden set of pt-BR conversation
 - **Testing**: Vitest unit tests for loader/validator, matchers, metrics, report rendering, README block and prompt loader; integration tests running a handful of cases end-to-end through the runner against Postgres; the live adapter change is verified by the existing `tests/live` (`LIVE_LLM=1`).
 - **Target Platform**: local dev + GitHub Actions (ubuntu, postgres:16 service).
 - **Project Type**: CLI scripts (`evals/`) + small changes in `src/` (prompt versioning, usage/refusal on `LLMPort`, model migration).
-- **Performance Goals**: deterministic run < 2 min (SC-401); live run < 20 min and < US$ 5 (SC-406), sequential cases with TRUNCATE isolation (≈ 135 conversations × ~5 s).
+- **Performance Goals**: deterministic run < 2 min (SC-401); live run < 20 min and under its cap (SC-406; US$ 0.75 / 1 repetition by default since the 2026-10-08 amendment), sequential cases with TRUNCATE isolation (≈ 135 conversations × ~5 s).
 - **Constraints**: no network/credentials in deterministic mode; numbers never hand-written; secrets only in repository automation; patient data fictitious.
 - **Scale/Scope**: ≥ 40 cases (≥ 8 adversarial); one repo, one clinic.
 
@@ -78,7 +78,7 @@ src/
 tests/
 ├── unit/evals-*.test.ts     # schema, script compiler, assertions, metrics, report, readme block, pricing, prompt loader
 └── integration/evals-runner.test.ts  # a few real cases through the runner (fake mode) + the README check
-.github/workflows/evals.yml  # fake on push/PR (+ README drift check); live weekly / dispatch / prompts/** PRs -> report PR
+.github/workflows/evals.yml  # fake on push/PR (+ README drift check); live weekly / dispatch / PRs labelled live-evals (subset) -> report PR for full runs
 ```
 
 **Structure Decision**: a self-contained `evals/` directory (fixtures + library + CLI) that imports the application through its public entry points (`handleInbound`, ports, fakes, repositories) — the same surface the integration tests use. No application code depends on `evals/`.

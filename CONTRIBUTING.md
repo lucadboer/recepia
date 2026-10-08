@@ -57,7 +57,9 @@ The concurrency test (no overbooking under simultaneous holds) is a non-negotiab
 (lint, typecheck, audit), `unit`, and `integration` (integration suite + the concurrency gate as a
 named step + coverage) against a `postgres:16` service. `evals.yml` runs the deterministic
 evaluation gate (`fake`) on every push/PR and the live evaluation (`live`) weekly, on demand and on
-PRs touching `prompts/**`. `perf.yml` runs the perf smoke on `main`,
+PRs when the `live-evals` label is applied (one paid run per application over
+`evals/live-subset.txt`; a PR touching `prompts/**` gets a warning asking for the label).
+`perf.yml` runs the perf smoke on `main`,
 nightly, on demand and on PRs labelled `perf`; `codeql.yml` runs static analysis; Dependabot opens
 weekly grouped dependency PRs with a 3-day cooldown.
 

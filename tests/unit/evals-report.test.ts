@@ -156,4 +156,10 @@ describe("renderReport", () => {
     expect(JSON.parse(readFileSync(paths.json, "utf8")).summary.cases).toBe(2);
     expect(readFileSync(paths.markdown, "utf8")).toContain("# Evaluation report");
   });
+
+  it("writeReports creates a missing directory (a first subset run must not lose a paid report)", () => {
+    const dir = join(mkdtempSync(join(tmpdir(), "recepia-reports-")), "subset", "nested");
+    const paths = writeReports(dir, sampleRun());
+    expect(JSON.parse(readFileSync(paths.json, "utf8")).summary.cases).toBe(2);
+  });
 });
