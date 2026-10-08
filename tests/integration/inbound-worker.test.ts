@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
+import { emptyState } from "../../src/agent/conversation";
 import type { InboundMessage } from "../../src/agent/types";
-import type { Pool } from "../../src/db/pool";
+import { makePool, type Pool } from "../../src/db/pool";
+import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
 import { insertInbound } from "../../src/db/repositories/inbound-repo";
 import { AttemptsExhaustedError, LeaseLostError } from "../../src/domain/errors";
 import { createInboundWorker, inboundBackoff } from "../../src/jobs/inbound-worker";
@@ -301,5 +303,49 @@ describe("createInboundWorker", () => {
     expect(await statusOf("crashy-1")).toBe("done");
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(1);
     expect(await countAudit(pool, "escalated")).toBe(1);
+  });
+
+  it("a timed-out turn stuck on a lock inside its fenced save cannot strand its message", async () => {
+    const phone = "+5531900000825";
+    const tight = makePool(undefined, { lockTimeoutMs: 300 });
+    const store = new DbConversationStore(tight);
+    await store.save(emptyState(phone, NOW));
+    // Another transaction holds the conversation row (as a dead-letter or a release might).
+    const blocker = await pool.connect();
+    await blocker.query("BEGIN");
+    await blocker.query("SELECT 1 FROM conversation_state WHERE phone = $1 FOR UPDATE", [phone]);
+    try {
+      await put(phone, "locked-1");
+      const worker = createInboundWorker({
+        pool: tight,
+        clock: new FakeClock(NOW),
+        receptionPhone: RECEPTION,
+        concurrency: 1,
+        pollMs: 10,
+        turnTimeoutMs: 100,
+        handler: async (_m, lease) => {
+          // The fenced save holds the message row FOR SHARE, then waits on the conversation row.
+          const loaded = await store.load(phone);
+          await store.save(loaded as NonNullable<typeof loaded>, {
+            fence: (tx) => lease.fence(tx),
+          });
+        },
+      });
+      worker.start();
+      // The lock wait is bounded by the database, so the timed-out attempt can still be finished.
+      const retried = async () =>
+        (
+          await pool.query(
+            "SELECT status, last_error FROM inbound_message WHERE provider_message_id = 'locked-1'",
+          )
+        ).rows[0];
+      await until(async () => (await retried())?.last_error === "InboundTurnTimeoutError", 3_000);
+      expect(await worker.drain(1_000)).toBe(true);
+      expect((await retried()).status).toBe("pending");
+    } finally {
+      await blocker.query("ROLLBACK");
+      blocker.release();
+      await tight.end();
+    }
   });
 });

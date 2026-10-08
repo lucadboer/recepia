@@ -30,7 +30,7 @@
 
 ## Worker bounds
 **Guarantees**: a turn running past `INBOUND_TURN_TIMEOUT_MS` (4 min) fails its attempt (retry or dead letter), its lease signal is aborted and its token voided, and the slot is freed; a claim whose attempt count is already past the limit (earlier attempts crashed) runs in recover-only mode — what the last attempt committed is recovered, nothing is run again, and with nothing to recover (AttemptsExhaustedError) the message is dead-lettered.
-**Required Tests**: a never-settling turn frees the only slot and its message is retried; a message whose turns kept crashing is only recovered (done) or, with nothing to recover, goes to reception; recover-only never calls the model; a replay whose cleanup cannot settle fails (CleanupPendingError) and the retry settles it.
+**Required Tests**: a never-settling turn frees the only slot and its message is retried; a message whose turns kept crashing is only recovered (done) or, with nothing to recover, goes to reception; recover-only never calls the model; a replay whose cleanup cannot settle fails (CleanupPendingError) and the retry settles it; a timed-out turn stuck on a lock inside its fenced save does not strand its message (connection `lock_timeout`).
 
 ## Worker shutdown
 **Guarantees**: `drain()` returns as soon as the turns in flight finish, even when it starts while a claim is in flight (no idle wait after stopping).
