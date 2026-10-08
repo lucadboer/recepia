@@ -18,7 +18,8 @@ export type AuditAction =
   | "calendar_delete_failed"
   | "reminder_enqueued"
   | "attendance_confirmed"
-  | "unconfirmed_notified";
+  | "unconfirmed_notified"
+  | "inbound_dead_letter";
 
 export interface AuditEntry {
   entity: string;

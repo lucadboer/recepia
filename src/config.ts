@@ -31,6 +31,15 @@ export const HISTORY_MAX_MESSAGES = 40;
 export const AVAILABILITY_MAX_SLOTS = 40;
 export const OFFERED_SLOTS_MAX = 3 * AVAILABILITY_MAX_SLOTS;
 export const ACTIVE_HOLDS_MAX = 10;
+/** Durable inbound pipeline (008). */
+export const INBOUND_CONCURRENCY = 4;
+export const INBOUND_LEASE_MS = 5 * 60 * 1000;
+export const INBOUND_MAX_ATTEMPTS = 5;
+export const INBOUND_POLL_MS = 1_000;
+/** Unfinished messages per phone beyond which new ones are stored as dropped (flood guard). */
+export const INBOUND_PHONE_MAX_PENDING = 20;
+/** Retry delays per failed attempt; each is jittered ±20 % (inboundBackoff). */
+export const INBOUND_BACKOFF_MS = [2_000, 10_000, 30_000, 120_000, 600_000] as const;
 /** Reminder jobs cadence (007): a reminder may leave up to this long after its 24 h mark. */
 export const REMINDERS_INTERVAL_MS = 15 * 60 * 1000;
 export const REMINDERS_FIRST_RUN_MS = 30 * 1000;
