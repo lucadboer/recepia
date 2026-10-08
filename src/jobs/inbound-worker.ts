@@ -12,6 +12,7 @@ import {
   INBOUND_LEASE_MS,
   INBOUND_MAX_ATTEMPTS,
   INBOUND_POLL_MS,
+  INBOUND_TURN_TIMEOUT_MS,
 } from "../config.ts";
 import type { Pool } from "../db/pool.ts";
 import {
@@ -50,6 +51,8 @@ export interface InboundWorkerOptions {
   maxAttempts?: number;
   /** Idle re-check interval; `wake()` short-circuits it when a message was just stored. */
   pollMs?: number;
+  /** A turn still running after this long is a failed attempt (see INBOUND_TURN_TIMEOUT_MS). */
+  turnTimeoutMs?: number;
   workerId?: string;
 }
 
@@ -60,6 +63,22 @@ export interface InboundWorker {
   /** Stop claiming and wait (bounded) for the turns in flight. True when all finished in time. */
   drain(timeoutMs: number): Promise<boolean>;
   readonly inFlight: number;
+}
+
+/** A turn ran past its bound; its attempt failed and its lease token is void. */
+export class InboundTurnTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`The turn did not finish within ${ms} ms.`);
+    this.name = "InboundTurnTimeoutError";
+  }
+}
+
+/** The message's earlier attempts ended with their process (claimed, never finished). */
+export class InboundTurnInterruptedError extends Error {
+  constructor() {
+    super("Earlier attempts of this message never finished.");
+    this.name = "InboundTurnInterruptedError";
+  }
 }
 
 /** The lease of one claim, handed to its turn. `lose()` is called when a heartbeat finds it gone. */
@@ -88,6 +107,7 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
   const leaseMs = opts.leaseMs ?? INBOUND_LEASE_MS;
   const maxAttempts = opts.maxAttempts ?? INBOUND_MAX_ATTEMPTS;
   const pollMs = opts.pollMs ?? INBOUND_POLL_MS;
+  const turnTimeoutMs = opts.turnTimeoutMs ?? INBOUND_TURN_TIMEOUT_MS;
   const workerId = opts.workerId ?? `${hostname()}:${process.pid}`; // + a uuid per claim
 
   let stopping = false;
@@ -166,47 +186,74 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
     );
     beat.unref?.();
     let failure: unknown = null;
+    // The turn continues the trace of the webhook request that stored the message (FR-808).
+    const turn = withRemoteParent(
+      row.traceContext,
+      SPAN.inboundProcess,
+      {
+        [ATTR.messageRef]: messageRef(row.providerMessageId),
+        [ATTR.inboundAttempt]: row.attempts,
+      },
+      async () => {
+        try {
+          return await opts.handler(
+            {
+              phone: row.phone,
+              text: row.text,
+              providerMessageId: row.providerMessageId,
+              receivedAt: row.receivedAt,
+              inboundMessageId: row.id,
+            },
+            lease,
+          );
+        } catch (err) {
+          // Logged inside the span so the line carries the message's trace id (masked by the
+          // logger's PII backstop); the span records the error type only.
+          log.warn(
+            {
+              event: "inbound.turn_failed",
+              messageRef: messageRef(row.providerMessageId),
+              attempts: row.attempts,
+              err,
+            },
+            "inbound turn failed",
+          );
+          throw err;
+        }
+      },
+    );
+    // A turn that outlives its bound settles unobserved: its lease token is void by then (review).
+    turn.catch(() => {});
+    let timedOut = false;
+    let bound: NodeJS.Timeout | undefined;
+    const outlived = new Promise<never>((_, reject) => {
+      bound = setTimeout(() => {
+        timedOut = true;
+        reject(new InboundTurnTimeoutError(turnTimeoutMs));
+      }, turnTimeoutMs);
+    });
     try {
-      // The turn continues the trace of the webhook request that stored the message (FR-808).
-      await withRemoteParent(
-        row.traceContext,
-        SPAN.inboundProcess,
-        {
-          [ATTR.messageRef]: messageRef(row.providerMessageId),
-          [ATTR.inboundAttempt]: row.attempts,
-        },
-        async () => {
-          try {
-            return await opts.handler(
-              {
-                phone: row.phone,
-                text: row.text,
-                providerMessageId: row.providerMessageId,
-                receivedAt: row.receivedAt,
-                inboundMessageId: row.id,
-              },
-              lease,
-            );
-          } catch (err) {
-            // Logged inside the span so the line carries the message's trace id (masked by the
-            // logger's PII backstop); the span records the error type only.
-            log.warn(
-              {
-                event: "inbound.turn_failed",
-                messageRef: messageRef(row.providerMessageId),
-                attempts: row.attempts,
-                err,
-              },
-              "inbound turn failed",
-            );
-            throw err;
-          }
-        },
-      );
+      await Promise.race([turn, outlived]);
     } catch (err) {
       failure = err;
     } finally {
       clearInterval(beat);
+      clearTimeout(bound);
+    }
+    if (timedOut) {
+      // Tell the stalled turn to stop, then fail this attempt with the claim's token: from then on
+      // the token is void, so anything the turn still tries to write is fenced.
+      lease.lose();
+      log.warn(
+        {
+          event: "inbound.turn_timeout",
+          messageRef: messageRef(row.providerMessageId),
+          attempts: row.attempts,
+        },
+        "inbound turn exceeded its time bound",
+      );
+      await finish(row, failure);
+      return;
     }
     if (failure instanceof LeaseLostError || lease.signal.aborted) {
       leaseLost(row); // the new holder runs (or already ran) the message
@@ -231,7 +278,10 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       }
       inFlight++;
       try {
-        await run(row);
+        // Earlier attempts were claimed but never finished — their process died mid-turn — so the
+        // claim count is past the limit: the limit holds across crashes too (review).
+        if (row.attempts > maxAttempts) await finish(row, new InboundTurnInterruptedError());
+        else await run(row);
       } catch (err) {
         // finishing failed (DB down): the lease will expire and another attempt will run it.
         log.error({ event: "inbound.finish_failed", err }, "could not record an inbound outcome");

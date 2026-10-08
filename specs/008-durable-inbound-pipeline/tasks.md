@@ -58,3 +58,7 @@
 > Fourth pass, fixed with a test: the hold sweep clears a hold's cleanup flag only once the event is
 > gone or the reception notice was stored (`removeEventOrNotify` / `requestCalendarCleanup` report
 > it), so a transient failure is retried by the next sweep.
+>
+> Fifth pass, fixed with tests: a turn that never settles is bounded (`INBOUND_TURN_TIMEOUT_MS`,
+> its attempt fails and its slot is freed); a claim past the attempt limit because earlier attempts
+> crashed is dead-lettered without running; every direct patient reply is fenced on the lease.
