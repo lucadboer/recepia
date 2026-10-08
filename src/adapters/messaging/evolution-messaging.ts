@@ -1,5 +1,5 @@
 import { MessagingSendError, NotConfigured } from "../../domain/errors";
-import type { MessagingPort } from "../../ports/messaging-port";
+import type { MessageTemplate, MessagingPort } from "../../ports/messaging-port";
 import { maskPhonesIn } from "../../telemetry/pseudonym";
 
 /**
@@ -41,7 +41,8 @@ export class EvolutionMessaging implements MessagingPort {
     this.fetchFn = fetchFn ?? (globalThis.fetch as unknown as FetchLike);
   }
 
-  async sendMessage(to: string, body: string): Promise<void> {
+  /** Evolution (unofficial channel) has no templates: the text body is always sent (007). */
+  async sendMessage(to: string, body: string, _template?: MessageTemplate): Promise<void> {
     const number = to.replace(/\D/g, ""); // digits only — no '+' or @s.whatsapp.net
     const url = `${this.baseUrl}/message/sendText/${this.instance}`;
     const res = await this.fetchFn(url, {

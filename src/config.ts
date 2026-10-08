@@ -31,6 +31,9 @@ export const HISTORY_MAX_MESSAGES = 40;
 export const AVAILABILITY_MAX_SLOTS = 40;
 export const OFFERED_SLOTS_MAX = 3 * AVAILABILITY_MAX_SLOTS;
 export const ACTIVE_HOLDS_MAX = 10;
+/** Reminder jobs cadence (007): a reminder may leave up to this long after its 24 h mark. */
+export const REMINDERS_INTERVAL_MS = 15 * 60 * 1000;
+export const REMINDERS_FIRST_RUN_MS = 30 * 1000;
 /** Bookings find_my_booking showed in one conversation (006); only one is ever acted on. */
 export const SURFACED_BOOKINGS_MAX = 5;
 export const PROCESSED_IDS_MAX = 200;

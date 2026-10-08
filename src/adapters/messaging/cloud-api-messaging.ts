@@ -1,5 +1,5 @@
 import { MessagingSendError, NotConfigured } from "../../domain/errors";
-import type { MessagingPort } from "../../ports/messaging-port";
+import type { MessageTemplate, MessagingPort } from "../../ports/messaging-port";
 import { maskPhonesIn } from "../../telemetry/pseudonym";
 
 /**
@@ -44,9 +44,28 @@ export class CloudApiMessaging implements MessagingPort {
     this.fetchFn = fetchFn ?? (globalThis.fetch as unknown as FetchLike);
   }
 
-  async sendMessage(to: string, body: string): Promise<void> {
+  async sendMessage(to: string, body: string, template?: MessageTemplate): Promise<void> {
     const recipient = to.replace(/\D/g, ""); // digits only — no '+' or JID
     const url = `https://graph.facebook.com/${this.version}/${this.phoneNumberId}/messages`;
+    // A business-initiated message outside the 24h window must be an approved template (007).
+    const content = template
+      ? {
+          type: "template",
+          template: {
+            name: template.name,
+            language: { code: template.language },
+            components: [
+              {
+                type: "body",
+                parameters: template.params.map((p) => ({
+                  type: "text",
+                  text: p.replace(/[\n\t\r]+/g, " ").replace(/ {2,}/g, " "),
+                })),
+              },
+            ],
+          },
+        }
+      : { type: "text", text: { preview_url: false, body } };
     const res = await this.fetchFn(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
@@ -54,8 +73,7 @@ export class CloudApiMessaging implements MessagingPort {
         messaging_product: "whatsapp",
         recipient_type: "individual",
         to: recipient,
-        type: "text",
-        text: { preview_url: false, body },
+        ...content,
       }),
     });
     if (!res.ok) {

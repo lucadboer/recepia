@@ -66,6 +66,7 @@ function exec(
         reschedules: 0,
         calendarDeletes: 0,
         receptionNotices: 0,
+        attendanceConfirmations: 0,
       },
       escalations: Array.from({ length: over.escalations ?? 0 }, () => ({ reason: "x" })),
       offeredSlots: [],

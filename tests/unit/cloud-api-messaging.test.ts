@@ -74,3 +74,35 @@ describe("review fix H3 — provider bodies are masked and bounded", () => {
     expect(err.message.length).toBeLessThan(400);
   });
 });
+
+describe("CloudApiMessaging — templates (007 FR-707)", () => {
+  it("sends the approved template with body text parameters when one is given", async () => {
+    const { calls, fetchFn } = recorder({ ok: true, status: 200 });
+    const m = new CloudApiMessaging("123456", "TOK", "v23.0", fetchFn);
+    await m.sendMessage("+5531900000701", "texto de reserva", {
+      name: "lembrete_consulta",
+      language: "pt_BR",
+      params: ["Ana", "limpeza", "18/06/2026 às\n09:00"],
+    });
+    expect(JSON.parse(calls[0].init.body)).toEqual({
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: "5531900000701",
+      type: "template",
+      template: {
+        name: "lembrete_consulta",
+        language: { code: "pt_BR" },
+        components: [
+          {
+            type: "body",
+            parameters: [
+              { type: "text", text: "Ana" },
+              { type: "text", text: "limpeza" },
+              { type: "text", text: "18/06/2026 às 09:00" }, // line breaks are not allowed
+            ],
+          },
+        ],
+      },
+    });
+  });
+});

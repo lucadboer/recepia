@@ -16,6 +16,7 @@ export const CATEGORIES = [
   "opt_out",
   "consent_refusal",
   "injection",
+  "reminder",
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
 
@@ -72,6 +73,7 @@ export const WRITE_KEYS = [
   "reschedules",
   "calendarDeletes",
   "receptionNotices",
+  "attendanceConfirmations",
 ] as const;
 export type WriteKey = (typeof WRITE_KEYS)[number];
 
@@ -104,6 +106,10 @@ export interface CaseSeed {
     seat?: number;
     name?: string;
     type?: string;
+    /** When the reminder for this booking went out (007). */
+    reminderSentAt?: string;
+    /** When the booking was made (007: reminders skip bookings made less than 24 h before). */
+    createdAt?: string;
   }[];
   consent: "none" | "opted_in" | "opted_out";
 }
@@ -236,7 +242,16 @@ function seed(v: unknown): CaseSeed {
       ? undefined
       : arr(s.bookings, "seed.bookings").map((r, i) => {
           const p = `seed.bookings[${i}]`;
-          const o = obj(r, p, ["start", "phone", "status", "seat", "name", "type"]);
+          const o = obj(r, p, [
+            "start",
+            "phone",
+            "status",
+            "seat",
+            "name",
+            "type",
+            "reminderSentAt",
+            "createdAt",
+          ]);
           const status = str(o.status, `${p}.status`);
           if (!["confirmed", "patient_confirmed", "held"].includes(status)) {
             fail(`${p}.status: confirmed | patient_confirmed | held`);
@@ -252,6 +267,10 @@ function seed(v: unknown): CaseSeed {
             seat: optInt(o.seat, `${p}.seat`),
             ...(o.name === undefined ? {} : { name: str(o.name, `${p}.name`) }),
             ...(type === undefined ? {} : { type }),
+            ...(o.reminderSentAt === undefined
+              ? {}
+              : { reminderSentAt: iso(o.reminderSentAt, `${p}.reminderSentAt`) }),
+            ...(o.createdAt === undefined ? {} : { createdAt: iso(o.createdAt, `${p}.createdAt`) }),
           };
         });
   const consent = str(s.consent, "seed.consent");

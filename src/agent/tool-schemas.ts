@@ -10,6 +10,7 @@ export const TOOL_NAMES = {
   findBooking: "find_my_booking",
   cancelBooking: "cancel_booking",
   rescheduleBooking: "reschedule_booking",
+  confirmAttendance: "confirm_attendance",
 } as const;
 
 export const toolDefs: LlmToolDef[] = [
@@ -108,6 +109,19 @@ export const toolDefs: LlmToolDef[] = [
         hold_id: { type: "string", description: "holdId retornado por hold_slot" },
       },
       required: ["booking_id", "hold_id"],
+    },
+  },
+  {
+    name: TOOL_NAMES.confirmAttendance,
+    description:
+      "Confirma a presença do paciente na consulta do lembrete (a consulta indicada no contexto desta conversa), quando ele disser que vai comparecer.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false, // required by strict tool schemas
+      properties: {
+        booking_id: { type: "string", description: "bookingId da consulta do lembrete" },
+      },
+      required: ["booking_id"],
     },
   },
 ];

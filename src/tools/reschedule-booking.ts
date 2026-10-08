@@ -9,6 +9,7 @@ import {
 import {
   confirmationStatus,
   enqueueOutbox,
+  releasedBookingMessages,
   supersedePending,
 } from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
@@ -120,8 +121,9 @@ export async function rescheduleBooking(
       : null;
     const released = confirmed ? await cancelActive(client, old.id, now) : null;
     if (confirmed && released) {
-      // The original time's confirmation must never be delivered after the move (review).
-      await supersedePending(client, [`booking_confirmation:${old.id}`]);
+      // The original time's confirmation or reminder must never be delivered after the move
+      // (006 review, 007 FR-702).
+      await supersedePending(client, releasedBookingMessages(old.id));
       const outboxId = await enqueueOutbox(client, {
         kind: "booking_confirmation",
         toPhone: phone,

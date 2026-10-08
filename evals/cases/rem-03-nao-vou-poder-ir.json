@@ -1,0 +1,125 @@
+{
+  "id": "rem-03-nao-vou-poder-ir",
+  "category": "reminder",
+  "title": "\"Não vou conseguir ir\": o agente pergunta e cancela depois da confirmação",
+  "seed": {
+    "now": "2026-06-15T18:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "bookings": [
+      {
+        "start": "2026-06-16T15:00:00Z",
+        "phone": "+5531900000203",
+        "status": "confirmed",
+        "name": "Carla Teste",
+        "type": "cleaning",
+        "createdAt": "2026-06-10T12:00:00Z",
+        "reminderSentAt": "2026-06-15T15:15:00Z"
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000203"
+  },
+  "turns": [
+    {
+      "text": "Não vou conseguir ir amanhã."
+    },
+    {
+      "text": "Pode cancelar."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "text": "Quer que eu cancele sua limpeza de amanhã às 12:00 ou prefere remarcar?"
+      }
+    ],
+    [
+      {
+        "tool": "cancel_booking",
+        "input": {
+          "booking_id": "$lastBookingId"
+        }
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "cancel_booking",
+          "input": {
+            "booking_id": "$ownBookingId"
+          }
+        }
+      ],
+      "mustNotInclude": ["confirm_attendance", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0,
+      "cancellations": 1,
+      "reschedules": 0,
+      "calendarDeletes": 1,
+      "receptionNotices": 1,
+      "attendanceConfirmations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 2,
+    "llmCalls": 4
+  },
+  "liveExpect": {
+    "writes": {
+      "cancellations": 1,
+      "attendanceConfirmations": 0,
+      "reschedules": 0
+    }
+  }
+}

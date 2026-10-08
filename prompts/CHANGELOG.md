@@ -10,6 +10,15 @@ Rules: a new file (`v002.md`, …) for a change in instructions; an entry here f
 (the loader refuses to start without it); a baseline update in the same PR when the eval numbers
 move (feature 004).
 
+## v003 — 2026-10-08
+- Appointment reminders (feature 007, SPEC.md US2): when the context line says the patient is
+  answering a reminder, the appointment was already shown; `confirm_attendance` with the context's
+  `bookingId` when the patient will come; cancel/reschedule keep the 006 confirmation round trip.
+  Attendance confirmation no longer goes to reception. One new style example (reminder reply).
+  After the PR live run: a clear "pode cancelar" for an appointment already shown is the
+  confirmation (no second question); "sim, mas preciso mudar" is a change request, not an
+  attendance confirmation (the registry also refuses it: `change_requested`).
+
 ## v002 — 2026-10-08
 - Cancel and reschedule (feature 006, SPEC.md US3): start with `find_my_booking`, show the
   appointment and ask; `cancel_booking` / `reschedule_booking` only after the patient confirms in a

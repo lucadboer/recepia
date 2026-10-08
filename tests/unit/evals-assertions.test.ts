@@ -24,6 +24,7 @@ function obs(partial: Partial<Observations> = {}): Observations {
       reschedules: 0,
       calendarDeletes: 0,
       receptionNotices: 0,
+      attendanceConfirmations: 0,
     },
     escalations: [],
     offeredSlots: [SLOT_A, SLOT_B],
@@ -166,6 +167,7 @@ describe("score — one assertion per expectation field", () => {
         reschedules: 0,
         calendarDeletes: 0,
         receptionNotices: 0,
+        attendanceConfirmations: 0,
       },
     });
     expect(failed(score(o, happy))).toEqual(["writes.holds"]);
@@ -240,10 +242,17 @@ describe("006 — booking-lifecycle matchers and writes", () => {
         reschedules: 0,
         calendarDeletes: 1,
         receptionNotices: 1,
+        attendanceConfirmations: 0,
       },
     });
     const r = score(o, {
-      writes: { cancellations: 1, reschedules: 0, calendarDeletes: 1, receptionNotices: 0 },
+      writes: {
+        cancellations: 1,
+        reschedules: 0,
+        calendarDeletes: 1,
+        receptionNotices: 0,
+        attendanceConfirmations: 0,
+      },
     });
     const byName = Object.fromEntries(r.map((a) => [a.name, a.pass]));
     expect(byName).toMatchObject({

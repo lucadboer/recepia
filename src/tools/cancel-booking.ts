@@ -1,6 +1,11 @@
 import { appendAudit } from "../db/repositories/audit-repo";
 import { cancelActive, lockBookingForUpdate } from "../db/repositories/booking-repo";
-import { enqueueOutbox, messageStatus, supersedePending } from "../db/repositories/outbox-repo";
+import {
+  enqueueOutbox,
+  messageStatus,
+  releasedBookingMessages,
+  supersedePending,
+} from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { BookingNotChangeableError, BookingNotFoundError } from "../domain/errors";
 import type { Booking } from "../domain/types";
@@ -61,8 +66,9 @@ export async function cancelBooking(
       const flipped = await cancelActive(client, row.id, now);
       if (!flipped) throw new BookingNotChangeableError(); // unreachable under the row lock
       late = isLateChange(row.start, now);
-      // The original confirmation must never reach the patient after the cancellation (review).
-      await supersedePending(client, [`booking_confirmation:${row.id}`]);
+      // The original confirmation, a queued reminder or attendance reply must never reach the
+      // patient after the cancellation (006 review, 007 FR-702).
+      await supersedePending(client, releasedBookingMessages(row.id));
       const outboxId = await enqueueOutbox(client, {
         kind: "booking_cancellation",
         toPhone: phone,

@@ -1,6 +1,8 @@
 import {
   HOLD_SWEEP_MS,
   OUTBOX_POLL_MS,
+  REMINDERS_FIRST_RUN_MS,
+  REMINDERS_INTERVAL_MS,
   RETENTION_FIRST_RUN_MS,
   RETENTION_INTERVAL_MS,
 } from "../config";
@@ -8,6 +10,7 @@ import type { Deps } from "../deps";
 import { log } from "../telemetry/logger";
 import { dispatchOutbox } from "./dispatch-outbox";
 import { expireHolds } from "./expire-holds";
+import { enqueueDueReminders, notifyUnconfirmed, type ReminderSettings } from "./reminders";
 import { purgeInactive } from "./retention";
 
 export interface ScheduledJob {
@@ -64,9 +67,39 @@ export function schedule(job: ScheduledJob, onError: JobErrorHandler = defaultOn
   };
 }
 
-/** The production background jobs: outbox delivery + hold-expiry sweep (T245). */
-export function startJobs(deps: Deps, onError: JobErrorHandler = defaultOnError): JobHandle[] {
+/**
+ * The production background jobs: outbox delivery + hold-expiry sweep (T245), retention (005),
+ * and — when `reminders` is given — the reminder and unconfirmed-notice jobs (007).
+ */
+export function startJobs(
+  deps: Deps,
+  onError: JobErrorHandler = defaultOnError,
+  reminders: ReminderSettings | null = null,
+): JobHandle[] {
+  const reminderJobs = reminders
+    ? [
+        schedule(
+          {
+            name: "reminders",
+            everyMs: REMINDERS_INTERVAL_MS,
+            firstRunMs: REMINDERS_FIRST_RUN_MS,
+            run: () => enqueueDueReminders(deps, reminders),
+          },
+          onError,
+        ),
+        schedule(
+          {
+            name: "unconfirmed-notice",
+            everyMs: REMINDERS_INTERVAL_MS,
+            firstRunMs: REMINDERS_FIRST_RUN_MS,
+            run: () => notifyUnconfirmed(deps, reminders),
+          },
+          onError,
+        ),
+      ]
+    : [];
   return [
+    ...reminderJobs,
     schedule({ name: "outbox", everyMs: OUTBOX_POLL_MS, run: () => dispatchOutbox(deps) }, onError),
     schedule({ name: "hold-sweep", everyMs: HOLD_SWEEP_MS, run: () => expireHolds(deps) }, onError),
     schedule(

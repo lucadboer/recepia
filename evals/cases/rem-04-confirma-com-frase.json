@@ -1,0 +1,117 @@
+{
+  "id": "rem-04-confirma-com-frase",
+  "category": "reminder",
+  "title": "Confirma com uma frase: o modelo usa confirm_attendance",
+  "seed": {
+    "now": "2026-06-15T18:00:00Z",
+    "capacity": [
+      {
+        "weekday": 1,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 2,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 3,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 4,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      },
+      {
+        "weekday": 5,
+        "start": "09:00",
+        "end": "18:00",
+        "capacity": 2
+      }
+    ],
+    "bookings": [
+      {
+        "start": "2026-06-16T15:00:00Z",
+        "phone": "+5531900000204",
+        "status": "confirmed",
+        "name": "Diego Teste",
+        "type": "cleaning",
+        "createdAt": "2026-06-10T12:00:00Z",
+        "reminderSentAt": "2026-06-15T15:15:00Z"
+      }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000204"
+  },
+  "turns": [
+    {
+      "text": "Confirmo sim, estarei lá amanhã ao meio-dia."
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "tool": "confirm_attendance",
+        "input": {
+          "booking_id": "$lastBookingId"
+        }
+      },
+      {
+        "text": "unused"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "confirm_attendance",
+          "input": {
+            "booking_id": "$ownBookingId"
+          }
+        }
+      ],
+      "mustNotInclude": ["cancel_booking", "reschedule_booking", "escalate_to_human"]
+    },
+    "writes": {
+      "holds": 0,
+      "bookings": 0,
+      "calendarEvents": 0,
+      "escalations": 0,
+      "cancellations": 0,
+      "reschedules": 0,
+      "calendarDeletes": 0,
+      "receptionNotices": 0,
+      "attendanceConfirmations": 1
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed",
+    "patientMessages": 1,
+    "llmCalls": 3
+  },
+  "liveExpect": {
+    "writes": {
+      "attendanceConfirmations": 1,
+      "cancellations": 0,
+      "reschedules": 0
+    }
+  }
+}

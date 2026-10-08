@@ -1,5 +1,6 @@
 import type { PoolClient } from "../db/pool";
 import { appendAudit } from "../db/repositories/audit-repo";
+import { latestConsent } from "../db/repositories/consent-repo";
 import {
   claimDue,
   enqueueOutbox,
@@ -44,6 +45,8 @@ export interface DispatchOutboxResult {
   sent: number;
   retried: number;
   failed: number;
+  /** Not delivered because it was no longer allowed at delivery time (007: reminder + opt-out). */
+  cancelled: number;
 }
 
 type Outcome = keyof DispatchOutboxResult;
@@ -53,6 +56,7 @@ const KIND_LABEL_PT: Record<OutboxRow["kind"], string> = {
   escalation: "o aviso à recepção",
   booking_cancellation: "a confirmação do cancelamento",
   reception_notice: "o aviso à recepção",
+  appointment_reminder: "o lembrete da consulta",
 };
 
 function errorMessage(err: unknown): string {
@@ -98,7 +102,7 @@ export async function dispatchOutbox(
 ): Promise<DispatchOutboxResult> {
   const batchSize = opts.batchSize ?? 20;
   const timeoutMs = opts.sendTimeoutMs ?? OUTBOX_SEND_TIMEOUT_MS;
-  const result: DispatchOutboxResult = { sent: 0, retried: 0, failed: 0 };
+  const result: DispatchOutboxResult = { sent: 0, retried: 0, failed: 0, cancelled: 0 };
   for (let i = 0; i < batchSize; i++) {
     const outcome = await dispatchOne(deps, timeoutMs, opts.conversationPhone);
     if (outcome === null) break;
@@ -121,6 +125,27 @@ async function dispatchOne(
       await client.query("COMMIT");
       return null;
     }
+    // A reminder is a proactive message: it goes out only while the patient's CURRENT consent is
+    // an opt-in. Re-checked here because an opt-out can commit between the reminder job's claim
+    // and its commit, after the opt-out already cancelled the patient's queued rows (007 review).
+    if (
+      row.kind === "appointment_reminder" &&
+      (await latestConsent(client, row.toPhone)) !== "opted_in"
+    ) {
+      await client.query(
+        "UPDATE outbox_message SET status = 'cancelled', last_error = 'cancelled: no consent at delivery' WHERE id = $1",
+        [row.id],
+      );
+      await appendAudit(client, {
+        entity: "outbox",
+        entityId: row.id,
+        action: "outbox_cancelled",
+        actor: "system",
+        payload: { reason: "no_consent_at_delivery", kind: row.kind },
+      });
+      await client.query("COMMIT");
+      return "cancelled";
+    }
     const attempts = row.attempts + 1;
     const link = linkFromTraceparent(row.traceContext);
     // FR-504: one span per delivery attempt, linked to the turn that committed the message.
@@ -130,7 +155,10 @@ async function dispatchOne(
       async (span): Promise<Outcome> => {
         let o: Outcome;
         try {
-          await withTimeout(deps.messaging.sendMessage(row.toPhone, row.body), timeoutMs);
+          await withTimeout(
+            deps.messaging.sendMessage(row.toPhone, row.body, row.template ?? undefined),
+            timeoutMs,
+          );
           await markSent(client, row.id, attempts, deps.clock.now());
           o = "sent";
         } catch (sendErr) {

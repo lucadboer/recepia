@@ -10,6 +10,11 @@ const TYPE_LABELS_PT: Record<AppointmentType, string> = {
   consultation: "consulta",
 };
 
+/** pt-BR name of an appointment type (also used in the model's reminder context, 007). */
+export function typeLabelPt(type: AppointmentType): string {
+  return TYPE_LABELS_PT[type];
+}
+
 /** Render an instant in clinic-local time (IANA zone, DST-aware) as DD/MM/YYYY às HH:MM. */
 export function formatSlotPt(start: Date): string {
   const { date, time } = formatLocalPt(start);
@@ -58,6 +63,57 @@ export function calendarCleanupNoticePt(c: { phone: string; start: Date }): stri
     "Não consegui remover um evento da agenda.",
     `Consulta de ${formatSlotPt(c.start)} (paciente ${c.phone}) já está cancelada no sistema.`,
     "Por favor, apague o evento manualmente.",
+  ].join("\n");
+}
+
+interface ReminderInput {
+  name: string | null;
+  type: AppointmentType;
+  start: Date;
+}
+
+function firstName(name: string | null): string | null {
+  const first = name?.split(/\s+/).find((w) => w.length > 0);
+  return first ?? null;
+}
+
+/** Patient: the reminder ~24h before (007 FR-701). Never marketing. */
+export function reminderMessagePt(r: ReminderInput): string {
+  const hello = firstName(r.name) ? `Olá, ${firstName(r.name)}!` : "Olá!";
+  return `${hello} Lembrete da sua consulta de ${TYPE_LABELS_PT[r.type]} em ${formatSlotPt(r.start)}. Você confirma presença? Responda SIM para confirmar, ou me diga se precisa remarcar ou cancelar.`;
+}
+
+/**
+ * Body parameters of the approved reminder template (official channel, 007 FR-707), in order:
+ * first name, appointment type, date and time. Cloud API forbids line breaks and tabs inside them.
+ */
+export function reminderTemplateParams(r: ReminderInput): string[] {
+  const clean = (s: string) => s.replace(/[\n\t\r]+/g, " ").trim();
+  return [
+    clean(firstName(r.name) ?? "paciente"),
+    clean(TYPE_LABELS_PT[r.type]),
+    clean(formatSlotPt(r.start)),
+  ];
+}
+
+/** Patient: attendance confirmed after the reminder (007 FR-703). */
+export function attendanceConfirmedMessagePt(type: AppointmentType, start: Date): string {
+  return `Presença confirmada na sua consulta de ${TYPE_LABELS_PT[type]} em ${formatSlotPt(start)}. Até lá!`;
+}
+
+/** Reception: the patient did not answer the reminder (007 FR-705). */
+export function unconfirmedNoticePt(c: {
+  name: string | null;
+  phone: string;
+  type: AppointmentType;
+  start: Date;
+}): string {
+  const who = c.name ? `${c.name} (${c.phone})` : c.phone;
+  return [
+    "Paciente não confirmou presença após o lembrete.",
+    `Paciente: ${who}`,
+    `Consulta: ${TYPE_LABELS_PT[c.type]} em ${formatSlotPt(c.start)}`,
+    "Vale ligar para confirmar.",
   ].join("\n");
 }
 

@@ -46,6 +46,7 @@ function fakeExecution(caseId: string, rep: number, over: Partial<Execution> = {
         reschedules: 0,
         calendarDeletes: 0,
         receptionNotices: 0,
+        attendanceConfirmations: 0,
       },
       escalations: [],
       offeredSlots: [],

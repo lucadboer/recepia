@@ -1,6 +1,6 @@
 import { handleInbound } from "./agent/orchestrator";
 import type { InboundMessage } from "./agent/types";
-import { buildAgentDeps, closeAgentDeps } from "./composition";
+import { buildAgentDeps, closeAgentDeps, reminderSettings } from "./composition";
 import { startJobs } from "./jobs/scheduler";
 import { log } from "./telemetry/logger";
 import { usingRandomPseudonymKey } from "./telemetry/pseudonym";
@@ -47,7 +47,9 @@ const server = createWebhookServer({
   },
 });
 // Background jobs: outbox delivery (retries) + hold-expiry sweep (T245).
-const jobs = startJobs(deps);
+// Reminders (007): settings are validated at startup (official channel needs a template).
+const reminders = reminderSettings();
+const jobs = startJobs(deps, undefined, reminders.enabled ? reminders : null);
 // Graceful shutdown (T246): stop jobs, stop accepting, drain in-flight turns, close the pool.
 const shutdown = createShutdown({ server, jobs, queue, close: () => closeAgentDeps(deps) });
 

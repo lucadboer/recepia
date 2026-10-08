@@ -19,6 +19,8 @@ interface BookingRow {
   consent_at: Date | null;
   cancelled_at: Date | null;
   rescheduled_from: string | null;
+  reminder_sent_at: Date | null;
+  unconfirmed_notice_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -39,6 +41,8 @@ export function rowToBooking(r: BookingRow): Booking {
     consentAt: r.consent_at,
     cancelledAt: r.cancelled_at,
     rescheduledFrom: r.rescheduled_from,
+    reminderSentAt: r.reminder_sent_at ?? null,
+    unconfirmedNoticeAt: r.unconfirmed_notice_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -218,4 +222,14 @@ export async function expireDueHolds(q: Queryable, now: Date): Promise<string[]>
     [now],
   );
   return rows.map((r) => r.id as string);
+}
+
+/** True when one of `ids` is a hold still alive (a booking in progress in this conversation, 007). */
+export async function hasLiveHold(q: Queryable, ids: string[], now: Date): Promise<boolean> {
+  if (ids.length === 0) return false;
+  const { rows } = await q.query(
+    "SELECT 1 FROM booking WHERE id::text = ANY($1::text[]) AND status = 'held' AND expires_at > $2 LIMIT 1",
+    [ids, now],
+  );
+  return rows.length > 0;
 }
