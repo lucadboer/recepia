@@ -4,7 +4,6 @@ import {
   confirmHeld,
   getById,
   lockBookingForUpdate,
-  releaseHeld,
 } from "../db/repositories/booking-repo";
 import {
   confirmationStatus,
@@ -27,6 +26,7 @@ import { rescheduledMessagePt } from "../messages";
 import {
   deleteEventWithRetry,
   removeEventOrNotify,
+  retireHold,
   writeEventWithRetry,
   yieldIfLeaseLost,
 } from "./booking-calendar";
@@ -99,8 +99,7 @@ export async function rescheduleBooking(
   const name = old.patientName ?? "Paciente";
   const eventId = await writeEventWithRetry(deps, hold, { name, phone });
   if (eventId === null) {
-    await yieldIfLeaseLost(deps, hold.id); // the hold may be the new holder's to use
-    await releaseHold(deps, hold.id, "calendar_write_failed");
+    await retireHold(deps, hold.id, "calendar_write_failed"); // fenced: a stale turn leaves it
     await escalateToHuman(deps, {
       reason: "calendar_write_failed",
       phone,
@@ -218,9 +217,10 @@ export async function rescheduleBooking(
     throw flagEscalated(new BookingNotChangeableError("A remarcação não pôde ser concluída."));
   }
 
-  // True orphan: the new event has no booking. Compensate, release the hold, hand off.
+  // True orphan: the new event has no booking. End the hold first (it can then never be confirmed
+  // with this event), compensate the event, hand off.
+  await retireHold(deps, hold.id, "reschedule_not_committed");
   const deleted = await deleteEventWithRetry(deps, hold.id);
-  await releaseHold(deps, hold.id, "reschedule_not_committed");
   const reason = failure ? "commit_failed" : "booking_or_hold_changed";
   await auditOrphan(deps, hold.id, eventId, reason, deleted);
   if (!deleted) {
@@ -243,34 +243,6 @@ export async function rescheduleBooking(
     }. A consulta original continua marcada.`,
   });
   throw flagEscalated(failure instanceof Error ? failure : new HoldExpiredError());
-}
-
-async function releaseHold(deps: Deps, holdId: string, reason: string): Promise<void> {
-  const client = await deps.pool.connect();
-  try {
-    await client.query("BEGIN");
-    await deps.lease?.fence(client);
-    const { rowCount } = await client.query(
-      "SELECT 1 FROM booking WHERE id = $1 AND status = 'held'",
-      [holdId],
-    );
-    if (rowCount) {
-      await releaseHeld(client, holdId);
-      await appendAudit(client, {
-        entity: "booking",
-        entityId: holdId,
-        action: "hold_released",
-        actor: "system",
-        payload: { reason },
-      });
-    }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 async function auditOrphan(
