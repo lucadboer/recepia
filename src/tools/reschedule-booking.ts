@@ -6,8 +6,12 @@ import {
   lockBookingForUpdate,
   releaseHeld,
 } from "../db/repositories/booking-repo";
-import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
-import { cancelQueuedReminder } from "../db/repositories/reminder-repo";
+import {
+  confirmationStatus,
+  enqueueOutbox,
+  releasedBookingMessages,
+  supersedePending,
+} from "../db/repositories/outbox-repo";
 import type { Deps } from "../deps";
 import { isExpired } from "../domain/booking";
 import {
@@ -71,7 +75,9 @@ export async function rescheduleBooking(
   if (!hold || hold.patientPhone !== phone) throw new HoldExpiredError("Reserva não encontrada.");
 
   if (ACTIVE.has(hold.status) && hold.rescheduledFrom === old.id) {
-    // Idempotent repeat: while the message is still queued, the outbox owns it (as in confirm).
+    // Idempotent repeat: finish the old event's removal (a lost COMMIT acknowledgment must not
+    // leave it behind — review), and while the message is still queued the outbox owns it.
+    await removeOldEvent(deps, old, phone, now);
     const queued = await confirmationStatus(deps.pool, hold.id);
     const outcome = queued === "pending" ? "rescheduled" : "already_rescheduled";
     return { booking: hold, previous: old, outcome, late: false };
@@ -105,14 +111,19 @@ export async function rescheduleBooking(
   try {
     await client.query("BEGIN");
     const locked = await lockBookingForUpdate(client, old.id);
+    // Deadlines are re-checked with the clock at commit time: the calendar call and the row-lock
+    // wait can outlast the hold's TTL or the appointment's start (review).
+    const txNow = deps.clock.now();
     const stillActive =
-      locked !== null && ACTIVE.has(locked.status) && locked.start.getTime() > now.getTime();
+      locked !== null && ACTIVE.has(locked.status) && locked.start.getTime() > txNow.getTime();
     const confirmed = stillActive
-      ? await confirmHeld(client, hold.id, name, eventId, now, old.id)
+      ? await confirmHeld(client, hold.id, name, eventId, now, old.id, txNow)
       : null;
     const released = confirmed ? await cancelActive(client, old.id, now) : null;
     if (confirmed && released) {
-      await cancelQueuedReminder(client, old.id); // the old booking is never reminded (007)
+      // The original time's confirmation or reminder must never be delivered after the move
+      // (006 review, 007 FR-702).
+      await supersedePending(client, releasedBookingMessages(old.id));
       const outboxId = await enqueueOutbox(client, {
         kind: "booking_confirmation",
         toPhone: phone,
@@ -180,29 +191,49 @@ export async function rescheduleBooking(
     return { booking: swapped, previous: cancelled, outcome: "rescheduled", late };
   }
 
-  // Not committed by us. Our commit may have landed with a lost acknowledgment: then the swap is
-  // real and must be reported as such (never compensate a confirmed booking's event).
+  // Not committed by us. The event belongs to whichever active booking now holds it: never
+  // compensate a confirmed booking's event (review: a concurrent confirm of the same hold).
   const current = await getById(deps.pool, hold.id);
-  if (
-    current &&
-    ACTIVE.has(current.status) &&
-    current.rescheduledFrom === old.id &&
-    current.googleEventId === eventId
-  ) {
-    const previous = (await getById(deps.pool, old.id)) ?? old;
-    await removeOldEvent(deps, previous, phone, now);
-    return { booking: current, previous, outcome: "rescheduled", late };
+  if (current && ACTIVE.has(current.status) && current.googleEventId === eventId) {
+    if (current.rescheduledFrom === old.id) {
+      // Our commit landed with a lost acknowledgment: the swap is real.
+      const previous = (await getById(deps.pool, old.id)) ?? old;
+      await removeOldEvent(deps, previous, phone, now);
+      return { booking: current, previous, outcome: "rescheduled", late };
+    }
+    // Another operation confirmed this time as a booking of its own: keep its event, keep the
+    // original appointment, and let reception sort out the two bookings.
+    await escalateToHuman(deps, {
+      reason: "reschedule_conflict",
+      phone,
+      context: `Remarcação ${old.id} → ${hold.id} não concluída: o novo horário foi confirmado por outra operação e a consulta original continua marcada. Verifique as duas consultas.`,
+    });
+    throw flagEscalated(new BookingNotChangeableError("A remarcação não pôde ser concluída."));
   }
 
   // True orphan: the new event has no booking. Compensate, release the hold, hand off.
-  await deleteEventWithRetry(deps, hold.id);
+  const deleted = await deleteEventWithRetry(deps, hold.id);
   await releaseHold(deps, hold.id, "reschedule_not_committed");
   const reason = failure ? "commit_failed" : "booking_or_hold_changed";
-  await auditOrphan(deps, hold.id, eventId, reason);
+  await auditOrphan(deps, hold.id, eventId, reason, deleted);
+  if (!deleted) {
+    // Never claim a compensation that did not happen (review): reception removes it by hand.
+    await requestCalendarCleanup(deps, {
+      bookingId: hold.id,
+      phone,
+      start: hold.start,
+      eventId,
+      now,
+    });
+  }
   await escalateToHuman(deps, {
     reason: "calendar_orphan",
     phone,
-    context: `Remarcação ${old.id} → ${hold.id} não concluída (${reason}); evento novo removido por compensação.`,
+    context: `Remarcação ${old.id} → ${hold.id} não concluída (${reason}); ${
+      deleted
+        ? "evento novo removido por compensação"
+        : "o evento novo não pôde ser removido e a recepção recebeu um aviso para apagá-lo"
+    }. A consulta original continua marcada.`,
   });
   throw flagEscalated(failure instanceof Error ? failure : new HoldExpiredError());
 }
@@ -250,6 +281,7 @@ async function auditOrphan(
   holdId: string,
   eventId: string,
   reason: string,
+  deleted: boolean,
 ): Promise<void> {
   const client = await deps.pool.connect();
   try {
@@ -259,7 +291,7 @@ async function auditOrphan(
       entityId: holdId,
       action: "calendar_orphan_compensated",
       actor: "system",
-      payload: { eventId, reason },
+      payload: { eventId, reason, deleted },
     });
     await client.query("COMMIT");
   } catch {

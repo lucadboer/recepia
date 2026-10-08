@@ -163,3 +163,36 @@ export async function markFailed(
     [id, attempts, error],
   );
 }
+
+/**
+ * Cancel still-pending messages that a lifecycle change made wrong (006 review): the original
+ * booking's confirmation must never be delivered after its cancellation or reschedule. Returns the
+ * cancelled ids.
+ */
+export async function supersedePending(q: Queryable, dedupeKeys: string[]): Promise<string[]> {
+  if (dedupeKeys.length === 0) return [];
+  const { rows } = await q.query(
+    `UPDATE outbox_message SET status = 'cancelled', last_error = 'cancelled: superseded'
+     WHERE dedupe_key = ANY($1::text[]) AND status = 'pending'
+     RETURNING id`,
+    [dedupeKeys],
+  );
+  return rows.map((r) => r.id as string);
+}
+
+/** Patient messages about a booking that a cancel or reschedule makes wrong (006 review, 007). */
+export function releasedBookingMessages(bookingId: string): string[] {
+  return [
+    `booking_confirmation:${bookingId}`,
+    `appointment_reminder:${bookingId}`,
+    `attendance_confirmation:${bookingId}`,
+  ];
+}
+
+/** Delivery status of the message with this dedupe key, or null if none (006: cancel replays). */
+export async function messageStatus(q: Queryable, dedupeKey: string): Promise<OutboxStatus | null> {
+  const { rows } = await q.query("SELECT status FROM outbox_message WHERE dedupe_key = $1", [
+    dedupeKey,
+  ]);
+  return rows[0] ? (rows[0].status as OutboxStatus) : null;
+}

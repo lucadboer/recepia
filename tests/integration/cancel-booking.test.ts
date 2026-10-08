@@ -145,10 +145,39 @@ describe("cancel_booking", () => {
     const d = makeDeps();
     const id = await book(d, TOMORROW_9);
     await cancelBooking(d, id, PATIENT.phone);
-    const again = await cancelBooking(d, id, PATIENT.phone);
-    expect(again.outcome).toBe("already_cancelled");
+    // While the cancellation message is queued the outbox owns the reply (no second message)…
+    expect((await cancelBooking(d, id, PATIENT.phone)).outcome).toBe("cancelled");
+    // …and once it left, a replay is reported as already done.
+    await pool.query(
+      "UPDATE outbox_message SET status = 'sent', sent_at = now() WHERE kind = 'booking_cancellation'",
+    );
+    expect((await cancelBooking(d, id, PATIENT.phone)).outcome).toBe("already_cancelled");
     expect(await countAudit(pool, "booking_cancelled")).toBe(1);
     expect(await outbox("booking_cancellation")).toHaveLength(1);
+  });
+
+  it("a replay finishes the calendar removal a lost COMMIT acknowledgment skipped (review)", async () => {
+    const calendar = new FakeCalendar();
+    const d = makeDeps(calendar);
+    const id = await book(d, TOMORROW_9);
+    // The cancel committed, but the process never got to delete the event.
+    await pool.query(
+      "UPDATE booking SET status = 'cancelled', cancelled_at = now() WHERE id = $1",
+      [id],
+    );
+    expect(calendar.events.has(id)).toBe(true);
+    await cancelBooking(d, id, PATIENT.phone);
+    expect(calendar.events.has(id)).toBe(false);
+  });
+
+  it("the original confirmation still queued is superseded: it never reaches the patient (review)", async () => {
+    const d = makeDeps();
+    const id = await book(d, TOMORROW_9); // its confirmation is still pending in the outbox
+    await cancelBooking(d, id, PATIENT.phone);
+    const r = await pool.query("SELECT status FROM outbox_message WHERE dedupe_key = $1", [
+      `booking_confirmation:${id}`,
+    ]);
+    expect(r.rows[0].status).toBe("cancelled");
   });
 
   it("another patient's booking is 'not found' and nothing is written", async () => {

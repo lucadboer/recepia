@@ -90,17 +90,3 @@ export async function pendingRemindersForPhone(
   );
   return rows.map(rowToBooking);
 }
-
-/**
- * A booking released by a cancel or a reschedule must not be reminded: cancel its still-pending
- * reminder in the caller's transaction. Returns the cancelled outbox ids (for the audit trail).
- */
-export async function cancelQueuedReminder(q: Queryable, bookingId: string): Promise<string[]> {
-  const { rows } = await q.query(
-    `UPDATE outbox_message SET status = 'cancelled', last_error = 'cancelled: booking released'
-     WHERE dedupe_key = $1 AND status = 'pending'
-     RETURNING id`,
-    [`appointment_reminder:${bookingId}`],
-  );
-  return rows.map((r) => r.id as string);
-}

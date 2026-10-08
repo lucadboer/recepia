@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
 import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import type { Pool } from "../../src/db/pool";
@@ -287,3 +288,49 @@ async function countOutbox(kind: string): Promise<number> {
   );
   return rows[0].n;
 }
+
+describe("confirm_booking — 006 review findings", () => {
+  it("an orphan event that cannot be removed is not reported as compensated: reception removes it", async () => {
+    const calendar = new FakeCalendar();
+    calendar.deleteFailAlways = true;
+    const d = depsWith(calendar, new FakeMessaging());
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, PATIENT);
+    const failing = poolFailingConfirmTx(pool, new Error("confirm tx down"));
+    await confirmBooking({ ...d, pool: failing }, hold.id, PATIENT).catch(() => {});
+    const orphan = await pool.query(
+      "SELECT payload FROM audit_log WHERE action = 'calendar_orphan_compensated'",
+    );
+    expect(orphan.rows[0].payload).toMatchObject({ deleted: false });
+    expect(await countAudit(pool, "calendar_delete_failed")).toBe(1);
+    const notice = await pool.query(
+      "SELECT dedupe_key FROM outbox_message WHERE kind = 'reception_notice'",
+    );
+    expect(notice.rows.map((r) => r.dedupe_key)).toEqual([`calendar_cleanup:${hold.id}`]);
+  });
+
+  it("a hold whose TTL ran out during the calendar call is not confirmed, even before any sweep", async () => {
+    const clock = new FakeClock(NOW);
+    const calendar = new FakeCalendar();
+    const d: Deps = {
+      pool,
+      clock,
+      calendar,
+      messaging: new FakeMessaging(),
+      receptionPhone: RECEPTION,
+    };
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, PATIENT);
+    const slowCalendar: CalendarPort = {
+      async createEvent(input) {
+        clock.advance(11 * 60_000); // the TTL is 10 minutes
+        return calendar.createEvent(input);
+      },
+      deleteEvent: (key) => calendar.deleteEvent(key),
+    };
+    const err = await confirmBooking({ ...d, calendar: slowCalendar }, hold.id, PATIENT).catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((await getById(pool, hold.id))?.status).not.toBe("confirmed");
+    expect(calendar.events.has(hold.id)).toBe(false); // compensated
+  });
+});

@@ -78,10 +78,12 @@ describe("booking lifecycle — concurrency [MANDATORY GATE]", () => {
       Array.from({ length: 10 }, () => cancelBooking(d, id, PHONE)),
     );
     expect(results.every((r) => r.status === "fulfilled")).toBe(true);
+    // Every caller sees "cancelled": the one that committed and the replays, while the single
+    // cancellation message is still owned by the outbox.
     const outcomes = results.map(
       (r) => (r as PromiseFulfilledResult<{ outcome: string }>).value.outcome,
     );
-    expect(outcomes.filter((o) => o === "cancelled")).toHaveLength(1);
+    expect(new Set(outcomes)).toEqual(new Set(["cancelled"]));
     expect(await countAudit(pool, "booking_cancelled")).toBe(1);
     const { rows } = await pool.query(
       "SELECT count(*)::int AS n FROM outbox_message WHERE kind = 'booking_cancellation'",
