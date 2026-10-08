@@ -1,4 +1,3 @@
-import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config";
 import { appendAudit } from "../db/repositories/audit-repo";
 import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
@@ -7,6 +6,7 @@ import { isExpired } from "../domain/booking";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
 import type { Booking, Patient } from "../domain/types";
 import { confirmationMessagePt } from "../messages";
+import { deleteEventWithRetry, writeEventWithRetry } from "./booking-calendar";
 import { escalateToHuman } from "./escalate-to-human";
 
 const CONFIRMED_STATUSES = new Set(["confirmed", "patient_confirmed", "done"]);
@@ -22,10 +22,6 @@ export interface ConfirmResult {
    * `already_confirmed` = the booking was confirmed earlier and its confirmation already left.
    */
   outcome: ConfirmOutcome;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -62,23 +58,7 @@ export async function confirmBooking(
   }
 
   // Calendar write with short retry, outside any DB transaction.
-  let eventId: string | null = null;
-  for (let attempt = 1; attempt <= CALENDAR_MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await deps.calendar.createEvent({
-        idempotencyKey: existing.id,
-        start: existing.start,
-        end: existing.end,
-        title: `Consulta de rotina (${existing.appointmentType})`,
-        patientName: patient.name,
-        patientPhone: patient.phone,
-      });
-      eventId = res.eventId;
-      break;
-    } catch {
-      if (attempt < CALENDAR_MAX_ATTEMPTS) await sleep(CALENDAR_RETRY_BASE_MS * attempt);
-    }
-  }
+  const eventId = await writeEventWithRetry(deps, existing, patient);
 
   if (eventId === null) {
     const client = await deps.pool.connect();
@@ -162,7 +142,7 @@ export async function confirmBooking(
   }
 
   // True orphan: an event exists with no booking. Delete it, audit, escalate.
-  await deps.calendar.deleteEvent(existing.id).catch(() => {});
+  await deleteEventWithRetry(deps, existing.id);
   const reason = commitError ? "commit_failed" : "hold_not_held";
   const orphanClient = await deps.pool.connect();
   try {

@@ -95,3 +95,41 @@ export async function seedHeld(
     [phone, start, end, expiresAt, seat],
   );
 }
+
+/** Seed one booking and return its id (006: cancel/reschedule tests need the id). */
+export async function seedBooking(
+  pool: Pool,
+  b: {
+    start: string;
+    phone: string;
+    status?: "confirmed" | "patient_confirmed" | "held" | "cancelled" | "expired";
+    seat?: number;
+    name?: string;
+    type?: "evaluation" | "cleaning" | "follow_up" | "consultation";
+    expiresAt?: Date;
+  },
+): Promise<string> {
+  const start = new Date(b.start);
+  const end = new Date(start.getTime() + SLOT_MS);
+  const status = b.status ?? "confirmed";
+  const { rows } = await pool.query(
+    `INSERT INTO booking (patient_phone, patient_name, appointment_type, start_ts, end_ts, status,
+                          expires_at, google_event_id, created_via, consent_at, cancelled_at, seat)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ai', $9, $10, $11)
+     RETURNING id`,
+    [
+      b.phone,
+      status === "held" ? null : (b.name ?? "Teste"),
+      b.type ?? "cleaning",
+      start,
+      end,
+      status,
+      status === "held" ? (b.expiresAt ?? new Date(start.getTime() - 60 * 60 * 1000)) : null,
+      status === "held" ? null : `evt_${b.phone}_${b.start}`,
+      status === "held" ? null : new Date("2026-06-01T00:00:00Z"),
+      status === "cancelled" ? new Date("2026-06-01T00:00:00Z") : null,
+      b.seat ?? 0,
+    ],
+  );
+  return rows[0].id as string;
+}

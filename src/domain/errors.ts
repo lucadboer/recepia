@@ -26,6 +26,18 @@ export class BookingNotChangeableError extends Error {
   }
 }
 
+/** A reschedule that is not a change of time of the same appointment (006 FR-605). */
+export class InvalidRescheduleError extends Error {
+  constructor(public readonly reason: "same_time" | "different_type") {
+    super(
+      reason === "same_time"
+        ? "O novo horário é o mesmo da consulta atual."
+        : "O novo horário é de outro tipo de consulta.",
+    );
+    this.name = "InvalidRescheduleError";
+  }
+}
+
 /** The requested start is outside [now + lead, now + horizon] or off the 30-min grid. */
 export class SlotOutOfWindowError extends Error {
   constructor(message = "O horário está fora da janela de agendamento.") {
