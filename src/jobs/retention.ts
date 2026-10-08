@@ -1,5 +1,5 @@
-// LGPD retention (owner decision T222, 2026-10-06; feature 005 FR-515): conversation state and
-// terminal outbox messages are deleted after 90 days without activity. The consent ledger and the
+// LGPD retention (owner decision T222, 2026-10-06; feature 005 FR-515): conversation state,
+// terminal outbox messages and finished inbound messages (008) are deleted after 90 days. The consent ledger and the
 // audit log are kept; pending messages are never deleted. Every run is audited with counts only.
 
 import type { Pool } from "../db/pool";
@@ -17,6 +17,8 @@ export interface RetentionOptions {
 export interface RetentionResult {
   conversationStates: number;
   outboxMessages: number;
+  /** Finished inbound messages (008: done / dead / dropped; text already cleared when done). */
+  inboundMessages: number;
   olderThanDays: number;
   cutoff: string;
   dryRun: boolean;
@@ -24,6 +26,7 @@ export interface RetentionResult {
 
 const STATE_WHERE = "updated_at < $1";
 const OUTBOX_WHERE = "status IN ('sent', 'failed', 'cancelled') AND created_at < $1";
+const INBOUND_WHERE = "status IN ('done', 'dead', 'dropped') AND created_at < $1";
 
 export async function purgeInactive(
   pool: Pool,
@@ -43,6 +46,7 @@ export async function purgeInactive(
         await client.query("BEGIN");
         let states: number;
         let messages: number;
+        let inbound: number;
         if (dryRun) {
           states = Number(
             (
@@ -60,12 +64,23 @@ export async function purgeInactive(
               )
             ).rows[0].n,
           );
+          inbound = Number(
+            (
+              await client.query(
+                `SELECT count(*)::int AS n FROM inbound_message WHERE ${INBOUND_WHERE}`,
+                [cutoff],
+              )
+            ).rows[0].n,
+          );
         } else {
           states =
             (await client.query(`DELETE FROM conversation_state WHERE ${STATE_WHERE}`, [cutoff]))
               .rowCount ?? 0;
           messages =
             (await client.query(`DELETE FROM outbox_message WHERE ${OUTBOX_WHERE}`, [cutoff]))
+              .rowCount ?? 0;
+          inbound =
+            (await client.query(`DELETE FROM inbound_message WHERE ${INBOUND_WHERE}`, [cutoff]))
               .rowCount ?? 0;
           await appendAudit(client, {
             entity: "retention",
@@ -75,6 +90,7 @@ export async function purgeInactive(
             payload: {
               conversationStates: states,
               outboxMessages: messages,
+              inboundMessages: inbound,
               olderThanDays,
               cutoff: cutoff.toISOString(),
             },
@@ -84,10 +100,12 @@ export async function purgeInactive(
         setAttributes(span, {
           "recepia.retention.conversation_states": states,
           "recepia.retention.outbox_messages": messages,
+          "recepia.retention.inbound_messages": inbound,
         });
         return {
           conversationStates: states,
           outboxMessages: messages,
+          inboundMessages: inbound,
           olderThanDays,
           cutoff: cutoff.toISOString(),
           dryRun,
