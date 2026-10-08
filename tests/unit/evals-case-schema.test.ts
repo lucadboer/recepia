@@ -78,7 +78,8 @@ describe("validateCase — accepts a well-formed case", () => {
 
   it("exposes the category enum and the fictitious constants", () => {
     expect(CATEGORIES).toContain("injection");
-    expect(CATEGORIES).toHaveLength(8);
+    expect(CATEGORIES).toHaveLength(9); // 007 added "reminder"
+    expect(CATEGORIES).toContain("reminder");
     expect(RECEPTION_PHONE).toMatch(/^\+5531900000\d{3}$/);
     expect(FOREIGN_PHONE).toMatch(/^\+5531900000\d{3}$/);
     expect(FICTITIOUS_NAMES.length).toBeGreaterThanOrEqual(8);

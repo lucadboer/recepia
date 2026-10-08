@@ -76,3 +76,25 @@ describe("schedule — in-process periodic job with an in-flight guard (T245)", 
     expect(run).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("startJobs — reminder jobs (007)", () => {
+  it("registers the reminder and unconfirmed-notice jobs only when reminder settings are given", async () => {
+    const { startJobs, stopJobs } = await import("../../src/jobs/scheduler");
+    const deps = {} as never; // no job runs before stop (first runs are delayed)
+    const without = startJobs(deps);
+    const withReminders = startJobs(deps, undefined, {
+      leadMs: 24 * 3_600_000,
+      noticeLeadMs: 3 * 3_600_000,
+      template: null,
+    });
+    try {
+      expect(without.map((j) => j.name)).not.toContain("reminders");
+      expect(withReminders.map((j) => j.name)).toEqual(
+        expect.arrayContaining(["reminders", "unconfirmed-notice", "outbox"]),
+      );
+    } finally {
+      stopJobs(without);
+      stopJobs(withReminders);
+    }
+  });
+});

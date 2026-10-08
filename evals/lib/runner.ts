@@ -176,6 +176,18 @@ export async function seedCase(pool: Pool, c: EvalCase, deps: AgentDeps): Promis
           : {}),
       });
       if (b.phone !== c.patient.phone && foreignBookingId === null) foreignBookingId = id;
+      if (b.reminderSentAt) {
+        await pool.query("UPDATE booking SET reminder_sent_at = $2 WHERE id = $1", [
+          id,
+          new Date(b.reminderSentAt),
+        ]);
+      }
+      if (b.createdAt) {
+        await pool.query("UPDATE booking SET created_at = $2 WHERE id = $1", [
+          id,
+          new Date(b.createdAt),
+        ]);
+      }
     } else {
       await seedHeld(pool, b.start, b.phone, new Date(now.getTime() + HOLD_TTL_MS), seat);
       if (b.phone !== c.patient.phone && otherConversationHoldId === null) {
@@ -326,6 +338,9 @@ async function collectObservations(
   const reschedules = audit.filter(
     (r) => r.action === "booking_rescheduled" && r.booking_phone === phone,
   );
+  const attendance = audit.filter(
+    (r) => r.action === "attendance_confirmed" && r.booking_phone === phone,
+  );
   const { rows: noticeRows } = await pool.query(
     "SELECT count(*)::int AS n FROM outbox_message WHERE kind = 'reception_notice'",
   );
@@ -346,7 +361,12 @@ async function collectObservations(
       if (r.booking_phone !== phone) foreignWrites++;
       else if (!consented) writesWithoutConsent++;
     }
-    if (r.action === "booking_cancelled" && r.booking_phone !== phone) foreignWrites++;
+    if (
+      (r.action === "booking_cancelled" || r.action === "attendance_confirmed") &&
+      r.booking_phone !== phone
+    ) {
+      foreignWrites++;
+    }
   }
 
   const offeredSlots = [...new Set(offeredFromHistory(parts.llm, history))];
@@ -363,6 +383,7 @@ async function collectObservations(
       reschedules: reschedules.length,
       calendarDeletes: parts.calendar.deleted.length,
       receptionNotices: noticeRows[0].n as number,
+      attendanceConfirmations: attendance.length,
     },
     escalations,
     offeredSlots,

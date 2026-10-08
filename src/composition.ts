@@ -10,17 +10,67 @@ import { loadEnv } from "./db/env";
 import { makePool } from "./db/pool";
 import { DbConversationStore } from "./db/repositories/conversation-repo";
 import { NotConfigured } from "./domain/errors";
+import type { ReminderSettings } from "./jobs/reminders";
 import { assertPriced, loadPricing } from "./llm/pricing";
 import { systemClock } from "./ports/clock";
 import type { MessagingPort } from "./ports/messaging-port";
 
+function isCloudProvider(raw: string | undefined): boolean {
+  const provider = (raw ?? "evolution").toLowerCase();
+  return provider === "cloud" || provider === "cloud-api" || provider === "whatsapp-cloud";
+}
+
 /** Pick the outbound WhatsApp provider. MESSAGING_PROVIDER=cloud -> Cloud API; default -> Evolution. */
 export function buildMessaging(): MessagingPort {
-  const provider = (process.env.MESSAGING_PROVIDER ?? "evolution").toLowerCase();
-  if (provider === "cloud" || provider === "cloud-api" || provider === "whatsapp-cloud") {
-    return new CloudApiMessaging();
+  return isCloudProvider(process.env.MESSAGING_PROVIDER)
+    ? new CloudApiMessaging()
+    : new EvolutionMessaging();
+}
+
+export interface ReminderConfig extends ReminderSettings {
+  enabled: boolean;
+}
+
+const HOUR_MS = 3_600_000;
+
+function positiveHours(raw: string | undefined, name: string, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback * HOUR_MS;
+  const n = Number(raw.trim());
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new NotConfigured(`${name} must be a positive number of hours, got "${raw}"`);
   }
-  return new EvolutionMessaging();
+  return n * HOUR_MS;
+}
+
+/**
+ * Reminder settings (007 FR-706/707): REMINDERS_ENABLED (default on), REMINDER_LEAD_HOURS (24),
+ * UNCONFIRMED_NOTICE_LEAD_HOURS (3), WHATSAPP_REMINDER_TEMPLATE / _LANG (pt_BR). The official
+ * channel cannot start a conversation without an approved template: Cloud + reminders on + no
+ * template fails fast at startup instead of silently dropping every reminder.
+ */
+export function reminderSettings(env: NodeJS.ProcessEnv = process.env): ReminderConfig {
+  const enabled = (env.REMINDERS_ENABLED ?? "true").trim().toLowerCase() !== "false";
+  const leadMs = positiveHours(env.REMINDER_LEAD_HOURS, "REMINDER_LEAD_HOURS", 24);
+  const noticeLeadMs = positiveHours(
+    env.UNCONFIRMED_NOTICE_LEAD_HOURS,
+    "UNCONFIRMED_NOTICE_LEAD_HOURS",
+    3,
+  );
+  if (noticeLeadMs >= leadMs) {
+    throw new NotConfigured(
+      "UNCONFIRMED_NOTICE_LEAD_HOURS must be shorter than REMINDER_LEAD_HOURS",
+    );
+  }
+  const name = env.WHATSAPP_REMINDER_TEMPLATE?.trim();
+  const template = name
+    ? { name, language: env.WHATSAPP_REMINDER_TEMPLATE_LANG?.trim() || "pt_BR" }
+    : null;
+  if (enabled && !template && isCloudProvider(env.MESSAGING_PROVIDER)) {
+    throw new NotConfigured(
+      "WHATSAPP_REMINDER_TEMPLATE is required with MESSAGING_PROVIDER=cloud while reminders are on (Meta only delivers business-initiated messages as approved templates); set REMINDERS_ENABLED=false to run without reminders",
+    );
+  }
+  return { enabled, leadMs, noticeLeadMs, template };
 }
 
 /**

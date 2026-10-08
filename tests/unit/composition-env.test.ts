@@ -103,3 +103,56 @@ describe("review fix — no SDK retries on the primary when a fallback exists", 
     expect((wrapped.primary as InstanceType<typeof AnthropicLLM>).maxRetries).toBe(0);
   });
 });
+
+// T720 (007) — reminder settings from the environment; the official channel needs a template.
+describe("reminderSettings", () => {
+  it("defaults: on, 24 h lead, 3 h notice, no template", async () => {
+    const { reminderSettings } = await import("../../src/composition");
+    expect(reminderSettings({})).toEqual({
+      enabled: true,
+      leadMs: 24 * 3_600_000,
+      noticeLeadMs: 3 * 3_600_000,
+      template: null,
+    });
+  });
+
+  it("reads the knobs and the template (language defaults to pt_BR)", async () => {
+    const { reminderSettings } = await import("../../src/composition");
+    expect(
+      reminderSettings({
+        REMINDERS_ENABLED: "false",
+        REMINDER_LEAD_HOURS: "26",
+        UNCONFIRMED_NOTICE_LEAD_HOURS: "2",
+        WHATSAPP_REMINDER_TEMPLATE: "lembrete_consulta",
+      }),
+    ).toEqual({
+      enabled: false,
+      leadMs: 26 * 3_600_000,
+      noticeLeadMs: 2 * 3_600_000,
+      template: { name: "lembrete_consulta", language: "pt_BR" },
+    });
+  });
+
+  it("rejects a notice lead that is not shorter than the reminder lead, and non-positive hours", async () => {
+    const { reminderSettings } = await import("../../src/composition");
+    expect(() =>
+      reminderSettings({ REMINDER_LEAD_HOURS: "3", UNCONFIRMED_NOTICE_LEAD_HOURS: "3" }),
+    ).toThrow(/shorter/);
+    expect(() => reminderSettings({ REMINDER_LEAD_HOURS: "0" })).toThrow(/REMINDER_LEAD_HOURS/);
+  });
+
+  it("official channel + reminders on + no template → fails fast; otherwise fine", async () => {
+    const { reminderSettings } = await import("../../src/composition");
+    expect(() => reminderSettings({ MESSAGING_PROVIDER: "cloud" })).toThrow(
+      /WHATSAPP_REMINDER_TEMPLATE/,
+    );
+    expect(
+      reminderSettings({ MESSAGING_PROVIDER: "cloud", REMINDERS_ENABLED: "false" }).enabled,
+    ).toBe(false);
+    expect(
+      reminderSettings({ MESSAGING_PROVIDER: "cloud", WHATSAPP_REMINDER_TEMPLATE: "t" }).template
+        ?.name,
+    ).toBe("t");
+    expect(reminderSettings({ MESSAGING_PROVIDER: "evolution" }).template).toBeNull();
+  });
+});

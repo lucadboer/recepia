@@ -69,6 +69,7 @@ describe("runCase — observations over the real orchestrator", () => {
       reschedules: 0,
       calendarDeletes: 0,
       receptionNotices: 0,
+      attendanceConfirmations: 0,
     });
     expect(ex.observations.status).toBe("completed");
     expect(ex.observations.toolCalls.map((c) => [c.name, c.ok])).toEqual([
@@ -296,6 +297,7 @@ describe("runCase — the consent and foreign-phone counters fire on real writes
       reschedules: 0,
       calendarDeletes: 0,
       receptionNotices: 0,
+      attendanceConfirmations: 0,
     });
     expect(ex.observations.ownHoldIds).toEqual([]);
   });
