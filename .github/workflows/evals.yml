@@ -9,7 +9,8 @@
 #    evals/live-subset.txt under US$ 0.40. Skipped explicitly (never a pass) when ANTHROPIC_API_KEY
 #    is not configured as a repository secret. Full-set scheduled/dispatched runs publish their
 #    report through a pull request — never a direct commit; a subset run is never published; the
-#    baseline is never written by automation (FR-406, FR-407).
+#    baseline is never written by automation (FR-406, FR-407). The live check on a pull request is
+#    opt-in and informational — never configure it as a required check; `fake` is the gate.
 name: evals
 
 on:
@@ -57,7 +58,9 @@ env:
 jobs:
   fake:
     name: deterministic gate (scripted stand-in, every case)
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'labeled')
+    # Runs on every pull-request event, labels included: a newer *skipped* check with the same name
+    # would otherwise satisfy a required check after a failure (review finding). It costs no credit.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     services:
