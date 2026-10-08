@@ -180,10 +180,11 @@ async function runTurn(
   const now = deps.clock.now();
   // Bound the state on the way in (stale offered slots, oversized history) and on the
   // way out, so neither the LLM context nor the JSONB row grows without limit (T239).
-  let state = boundState(
-    (await deps.conversations.load(msg.phone)) ?? emptyState(msg.phone, now),
-    now,
-  );
+  const stored = await deps.conversations.load(msg.phone);
+  // When this conversation last changed before this message (007: a "sim" answers the agent's
+  // latest question, not a reminder, if the agent spoke after the reminder went out).
+  const lastActivityAt = stored?.updatedAt ?? null;
+  let state = boundState(stored ?? emptyState(msg.phone, now), now);
   // FR-212: a completed conversation starts fresh on the next message (dedupe ids kept).
   if (state.status === "completed") state = resetConversation(state, now);
   // FR-211 safety valve: optional auto-release of a handed-off conversation after a TTL.
@@ -256,8 +257,13 @@ async function runTurn(
   //     confirms attendance deterministically — no model call (FR-703). Anything else reaches the
   //     model with that appointment in context and counted as shown in this turn (FR-704).
   const pendingReminders = await pendingRemindersForPhone(deps.pool, msg.phone, now);
-  if (
+  const answersTheReminder =
     pendingReminders.length === 1 &&
+    pendingReminders[0].reminderSentAt !== null &&
+    (lastActivityAt === null ||
+      lastActivityAt.getTime() <= pendingReminders[0].reminderSentAt.getTime());
+  if (
+    answersTheReminder &&
     !consentCaptured &&
     !state.awaitingConsent &&
     isStrictAffirmative(msg.text) &&
@@ -460,7 +466,13 @@ async function runTurn(
           rejectedBy: "consent",
         };
       }
-      const ctx: ToolContext = { deps: turnDeps, phone: msg.phone, state, now };
+      const ctx: ToolContext = {
+        deps: turnDeps,
+        phone: msg.phone,
+        state,
+        now,
+        inboundText: msg.text,
+      };
       const dispatched = await dispatchTool(ctx, tu.name, tu.input);
       state = dispatched.state;
       confirmationEnqueued ||= dispatched.patientNotified;

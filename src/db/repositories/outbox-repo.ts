@@ -186,6 +186,7 @@ export function releasedBookingMessages(bookingId: string): string[] {
     `booking_confirmation:${bookingId}`,
     `appointment_reminder:${bookingId}`,
     `attendance_confirmation:${bookingId}`,
+    `unconfirmed:${bookingId}`, // reception must not hear "did not confirm" about a changed booking
   ];
 }
 

@@ -15,6 +15,9 @@ move (feature 004).
   answering a reminder, the appointment was already shown; `confirm_attendance` with the context's
   `bookingId` when the patient will come; cancel/reschedule keep the 006 confirmation round trip.
   Attendance confirmation no longer goes to reception. One new style example (reminder reply).
+  After the PR live run: a clear "pode cancelar" for an appointment already shown is the
+  confirmation (no second question); "sim, mas preciso mudar" is a change request, not an
+  attendance confirmation (the registry also refuses it: `change_requested`).
 
 ## v002 — 2026-10-08
 - Cancel and reschedule (feature 006, SPEC.md US3): start with `find_my_booking`, show the

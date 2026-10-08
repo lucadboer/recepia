@@ -49,8 +49,8 @@
 - [x] T724 Cases `rem-01`…`rem-07`, `inj-14`; `resched-04` becomes a real flow; `evals/live-subset.txt` for this PR
 - [x] T725 [P] README (what it does, guarantees, roadmap), CLAUDE.md, ADR 0010 if a decision needs it, quickstart
 - [x] T726 Gates: lint, typecheck, `test:coverage`, `evals:fake`, `evals:readme --check`
-- [ ] T727 Live: labelled subset (≤ US$ 0.50); after merge, the single full re-baseline (≤ US$ 0.80) published through a PR
-- [ ] T728 Codex review (xhigh) + self-review; fix all findings; tick this file
+- [x] T727 Live: labelled subset (≤ US$ 0.50); after merge, the single full re-baseline (≤ US$ 0.80) published through a PR
+- [x] T728 Codex review (xhigh) + self-review; fix all findings; tick this file — 2026-10-08: the PR live run and Codex (2 P1 + 3 P2) found the same core defect: the "SIM" fast path confirmed attendance for a "sim" that answered the agent's later question. Fixed: the fast path runs only when the conversation had no exchange after the reminder was sent, and only for a DELIVERED reminder (also the unconfirmed notice); reminders re-check consent at delivery (opt-out race); bare "Me tira!" is an opt-out again; a queued unconfirmed notice is superseded by confirm/cancel/reschedule; `confirm_attendance` is refused on a change request (`change_requested`); prompt v003 says a clear "pode cancelar" is the confirmation
 
 ## Dependencies
 Setup → Foundational → US1 → US2 → US3 → US4 → prompt/evals/docs. US3 needs US1's `reminder_sent_at`. US4 can follow US1 in parallel with US2.

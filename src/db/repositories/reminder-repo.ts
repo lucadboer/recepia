@@ -44,7 +44,14 @@ export async function markReminderSent(client: PoolClient, id: string, now: Date
   ]);
 }
 
-/** Reminded, still only clinic-confirmed, not yet noticed, starting in (now, now + noticeLead]. */
+/** The booking's reminder actually reached the patient (007 review: queued is not received). */
+const DELIVERED = `EXISTS (SELECT 1 FROM outbox_message r
+                   WHERE r.dedupe_key = 'appointment_reminder:' || b.id::text AND r.status = 'sent')`;
+
+/**
+ * Reminded (and delivered), still only clinic-confirmed, not yet noticed, starting in
+ * (now, now + noticeLead].
+ */
 export async function claimUnconfirmed(
   client: PoolClient,
   now: Date,
@@ -56,6 +63,7 @@ export async function claimUnconfirmed(
      WHERE b.status = 'confirmed' AND b.reminder_sent_at IS NOT NULL
        AND b.unconfirmed_notice_at IS NULL
        AND b.start_ts > $1 AND b.start_ts <= $2
+       AND ${DELIVERED}
      ORDER BY b.start_ts
      LIMIT $3
      FOR UPDATE OF b SKIP LOCKED`,
@@ -75,17 +83,20 @@ export async function markUnconfirmedNoticed(
   );
 }
 
-/** The patient's upcoming bookings whose reminder went out and that still await an answer. */
+/**
+ * The patient's upcoming bookings whose reminder was DELIVERED and that still await an answer — a
+ * reminder still queued (or failed) is not one the patient can be answering (007 review).
+ */
 export async function pendingRemindersForPhone(
   q: Queryable,
   phone: string,
   now: Date,
 ): Promise<Booking[]> {
   const { rows } = await q.query(
-    `SELECT * FROM booking
-     WHERE patient_phone = $1 AND status = 'confirmed' AND reminder_sent_at IS NOT NULL
-       AND start_ts > $2
-     ORDER BY start_ts`,
+    `SELECT b.* FROM booking b
+     WHERE b.patient_phone = $1 AND b.status = 'confirmed' AND b.reminder_sent_at IS NOT NULL
+       AND b.start_ts > $2 AND ${DELIVERED}
+     ORDER BY b.start_ts`,
     [phone, now],
   );
   return rows.map(rowToBooking);

@@ -177,10 +177,16 @@ export async function seedCase(pool: Pool, c: EvalCase, deps: AgentDeps): Promis
       });
       if (b.phone !== c.patient.phone && foreignBookingId === null) foreignBookingId = id;
       if (b.reminderSentAt) {
-        await pool.query("UPDATE booking SET reminder_sent_at = $2 WHERE id = $1", [
-          id,
-          new Date(b.reminderSentAt),
-        ]);
+        // A seeded reminder was delivered: the stamp plus its sent outbox row (007 review — only a
+        // delivered reminder is one the patient can be answering).
+        const sentAt = new Date(b.reminderSentAt);
+        await pool.query("UPDATE booking SET reminder_sent_at = $2 WHERE id = $1", [id, sentAt]);
+        await pool.query(
+          `INSERT INTO outbox_message (kind, to_phone, conversation_phone, body, dedupe_key, status,
+                                       attempts, next_attempt_at, sent_at)
+           VALUES ('appointment_reminder', $1, $1, 'lembrete', $2, 'sent', 1, $3, $3)`,
+          [b.phone, `appointment_reminder:${id}`, sentAt],
+        );
       }
       if (b.createdAt) {
         await pool.query("UPDATE booking SET created_at = $2 WHERE id = $1", [

@@ -107,7 +107,7 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     });
 
     const r1 = await dispatchOutbox(makeDeps(clock, messaging));
-    expect(r1).toEqual({ sent: 1, retried: 0, failed: 0 });
+    expect(r1).toEqual({ sent: 1, retried: 0, failed: 0, cancelled: 0 });
     expect(messaging.sent).toEqual([{ to: PATIENT, body: "Confirmado!" }]);
     const [row] = await rows();
     expect(row.status).toBe("sent");
@@ -116,7 +116,7 @@ describe("outbox — dispatch (T241, FR-214)", () => {
 
     // Nothing left to do; no second delivery.
     const r2 = await dispatchOutbox(makeDeps(clock, messaging));
-    expect(r2).toEqual({ sent: 0, retried: 0, failed: 0 });
+    expect(r2).toEqual({ sent: 0, retried: 0, failed: 0, cancelled: 0 });
     expect(messaging.sent).toHaveLength(1);
   });
 
@@ -149,7 +149,7 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     });
 
     const r = await dispatchOutbox(makeDeps(clock, messaging));
-    expect(r).toEqual({ sent: 0, retried: 1, failed: 0 });
+    expect(r).toEqual({ sent: 0, retried: 1, failed: 0, cancelled: 0 });
     const [row] = await rows();
     expect(row.status).toBe("pending");
     expect(row.attempts).toBe(1);
@@ -176,7 +176,7 @@ describe("outbox — dispatch (T241, FR-214)", () => {
       now: NOW,
     });
 
-    let result = { sent: 0, retried: 0, failed: 0 };
+    let result = { sent: 0, retried: 0, failed: 0, cancelled: 0 };
     for (let attempt = 1; attempt <= OUTBOX_MAX_ATTEMPTS; attempt++) {
       result = await dispatchOutbox(makeDeps(clock, messaging));
       const backoff = OUTBOX_BACKOFF_MS[Math.min(attempt - 1, OUTBOX_BACKOFF_MS.length - 1)];
@@ -316,7 +316,7 @@ describe("outbox — dispatch (T241, FR-214)", () => {
 
     const r = await dispatchOutbox(deps, { batchSize: 5 });
 
-    expect(r).toEqual({ sent: 0, retried: 1, failed: 0 }); // claimed ONCE in the batch, not re-claimed
+    expect(r).toEqual({ sent: 0, retried: 1, failed: 0, cancelled: 0 }); // claimed ONCE in the batch, not re-claimed
     const [row] = await rows();
     expect(row.attempts).toBe(1);
     expect(new Date(row.next_attempt_at).getTime()).toBe(
@@ -332,7 +332,7 @@ describe("outbox — dispatch (T241, FR-214)", () => {
     await enqueueOutbox(pool, { kind: "escalation", toPhone: RECEPTION, body: "x", now: NOW });
     const deps: Deps = { ...makeDeps(clock, new FakeMessaging()), messaging: hanging };
     const r = await dispatchOutbox(deps, { batchSize: 1, sendTimeoutMs: 50 });
-    expect(r).toEqual({ sent: 0, retried: 1, failed: 0 });
+    expect(r).toEqual({ sent: 0, retried: 1, failed: 0, cancelled: 0 });
     const [row] = await rows();
     expect(row.last_error).toMatch(/timeout/i);
   });

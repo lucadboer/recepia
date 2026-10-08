@@ -189,6 +189,7 @@ describe("notifyUnconfirmed — reception knows who did not answer", () => {
     await recordConsent(d, PHONE);
     const id = await booking(20);
     await enqueueDueReminders(d, SETTINGS);
+    await dispatchOutbox(d); // delivered — only a delivered reminder can go unanswered
     expect((await notifyUnconfirmed(d, SETTINGS)).notified).toBe(0); // 20 h away
     clock.advance(17.5 * HOUR); // 2.5 h before the appointment
     expect((await notifyUnconfirmed(d, SETTINGS)).notified).toBe(1);
@@ -246,5 +247,54 @@ describe("a rescheduled appointment's queued reminder (007 T717)", () => {
     ]);
     await enqueueDueReminders(d, SETTINGS); // the new booking was made < 24 h before its start
     expect(await reminders()).toHaveLength(1);
+  });
+});
+
+describe("007 review findings", () => {
+  it("a reminder that was never delivered produces no 'did not confirm' notice", async () => {
+    const clock = new FakeClock(NOW);
+    const messaging = new FakeMessaging();
+    messaging.failAlways = true;
+    const d = deps(clock, messaging);
+    await recordConsent(d, PHONE);
+    await booking(20);
+    await enqueueDueReminders(d, SETTINGS);
+    await dispatchOutbox(d); // fails → still pending, not delivered
+    clock.advance(17.5 * HOUR);
+    expect((await notifyUnconfirmed(d, SETTINGS)).notified).toBe(0);
+  });
+
+  it("an opt-out that slipped in after the reminder was queued still stops it at delivery", async () => {
+    const messaging = new FakeMessaging();
+    const d = deps(new FakeClock(NOW), messaging);
+    await recordConsent(d, PHONE);
+    await booking(20);
+    await enqueueDueReminders(d, SETTINGS);
+    // The race: the opt-out committed without seeing the reminder row (no cancel of queued rows).
+    await pool.query(
+      "INSERT INTO patient_consent (phone, state, source) VALUES ($1, 'opted_out', 'race')",
+      [PHONE],
+    );
+    const r = await dispatchOutbox(d);
+    expect(r.cancelled).toBe(1);
+    expect(messaging.sent).toHaveLength(0);
+    expect((await reminders())[0].status).toBe("cancelled");
+  });
+
+  it("a queued 'did not confirm' notice is superseded when the patient confirms before it goes out", async () => {
+    const { confirmAttendance } = await import("../../src/tools/confirm-attendance");
+    const clock = new FakeClock(NOW);
+    const d = deps(clock);
+    await recordConsent(d, PHONE);
+    const id = await booking(20);
+    await enqueueDueReminders(d, SETTINGS);
+    await dispatchOutbox(d);
+    clock.advance(17.5 * HOUR);
+    await notifyUnconfirmed(d, SETTINGS);
+    await confirmAttendance(d, id, PHONE, "fast_path");
+    const n = await pool.query("SELECT status FROM outbox_message WHERE dedupe_key = $1", [
+      `unconfirmed:${id}`,
+    ]);
+    expect(n.rows[0].status).toBe("cancelled");
   });
 });
