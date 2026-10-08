@@ -37,7 +37,7 @@ beforeEach(async () => {
   await seedRule(pool, { weekday: 2, startTime: "09:00", endTime: "18:00", capacity: 2 });
 });
 
-async function reminded(h: AgentHarness, start = START, seat = 0): Promise<string> {
+async function reminded(_h: AgentHarness, start = START, seat = 0): Promise<string> {
   const id = await seedBooking(pool, { start, phone: PHONE, name: "Ana Teste", seat });
   await pool.query("UPDATE booking SET reminder_sent_at = $2 WHERE id = $1", [id, AGENT_NOW]);
   return id;

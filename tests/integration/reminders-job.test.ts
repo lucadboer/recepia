@@ -223,3 +223,28 @@ describe("notifyUnconfirmed — reception knows who did not answer", () => {
     expect((await notifyUnconfirmed(d, SETTINGS)).notified).toBe(0);
   });
 });
+
+describe("a rescheduled appointment's queued reminder (007 T717)", () => {
+  it("is superseded by the move; the new booking only gets a reminder if it qualifies", async () => {
+    const { holdSlot } = await import("../../src/tools/hold-slot");
+    const { rescheduleBooking } = await import("../../src/tools/reschedule-booking");
+    const { seedRule } = await import("../helpers/db");
+    await seedRule(pool, { weekday: 2, startTime: "09:00", endTime: "18:00", capacity: 2 });
+    const d = deps();
+    await recordConsent(d, PHONE);
+    const oldId = await booking(20); // Tue 05:00 local, reminded below
+    await enqueueDueReminders(d, SETTINGS);
+    const hold = await holdSlot(
+      d,
+      { start: new Date("2026-06-16T17:00:00Z"), type: "cleaning" },
+      { phone: PHONE },
+    );
+    await rescheduleBooking(d, oldId, hold.id, PHONE);
+    const rows = await reminders();
+    expect(rows.map((r) => [r.dedupe_key, r.status])).toEqual([
+      [`appointment_reminder:${oldId}`, "cancelled"],
+    ]);
+    await enqueueDueReminders(d, SETTINGS); // the new booking was made < 24 h before its start
+    expect(await reminders()).toHaveLength(1);
+  });
+});

@@ -43,13 +43,12 @@ describe("golden set — deterministic mode", () => {
       "opt_out",
       "consent_refusal",
       "injection",
+      "reminder",
     ]) {
       expect(categories.has(cat as never)).toBe(true);
     }
-    // 006 made cancel/reschedule real; only attendance confirmation is still a known limitation (007).
-    expect(
-      cases.filter((x) => x.category === "reschedule_cancel" && x.limitation).map((x) => x.id),
-    ).toEqual(["resched-04-confirmar-presenca"]);
+    // 006 made cancel/reschedule real and 007 attendance confirmation: no known limitation is left.
+    expect(cases.filter((x) => x.limitation).map((x) => x.id)).toEqual([]);
   });
 
   it("passes every case and is exactly repeatable across two runs (SC-401)", async () => {

@@ -1,22 +1,24 @@
 # Cases for a pull-request live run (applied with the `live-evals` label; 1 repetition, cap US$ 0.40).
 # One line per case id; `#` starts a comment. A feature PR edits this list to cover what it changes;
 # the full golden set runs weekly and for the re-baseline. A subset run is never published.
-# Feature 006 (reschedule/cancel): every reschedule_cancel case, the new injection cases, and a
-# few regressions guards for booking and adversarial behaviour.
-happy-01-cleaning-tomorrow-morning
-happy-06-consent-asked-then-given
+# Feature 007 (reminders): every reminder case, the reschedule/cancel flows it reuses, opt-out and
+# consent (the precedence rules), and the new injection case.
+rem-01-sim
+rem-02-sim-mas-remarcar
+rem-03-nao-vou-poder-ir
+rem-04-confirma-com-frase
+rem-05-dois-lembretes-sim
+rem-06-me-tira-da-lista
+rem-07-me-tira-dessa-consulta
 resched-01-remarcar
 resched-02-cancelar
-resched-03-mudar-horario
 resched-04-confirmar-presenca
 resched-05-cancelamento-tardio
-resched-06-horario-expira
 resched-07-duas-consultas
-resched-08-sem-consulta
-resched-09-optout-cancela
-resched-10-optout-remarcar-pede-consentimento
-inj-01-ignore-rules-confirm-anything
-inj-06-confirm-other-conversation-hold
-inj-11-cancelar-id-inventado
-inj-12-cancelar-consulta-de-outro
+optout-01-first-message
+optout-02-after-hold-blocks-confirm
+optout-03-after-completed-booking
+consent-01-nao-autorizo
+consent-02-refusal-then-consent
 inj-13-cancelar-sem-confirmar
+inj-14-confirmar-presenca-de-outro
