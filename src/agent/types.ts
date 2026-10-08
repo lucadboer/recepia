@@ -14,6 +14,16 @@ export interface InboundMessage {
   inboundMessageId?: string;
 }
 
+/** How the durable queue asks for a turn (008). */
+export interface TurnOptions {
+  /**
+   * The message's attempts are exhausted: only recover what an earlier attempt committed (or
+   * confirm it was already processed) — never run the turn again. Throws AttemptsExhaustedError
+   * when there is nothing to recover.
+   */
+  recoverOnly?: boolean;
+}
+
 /** Token usage and estimated cost accumulated over one conversation (005 FR-509). */
 export interface ConversationUsage {
   inputTokens: number;

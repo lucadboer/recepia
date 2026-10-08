@@ -111,6 +111,28 @@ export class LeaseLostError extends Error {
   }
 }
 
+/**
+ * A message ran out of attempts and its turn left nothing to recover (008): running the turn again
+ * is not allowed, so the message goes to reception.
+ */
+export class AttemptsExhaustedError extends Error {
+  constructor() {
+    super("The message's attempts are exhausted and its turn committed nothing to recover.");
+    this.name = "AttemptsExhaustedError";
+  }
+}
+
+/**
+ * A replay could neither remove a cancelled booking's calendar event nor record a cleanup request
+ * for reception (008): the message must not finish yet, so it is retried.
+ */
+export class CleanupPendingError extends Error {
+  constructor() {
+    super("A calendar cleanup could not be completed or recorded.");
+    this.name = "CleanupPendingError";
+  }
+}
+
 const ESCALATED_FLAG = Symbol.for("recepia.escalated");
 
 /**

@@ -10,10 +10,12 @@ import type { ConversationState } from "../../src/agent/types";
 import type { Pool, PoolClient } from "../../src/db/pool";
 import { committedTurnWrites } from "../../src/db/repositories/audit-repo";
 import { getById } from "../../src/db/repositories/booking-repo";
+import { AttemptsExhaustedError, CleanupPendingError } from "../../src/domain/errors";
 import { confirmBooking } from "../../src/tools/confirm-booking";
 import { holdSlot } from "../../src/tools/hold-slot";
 import { AGENT_NOW, DAY_END, lastBookingId, lastHoldId, makeAgent } from "../helpers/agent";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { interceptingPool } from "../helpers/pool";
 
 // 008, found by the chaos test (seed 17): a turn whose booking committed but whose conversation
 // state was never saved (the process died in between) is re-run when its message is reclaimed. The
@@ -249,5 +251,84 @@ describe("replaying a message whose turn already committed (at-least-once delive
     expect(other.status).toBe("replied");
     expect(llm.callCount).toBe(1);
     expect((await h.conversations.load("+5531900000872"))?.lastConfirmedBookingId).toBeNull();
+  });
+
+  /** A committed cancel whose process died while removing the calendar event (as above). */
+  async function cancelThatCrashed(
+    h: ReturnType<typeof makeAgent>,
+    calendar: HangingDeleteCalendar,
+  ) {
+    h.deps.calendar = calendar;
+    await recordConsent(h.deps, PHONE);
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    const { booking } = await confirmBooking(h.deps, hold.id, { phone: PHONE, name: "Ana Teste" });
+    h.deps.llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.findBooking, {})),
+      finalTurn("Encontrei sua limpeza. Confirma o cancelamento?"),
+    ]);
+    await handleInbound(h.deps, {
+      phone: PHONE,
+      text: "quero cancelar",
+      providerMessageId: "RX-1",
+    });
+    const msg = { phone: PHONE, text: "sim", providerMessageId: "RX-2" };
+    h.deps.llm = new FakeLLM([
+      (i) =>
+        toolUseTurn(toolUse(TOOL_NAMES.cancelBooking, { booking_id: lastBookingId(i.messages) })),
+      finalTurn("Cancelado!"),
+    ]);
+    void handleInbound(h.deps, msg);
+    await until(
+      async () => calendar.hung && (await getById(pool, booking.id))?.status === "cancelled",
+    );
+    return { booking, msg };
+  }
+
+  it("recover-only (attempts exhausted): a committed turn is still recovered, cleanup included", async () => {
+    const calendar = new HangingDeleteCalendar();
+    const h = makeAgent(pool, new FakeLLM([]));
+    const { booking, msg } = await cancelThatCrashed(h, calendar);
+    h.deps.llm = new FakeLLM([]);
+    expect((await handleInbound(h.deps, msg, { recoverOnly: true })).status).toBe("noop");
+    expect(calendar.events.has(booking.id)).toBe(false);
+  });
+
+  it("recover-only refuses a turn that committed nothing: it would have to run again", async () => {
+    const llm = new FakeLLM([]);
+    const h = makeAgent(pool, llm);
+    await expect(
+      handleInbound(
+        h.deps,
+        { phone: PHONE, text: "quero marcar", providerMessageId: "RX-3" },
+        { recoverOnly: true },
+      ),
+    ).rejects.toBeInstanceOf(AttemptsExhaustedError);
+    expect(llm.callCount).toBe(0);
+    expect(await h.conversations.load(PHONE)).toBeNull();
+  });
+
+  it("a replay whose calendar cleanup cannot settle fails, so the message is retried", async () => {
+    const calendar = new HangingDeleteCalendar();
+    const h = makeAgent(pool, new FakeLLM([]));
+    const { booking, msg } = await cancelThatCrashed(h, calendar);
+    calendar.deleteFailAlways = true;
+    const real = h.deps.pool;
+    h.deps.pool = interceptingPool(real, {
+      reject: (sql) =>
+        sql.includes("INSERT INTO outbox_message") ? new Error("connection reset") : null,
+    });
+    h.deps.llm = new FakeLLM([]);
+    await expect(handleInbound(h.deps, msg)).rejects.toBeInstanceOf(CleanupPendingError);
+    expect((await h.conversations.load(PHONE))?.processedInboundIds).not.toContain("RX-2");
+
+    // The retry settles it: the event is removed (or reception is told), then the message finishes.
+    h.deps.pool = real;
+    calendar.deleteFailAlways = false;
+    expect((await handleInbound(h.deps, msg)).status).toBe("noop");
+    expect(calendar.events.has(booking.id)).toBe(false);
   });
 });

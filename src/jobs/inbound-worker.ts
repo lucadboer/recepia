@@ -5,7 +5,7 @@
 // signalled to stop, its writes are fenced on that token, and it finishes nothing.
 
 import { hostname } from "node:os";
-import type { InboundMessage } from "../agent/types.ts";
+import type { InboundMessage, TurnOptions } from "../agent/types.ts";
 import {
   INBOUND_BACKOFF_MS,
   INBOUND_CONCURRENCY,
@@ -42,9 +42,10 @@ export interface InboundWorkerOptions {
   clock: Clock;
   /**
    * The orchestrator turn (`handleInbound`, given the lease as `deps.lease`). A throw means "retry
-   * this message"; a LeaseLostError means another worker owns it now.
+   * this message"; a LeaseLostError means another worker owns it now. `opts.recoverOnly` asks only
+   * for the recovery of an earlier attempt (attempts exhausted).
    */
-  handler: (msg: InboundMessage, lease: TurnLease) => Promise<unknown>;
+  handler: (msg: InboundMessage, lease: TurnLease, opts: TurnOptions) => Promise<unknown>;
   receptionPhone: string;
   concurrency?: number;
   leaseMs?: number;
@@ -70,14 +71,6 @@ export class InboundTurnTimeoutError extends Error {
   constructor(ms: number) {
     super(`The turn did not finish within ${ms} ms.`);
     this.name = "InboundTurnTimeoutError";
-  }
-}
-
-/** The message's earlier attempts ended with their process (claimed, never finished). */
-export class InboundTurnInterruptedError extends Error {
-  constructor() {
-    super("Earlier attempts of this message never finished.");
-    this.name = "InboundTurnInterruptedError";
   }
 }
 
@@ -172,7 +165,7 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
     );
   }
 
-  async function run(row: InboundRow): Promise<void> {
+  async function run(row: InboundRow, turnOpts: TurnOptions = {}): Promise<void> {
     const lease = createTurnLease(opts.pool, row);
     const beat = setInterval(
       () => {
@@ -205,6 +198,7 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
               inboundMessageId: row.id,
             },
             lease,
+            turnOpts,
           );
         } catch (err) {
           // Logged inside the span so the line carries the message's trace id (masked by the
@@ -279,9 +273,9 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       inFlight++;
       try {
         // Earlier attempts were claimed but never finished — their process died mid-turn — so the
-        // claim count is past the limit: the limit holds across crashes too (review).
-        if (row.attempts > maxAttempts) await finish(row, new InboundTurnInterruptedError());
-        else await run(row);
+        // claim count is past the limit, which holds across crashes too (review): only recover what
+        // the last attempt committed; with nothing to recover the message goes to reception.
+        await run(row, row.attempts > maxAttempts ? { recoverOnly: true } : {});
       } catch (err) {
         // finishing failed (DB down): the lease will expire and another attempt will run it.
         log.error({ event: "inbound.finish_failed", err }, "could not record an inbound outcome");

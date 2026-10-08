@@ -62,3 +62,8 @@
 > Fifth pass, fixed with tests: a turn that never settles is bounded (`INBOUND_TURN_TIMEOUT_MS`,
 > its attempt fails and its slot is freed); a claim past the attempt limit because earlier attempts
 > crashed is dead-lettered without running; every direct patient reply is fenced on the lease.
+>
+> Sixth pass, fixed with tests: that exhausted claim first recovers what the last attempt
+> committed (`handleInbound(…, { recoverOnly: true })`, AttemptsExhaustedError when there is
+> nothing) instead of dead-lettering a change that succeeded; a replay whose calendar cleanup
+> neither succeeds nor gets recorded fails (CleanupPendingError) so the message is retried.

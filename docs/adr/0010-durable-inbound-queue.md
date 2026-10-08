@@ -34,7 +34,10 @@ one process.
   under `pg_advisory_xact_lock`, so concurrent deliveries cannot pass the limit together.
 - **Bounded turns**: a turn still running after 4 min fails its attempt (its lease token becomes
   void, so anything it still tries to write is fenced) and frees its slot; a claim whose earlier
-  attempts never finished (crashes) counts them, so the attempt limit holds across crashes too.
+  attempts never finished (crashes) counts them, so the attempt limit holds across crashes too —
+  such a claim only recovers what the last attempt committed (`recoverOnly`) and otherwise goes to
+  reception. A replay whose calendar cleanup neither succeeds nor gets recorded fails, so the
+  message is retried instead of finishing with the event left behind.
   Every direct patient reply is fenced on the lease as well.
 - **Retries** with jittered backoff (2 s … 10 min); the 5th failure marks the row dead, audits it
   and hands the patient to reception — notice and handed-off conversation state — in one
