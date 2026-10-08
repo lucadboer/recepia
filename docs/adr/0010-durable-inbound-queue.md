@@ -26,7 +26,10 @@ one process.
   writes, consent changes and the conversation save — checks it inside its own transaction with
   `SELECT … FOR SHARE` on the message row. A takeover's
   claim skips locked rows, so it cannot start until such a write has committed — and then the
-  replay guard sees the write. A stale turn's calendar event is compensated as any orphan.
+  replay guard sees the write. A stale turn never undoes anything either: the hold it was
+  confirming and that hold's calendar event (idempotent by hold id) may be the new holder's to
+  confirm, so it only flags the hold (`booking.event_cleanup_pending`) and the hold sweep removes
+  the event if the hold ends unconfirmed.
 - **Flood guard under a per-phone lock**: the count of a phone's unfinished rows and the insert run
   under `pg_advisory_xact_lock`, so concurrent deliveries cannot pass the limit together.
 - **Retries** with jittered backoff (2 s … 10 min); the 5th failure marks the row dead, audits it

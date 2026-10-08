@@ -9,7 +9,7 @@ import {
 import type { Deps } from "../deps.ts";
 import { log } from "../telemetry/logger.ts";
 import { dispatchOutbox } from "./dispatch-outbox.ts";
-import { expireHolds } from "./expire-holds.ts";
+import { expireHolds, removeAbandonedEvents } from "./expire-holds.ts";
 import { enqueueDueReminders, notifyUnconfirmed, type ReminderSettings } from "./reminders.ts";
 import { purgeInactive } from "./retention.ts";
 
@@ -101,7 +101,17 @@ export function startJobs(
   return [
     ...reminderJobs,
     schedule({ name: "outbox", everyMs: OUTBOX_POLL_MS, run: () => dispatchOutbox(deps) }, onError),
-    schedule({ name: "hold-sweep", everyMs: HOLD_SWEEP_MS, run: () => expireHolds(deps) }, onError),
+    schedule(
+      {
+        name: "hold-sweep",
+        everyMs: HOLD_SWEEP_MS,
+        run: async () => {
+          await expireHolds(deps);
+          await removeAbandonedEvents(deps);
+        },
+      },
+      onError,
+    ),
     schedule(
       {
         name: "retention",

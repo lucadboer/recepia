@@ -6,7 +6,7 @@ import { isExpired } from "../domain/booking.ts";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors.ts";
 import type { Booking, Patient } from "../domain/types.ts";
 import { confirmationMessagePt } from "../messages.ts";
-import { deleteEventWithRetry, writeEventWithRetry } from "./booking-calendar.ts";
+import { deleteEventWithRetry, writeEventWithRetry, yieldIfLeaseLost } from "./booking-calendar.ts";
 import { escalateToHuman } from "./escalate-to-human.ts";
 import { requestCalendarCleanup } from "./reception-notices.ts";
 
@@ -62,9 +62,11 @@ export async function confirmBooking(
   const eventId = await writeEventWithRetry(deps, existing, patient);
 
   if (eventId === null) {
+    await yieldIfLeaseLost(deps, existing.id); // the hold may be the new holder's to confirm
     const client = await deps.pool.connect();
     try {
       await client.query("BEGIN");
+      await deps.lease?.fence(client);
       await releaseHeld(client, existing.id);
       await appendAudit(client, {
         entity: "booking",
@@ -141,6 +143,7 @@ export async function confirmBooking(
   }
 
   if (confirmed) return { booking: confirmed, outcome: "confirmed" };
+  await yieldIfLeaseLost(deps, existing.id); // never undo what may now be the new holder's
 
   // Either a concurrent confirm won, or OUR commit landed but its acknowledgment was lost
   // (commitError set, row confirmed with our event). In both cases the event must be kept,

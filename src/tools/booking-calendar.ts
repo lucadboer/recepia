@@ -2,7 +2,9 @@
 // outside any database transaction. Postgres owns capacity; the calendar may lag, never lead.
 
 import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config.ts";
+import { flagEventCleanup } from "../db/repositories/booking-repo.ts";
 import type { Deps } from "../deps.ts";
+import { LeaseLostError } from "../domain/errors.ts";
 import type { Booking } from "../domain/types.ts";
 import { requestCalendarCleanup } from "./reception-notices.ts";
 
@@ -69,4 +71,19 @@ export async function removeEventOrNotify(
     eventId: booking.googleEventId,
     now,
   });
+}
+
+/**
+ * Call before undoing anything after a failed commit (008 review). A turn that lost its inbound
+ * message to another worker must leave the hold and its calendar event alone — the new holder may
+ * confirm that same hold, with that same event (idempotent by hold id) — so it only flags the hold
+ * (the hold sweep removes the event if the hold ends unconfirmed) and stops with LeaseLostError.
+ */
+export async function yieldIfLeaseLost(deps: Deps, holdId: string): Promise<void> {
+  try {
+    await deps.lease?.fence();
+  } catch (err) {
+    if (err instanceof LeaseLostError) await flagEventCleanup(deps.pool, holdId);
+    throw err;
+  }
 }

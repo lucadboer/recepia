@@ -10,13 +10,18 @@ import {
 import { recordConsent } from "../../src/agent/consent";
 import { handleInbound } from "../../src/agent/orchestrator";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
+import { HOLD_TTL_MS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
 import { claimNext, type InboundRow, insertInbound } from "../../src/db/repositories/inbound-repo";
 import { LeaseLostError } from "../../src/domain/errors";
+import { expireHolds, removeAbandonedEvents } from "../../src/jobs/expire-holds";
 import { createTurnLease } from "../../src/jobs/inbound-worker";
 import type { CreateEventInput, CreateEventResult } from "../../src/ports/calendar-port";
 import type { LlmTurnInput, LlmTurnResult } from "../../src/ports/llm-port";
+import { confirmBooking } from "../../src/tools/confirm-booking";
+import { holdSlot } from "../../src/tools/hold-slot";
+import { rescheduleBooking } from "../../src/tools/reschedule-booking";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
 
@@ -27,6 +32,7 @@ import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helper
 
 const PHONE = "+5531900000871";
 const SLOT = "2026-06-15T14:00:00.000Z";
+const LATER = "2026-06-15T16:00:00.000Z";
 const MSG = { phone: PHONE, text: "quero marcar uma limpeza", providerMessageId: "LEASE-1" };
 
 let pool: Pool;
@@ -56,10 +62,9 @@ async function claimed(): Promise<InboundRow> {
 }
 
 /** Another worker reclaims the message (as after an expired lease). */
+const OTHER = "w2/other-claim";
 async function takeOver(row: InboundRow): Promise<void> {
-  await pool.query("UPDATE inbound_message SET locked_by = 'w2/other-claim' WHERE id = $1", [
-    row.id,
-  ]);
+  await pool.query("UPDATE inbound_message SET locked_by = $2 WHERE id = $1", [row.id, OTHER]);
 }
 
 function bookingScript(): ScriptedTurn[] {
@@ -82,11 +87,12 @@ function bookingScript(): ScriptedTurn[] {
 
 /** Loses the message while the calendar event is being written (between the check and the commit). */
 class TakeoverCalendar extends FakeCalendar {
+  takeover = true;
   constructor(private readonly onCreate: () => Promise<void>) {
     super();
   }
   override async createEvent(input: CreateEventInput): Promise<CreateEventResult> {
-    await this.onCreate();
+    if (this.takeover) await this.onCreate();
     return super.createEvent(input);
   }
 }
@@ -131,7 +137,7 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     expect(h.messaging.sent).toEqual([]);
   });
 
-  it("lost between the check and the commit: the write transaction refuses and the event is compensated", async () => {
+  it("lost between the check and the commit: the write refuses and the hold and its event are left to the new holder", async () => {
     const row = await claimed();
     const h = makeAgent(pool, new FakeLLM(bookingScript()));
     await recordConsent(h.deps, PHONE);
@@ -142,13 +148,90 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     await expect(handleInbound(h.deps, MSG)).rejects.toBeInstanceOf(LeaseLostError);
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);
     expect(await countAudit(pool, "escalated")).toBe(0); // the new holder owns the message now
-    expect(calendar.events.size).toBe(0); // the stale turn's event was removed
-    const { rows } = await pool.query(
-      "SELECT count(*)::int AS n FROM booking WHERE status = 'confirmed'",
-    );
-    expect(rows[0].n).toBe(0);
     expect(await h.conversations.load(PHONE)).toBeNull();
     expect(h.messaging.sent).toEqual([]);
+    // The stale turn touched neither the hold nor its event (the new holder may confirm that same
+    // hold, with that same event); it only flagged the hold.
+    const { rows } = await pool.query(
+      "SELECT id, status, event_cleanup_pending FROM booking WHERE status <> 'cancelled'",
+    );
+    expect(rows).toEqual([{ id: expect.any(String), status: "held", event_cleanup_pending: true }]);
+    expect(calendar.events.has(rows[0].id)).toBe(true);
+    // If the hold ends unconfirmed, the hold sweep removes the event.
+    h.clock.advance(HOLD_TTL_MS + 1);
+    await expireHolds(h.deps);
+    expect(await removeAbandonedEvents(h.deps)).toBe(1);
+    expect(calendar.events.size).toBe(0);
+  });
+
+  it("a stale confirm leaves the hold usable: the new holder confirms it with the same event", async () => {
+    const row = await claimed();
+    const h = makeAgent(pool, new FakeLLM([]));
+    await recordConsent(h.deps, PHONE);
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    const calendar = new TakeoverCalendar(() => takeOver(row));
+    const stale = { ...h.deps, calendar, lease: createTurnLease(pool, row) };
+    await expect(
+      confirmBooking(stale, hold.id, { phone: PHONE, name: "Ana Teste" }),
+    ).rejects.toBeInstanceOf(LeaseLostError);
+
+    calendar.takeover = false;
+    const fresh = {
+      ...h.deps,
+      calendar,
+      lease: createTurnLease(pool, { id: row.id, lease: OTHER }),
+    };
+    const { booking, outcome } = await confirmBooking(fresh, hold.id, {
+      phone: PHONE,
+      name: "Ana Teste",
+    });
+    expect(outcome).toBe("confirmed");
+    expect(booking.status).toBe("confirmed");
+    expect(calendar.events.size).toBe(1);
+  });
+
+  it("a stale reschedule leaves the hold usable: the new holder completes it", async () => {
+    const row = await claimed();
+    const h = makeAgent(pool, new FakeLLM([]));
+    await recordConsent(h.deps, PHONE);
+    const first = await holdSlot(
+      h.deps,
+      { start: new Date(SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    const { booking: old } = await confirmBooking(h.deps, first.id, {
+      phone: PHONE,
+      name: "Ana Teste",
+    });
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(LATER), type: "cleaning" },
+      { phone: PHONE },
+    );
+    const calendar = new TakeoverCalendar(() => takeOver(row));
+    for (const [k, v] of h.calendar.events) calendar.events.set(k, v);
+    const stale = { ...h.deps, calendar, lease: createTurnLease(pool, row) };
+    await expect(rescheduleBooking(stale, old.id, hold.id, PHONE)).rejects.toBeInstanceOf(
+      LeaseLostError,
+    );
+    const held = await pool.query("SELECT status FROM booking WHERE id = $1", [hold.id]);
+    expect(held.rows[0].status).toBe("held"); // not released by the stale attempt
+    expect(await countAudit(pool, "escalated")).toBe(0);
+
+    calendar.takeover = false;
+    const fresh = {
+      ...h.deps,
+      calendar,
+      lease: createTurnLease(pool, { id: row.id, lease: OTHER }),
+    };
+    const r = await rescheduleBooking(fresh, old.id, hold.id, PHONE);
+    expect(r.outcome).toBe("rescheduled");
+    expect(calendar.events.has(hold.id)).toBe(true);
+    expect(calendar.events.has(old.id)).toBe(false);
   });
 
   it("an escalation is fenced too: a stale turn never notifies reception", async () => {
@@ -178,7 +261,7 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     // The worker that took the message over replays it: no second booking, the confirmation the
     // first attempt committed is delivered, the conversation is finished.
     h.deps.llm = new FakeLLM([]);
-    h.deps.lease = createTurnLease(pool, { id: row.id, lease: "w2/other-claim" });
+    h.deps.lease = createTurnLease(pool, { id: row.id, lease: OTHER });
     expect((await handleInbound(h.deps, MSG)).status).toBe("noop");
     expect(await countAudit(pool, "booking_confirmed")).toBe(1);
     expect((await store.load(PHONE))?.status).toBe("completed");

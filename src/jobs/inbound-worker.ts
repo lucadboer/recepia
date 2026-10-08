@@ -224,6 +224,8 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
         log.error({ event: "inbound.claim_failed", err }, "could not claim an inbound message");
       }
       if (!row) {
+        // drain() may have run its wake-up while this claim was in flight (review).
+        if (stopping) break;
         await idle();
         continue;
       }
