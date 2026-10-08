@@ -69,7 +69,7 @@ jobs:
       TELEMETRY_HASH_KEY: ci-fixed-key-fictitious-data-only # stable pseudonyms across runs
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -147,7 +147,7 @@ jobs:
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "::warning::ANTHROPIC_API_KEY is not configured as a repository secret — the live evaluation is SKIPPED (this is not a pass)"
           fi
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
       - uses: actions/setup-node@v7
         if: github.event_name != 'pull_request' || steps.prompt.outputs.changed == 'true'
