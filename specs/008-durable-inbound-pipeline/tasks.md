@@ -71,3 +71,8 @@
 > Seventh pass, fixed with a test: every pool connection sets `lock_timeout` (DB_LOCK_TIMEOUT_MS,
 > 10 s), so a timed-out turn blocked on a lock inside its fenced transaction rolls back and
 > releases the message row instead of stranding the phone.
+>
+> Eighth pass, fixed with tests: Calendar requests time out (15 s); a timed-out turn's in-flight
+> effects get a bounded grace period to settle before the message is retryable; the last failed
+> turn attempt is followed by a recovery pass before any dead letter; the abandoned-event cleanup
+> is a separate scheduled job.

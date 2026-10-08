@@ -1,5 +1,6 @@
 // The per-API client (ADR 0011): same calendar_v3 surface as `googleapis`, a fraction of its size.
 import { auth, calendar, type calendar_v3 } from "@googleapis/calendar";
+import { CALENDAR_REQUEST_TIMEOUT_MS } from "../../config.ts";
 import { CalendarWriteError, NotConfigured } from "../../domain/errors.ts";
 import type {
   CalendarPort,
@@ -43,7 +44,12 @@ export class GoogleCalendar implements CalendarPort {
     }
     // GoogleAuth/keyFile are lazy — no network or file read happens here.
     const googleAuth = new auth.GoogleAuth({ keyFile: credentials, scopes: SCOPES });
-    this.calendar = calendar({ version: "v3", auth: googleAuth });
+    // Every request is bounded (008 review): a stalled call cannot hold a turn or the hold sweep.
+    this.calendar = calendar({
+      version: "v3",
+      auth: googleAuth,
+      timeout: CALENDAR_REQUEST_TIMEOUT_MS,
+    });
     this.calendarId = calendarId;
   }
 

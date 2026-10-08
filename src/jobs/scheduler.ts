@@ -105,10 +105,16 @@ export function startJobs(
       {
         name: "hold-sweep",
         everyMs: HOLD_SWEEP_MS,
-        run: async () => {
-          await expireHolds(deps);
-          await removeAbandonedEvents(deps);
-        },
+        run: () => expireHolds(deps),
+      },
+      onError,
+    ),
+    // Its own job (008 review): a Calendar call that stalls must never hold up hold expiry.
+    schedule(
+      {
+        name: "abandoned-events",
+        everyMs: HOLD_SWEEP_MS,
+        run: () => removeAbandonedEvents(deps),
       },
       onError,
     ),
