@@ -1,5 +1,5 @@
 import pg from "pg";
-import { DB_LOCK_TIMEOUT_MS } from "../config";
+import { DB_LOCK_TIMEOUT_MS } from "../config.ts";
 
 export type { Pool, PoolClient } from "pg";
 
