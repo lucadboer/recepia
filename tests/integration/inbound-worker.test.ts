@@ -3,7 +3,7 @@ import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import type { InboundMessage } from "../../src/agent/types";
 import type { Pool } from "../../src/db/pool";
 import { insertInbound } from "../../src/db/repositories/inbound-repo";
-import { LeaseLostError } from "../../src/domain/errors";
+import { AttemptsExhaustedError, LeaseLostError } from "../../src/domain/errors";
 import { createInboundWorker, inboundBackoff } from "../../src/jobs/inbound-worker";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
 
@@ -268,15 +268,16 @@ describe("createInboundWorker", () => {
     expect((staleSignal as AbortSignal | null)?.aborted).toBe(true);
   });
 
-  it("a message whose turns kept crashing goes to reception without running again", async () => {
+  it("a message whose turns kept crashing is only recovered, never run again; nothing to recover → reception", async () => {
     await put("+5531900000823", "crashy-1");
+    await put("+5531900000824", "crashy-2");
     // Five attempts were claimed and their processes died mid-turn: the lease expired each time.
     await pool.query(
       `UPDATE inbound_message SET status = 'processing', attempts = 5, locked_by = 'dead/1',
-         locked_until = $1 WHERE provider_message_id = 'crashy-1'`,
+         locked_until = $1 WHERE provider_message_id IN ('crashy-1', 'crashy-2')`,
       [new Date(NOW.getTime() - 1)],
     );
-    let ran = false;
+    const modes: [string, boolean][] = [];
     const worker = createInboundWorker({
       pool,
       clock: new FakeClock(NOW),
@@ -284,14 +285,20 @@ describe("createInboundWorker", () => {
       concurrency: 1,
       pollMs: 10,
       maxAttempts: 5,
-      handler: async () => {
-        ran = true;
+      handler: async (m, _lease, opts) => {
+        modes.push([m.providerMessageId, opts?.recoverOnly === true]);
+        // As the orchestrator does: crashy-1's turn had committed (recovered), crashy-2's had not.
+        if (m.providerMessageId === "crashy-2") throw new AttemptsExhaustedError();
       },
     });
     worker.start();
-    await until(async () => (await statusOf("crashy-1")) === "dead");
+    await until(async () => (await statusOf("crashy-2")) === "dead");
     await worker.drain(1_000);
-    expect(ran).toBe(false);
+    expect(modes).toEqual([
+      ["crashy-1", true],
+      ["crashy-2", true],
+    ]);
+    expect(await statusOf("crashy-1")).toBe("done");
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(1);
     expect(await countAudit(pool, "escalated")).toBe(1);
   });

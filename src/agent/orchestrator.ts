@@ -9,7 +9,11 @@ import { type CommittedWrite, committedTurnWrites } from "../db/repositories/aud
 import { getById, hasLiveHold } from "../db/repositories/booking-repo";
 import { pendingRemindersForPhone } from "../db/repositories/reminder-repo";
 import type { Deps } from "../deps";
-import { ConversationConflictError } from "../domain/errors";
+import {
+  AttemptsExhaustedError,
+  CleanupPendingError,
+  ConversationConflictError,
+} from "../domain/errors";
 import { dispatchOutbox } from "../jobs/dispatch-outbox";
 import { costUsdFailClosed, loadPricing, type PricingTable } from "../llm/pricing";
 import type { ConversationStorePort, SaveOptions } from "../ports/conversation-store-port";
@@ -56,7 +60,7 @@ import { buildSystemPrompt, reminderContextLine } from "./system-prompt";
 import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas";
 import { triage } from "./triage";
-import type { ConversationState, InboundMessage, LoopResult } from "./types";
+import type { ConversationState, InboundMessage, LoopResult, TurnOptions } from "./types";
 
 /** Dependencies for the conversational layer: the deterministic Deps + the LLM and conversation store. */
 export interface AgentDeps extends Deps {
@@ -146,13 +150,17 @@ interface TurnObservation {
  * this function adds idempotency, opt-out/opt-in, the deterministic triage backstop,
  * the consent gate before confirm, and the bounded loop.
  */
-export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promise<LoopResult> {
+export async function handleInbound(
+  deps: AgentDeps,
+  msg: InboundMessage,
+  opts: TurnOptions = {},
+): Promise<LoopResult> {
   return withSpan(
     SPAN.turn,
     { [ATTR.messageRef]: messageRef(msg.providerMessageId) },
     async (span) => {
       const seen: TurnObservation = {};
-      const result = await runTurn(deps, msg, seen);
+      const result = await runTurn(deps, msg, seen, opts);
       setAttributes(span, {
         [ATTR.turnStatus]: result.status,
         [ATTR.conversationStatus]: seen.conversationStatus,
@@ -178,7 +186,8 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
 /**
  * A cancel or a reschedule removes the cancelled booking's calendar event after its commit; a turn
  * that died in between left the event behind (008 review). The replay finishes that removal —
- * idempotent, and a delete that keeps failing still becomes a reception notice.
+ * idempotent, and a delete that keeps failing still becomes a reception notice. When neither
+ * happens the message must not finish: CleanupPendingError, so it is retried.
  */
 async function finishCalendarCleanup(
   deps: AgentDeps,
@@ -189,7 +198,8 @@ async function finishCalendarCleanup(
   for (const w of committed) {
     if (w.action !== "booking_cancelled" || !w.entityId) continue;
     const cancelled = await getById(deps.pool, w.entityId);
-    if (cancelled?.status === "cancelled") await removeEventOrNotify(deps, cancelled, phone, now);
+    if (cancelled?.status !== "cancelled") continue;
+    if (!(await removeEventOrNotify(deps, cancelled, phone, now))) throw new CleanupPendingError();
   }
 }
 
@@ -197,6 +207,7 @@ async function runTurn(
   deps: AgentDeps,
   msg: InboundMessage,
   seen: TurnObservation,
+  opts: TurnOptions,
 ): Promise<LoopResult> {
   const now = deps.clock.now();
   // Bound the state on the way in (stale offered slots, oversized history) and on the
@@ -273,6 +284,8 @@ async function runTurn(
     await sendReply(reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
+  // Out of attempts and nothing to recover: the turn may not run again (it goes to reception).
+  if (opts.recoverOnly) throw new AttemptsExhaustedError();
   state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
   state = appendUserText(state, msg.text, now);
 

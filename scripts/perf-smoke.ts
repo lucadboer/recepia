@@ -18,7 +18,7 @@ import { FakeMessaging } from "../src/adapters/fakes/fake-messaging";
 import { recordConsent } from "../src/agent/consent";
 import { type AgentDeps, handleInbound } from "../src/agent/orchestrator";
 import { TOOL_NAMES } from "../src/agent/tool-schemas";
-import type { InboundMessage } from "../src/agent/types";
+import type { InboundMessage, TurnOptions } from "../src/agent/types";
 import { assertDisposableDatabase } from "../src/db/disposable";
 import { loadEnv } from "../src/db/env";
 import { migrate } from "../src/db/migrate";
@@ -197,10 +197,10 @@ async function runOnce(rep: number): Promise<RunResult> {
     clock: systemClock,
     receptionPhone: deps.receptionPhone,
     pollMs: 20,
-    handler: async (msg: InboundMessage, lease: TurnLease) => {
+    handler: async (msg: InboundMessage, lease: TurnLease, opts: TurnOptions) => {
       const t0 = performance.now();
       try {
-        const r = await handleInbound({ ...deps, lease }, msg);
+        const r = await handleInbound({ ...deps, lease }, msg, opts);
         turnMs.push(performance.now() - t0);
         statuses[r.status] = (statuses[r.status] ?? 0) + 1;
         return r;

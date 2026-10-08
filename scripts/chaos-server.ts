@@ -35,7 +35,7 @@ const worker = createInboundWorker({
   pollMs: 25,
   // A short lease so the parent sees a killed worker's message reclaimed within the run.
   leaseMs: Number(process.env.CHAOS_LEASE_MS ?? 2_000),
-  handler: (msg, lease) => handleInbound({ ...deps, lease }, msg),
+  handler: (msg, lease, opts) => handleInbound({ ...deps, lease }, msg, opts),
 });
 const server = createWebhookServer({
   secret,
