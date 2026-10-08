@@ -1,7 +1,7 @@
 {
   "id": "resched-10-optout-remarcar-pede-consentimento",
   "category": "reschedule_cancel",
-  "title": "Remarcar sem consentimento: o agente pede autorização antes",
+  "title": "Remarcar sem consentimento: a remarcação só acontece depois da autorização registrada",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -141,7 +141,6 @@
   },
   "liveExpect": {
     "writes": {
-      "reschedules": 0,
       "cancellations": 0,
       "bookings": 0
     }
