@@ -64,6 +64,7 @@ export interface InboundWorker {
 
 /** The lease of one claim, handed to its turn. `lose()` is called when a heartbeat finds it gone. */
 export function createTurnLease(
+  pool: Pool,
   row: Pick<InboundRow, "id" | "lease">,
 ): TurnLease & { lose(): void } {
   const controller = new AbortController();
@@ -73,9 +74,9 @@ export function createTurnLease(
   return {
     signal: controller.signal,
     lose,
-    async fence(q) {
+    async fence(tx) {
       controller.signal.throwIfAborted();
-      if (await leaseHeld(q, row.id, row.lease)) return;
+      if (await leaseHeld(tx ?? pool, row.id, row.lease)) return;
       lose();
       controller.signal.throwIfAborted();
     },
@@ -152,7 +153,7 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
   }
 
   async function run(row: InboundRow): Promise<void> {
-    const lease = createTurnLease(row);
+    const lease = createTurnLease(opts.pool, row);
     const beat = setInterval(
       () => {
         heartbeat(opts.pool, row.id, row.lease, opts.clock.now(), leaseMs)
@@ -182,6 +183,7 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
                 text: row.text,
                 providerMessageId: row.providerMessageId,
                 receivedAt: row.receivedAt,
+                inboundMessageId: row.id,
               },
               lease,
             );

@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { appendUserText, emptyState } from "../../src/agent/conversation";
 import type { Pool } from "../../src/db/pool";
+import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
 import {
   claimNext,
   heartbeat,
@@ -246,5 +248,22 @@ describe("finishing a message", () => {
     const esc = await pool.query("SELECT to_phone FROM outbox_message WHERE kind = 'escalation'");
     expect(esc.rows).toEqual([{ to_phone: RECEPTION }]);
     expect((await claimNext(pool, "w2", NOW, LEASE))?.providerMessageId).toBe("a2");
+  });
+
+  it("dead also hands the conversation to reception, so the phone's next messages stay with it", async () => {
+    const store = new DbConversationStore(pool);
+    await store.save(appendUserText(emptyState(A, NOW), "oi", NOW)); // an active conversation
+    await put(A, "a1");
+    const c = must(await claimNext(pool, "w1", NOW, LEASE));
+    expect(await markDead(pool, c.id, c.lease, NOW, "TypeError", RECEPTION)).toBe(true);
+    const handedOff = await store.load(A);
+    expect(handedOff?.status).toBe("escalated");
+    expect(handedOff?.escalatedAt).toBe(NOW.toISOString());
+    expect(handedOff?.history).toHaveLength(1); // kept for reception
+    // A phone without a conversation yet gets one, handed off.
+    await put(B, "b1");
+    const d = must(await claimNext(pool, "w2", NOW, LEASE));
+    expect(await markDead(pool, d.id, d.lease, NOW, "TypeError", RECEPTION)).toBe(true);
+    expect((await store.load(B))?.status).toBe("escalated");
   });
 });

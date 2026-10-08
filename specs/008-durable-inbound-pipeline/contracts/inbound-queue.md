@@ -9,8 +9,8 @@
 **Required Tests**: order per phone; two concurrent claimers never take two rows of one phone; expired lease reclaimed; not-yet-due skipped; a dead row unblocks the phone.
 
 ## `heartbeat / markDone / markRetry / markDead (…, lease, …)`
-**Guarantees**: only the claim whose token is in `locked_by` can change the row; done clears `body`; dead = audit + reception hand-off in one transaction.
-**Required Tests**: a taken-over worker cannot finish; a reclaim by the same worker invalidates the earlier attempt; dead-letter atomicity; retry delay within jitter bounds.
+**Guarantees**: only the claim whose token is in `locked_by` can change the row; done clears `body`; dead = audit + reception notice + handed-off conversation state in one transaction.
+**Required Tests**: a taken-over worker cannot finish; a reclaim by the same worker invalidates the earlier attempt; dead-letter atomicity; dead letter leaves the conversation handed off; retry delay within jitter bounds.
 
 ## `leaseHeld(q, id, lease) -> boolean` (the fence)
 **Guarantees**: true only while that claim holds the message; inside a transaction it locks the row (`FOR SHARE`) until the transaction ends, so a takeover waits for the write.
@@ -25,5 +25,5 @@
 **Required Tests**: load test order + no overlap per phone; chaos invariants; a taken-over turn is signalled and records nothing.
 
 ## Orchestrator (with `deps.lease`)
-**Guarantees**: the lease is checked before each model call, each tool and each state save; every final write is fenced in its own transaction; a stale turn writes nothing and notifies no one. A replayed message whose turn committed gets that turn's conversation status (hand-off stays handed off).
-**Required Tests**: lease lost during a model call → the next tool never runs; lost between the check and the commit → the write rolls back and the calendar event is compensated; a stale escalation never reaches reception; a replayed escalation keeps reception in charge.
+**Guarantees**: the lease is checked before each model call and each tool; every final write, consent change and conversation save is fenced in its own transaction; a stale turn writes nothing and notifies no one. Final writes are stamped with the `inbound_message` id (`InboundMessage.inboundMessageId`). A replayed message whose turn committed completes the post-commit calendar removal of a cancel/reschedule and gets that turn's conversation status (hand-off stays handed off).
+**Required Tests**: lease lost during a model call → the next tool never runs; lost between the check and the commit → the write rolls back and the calendar event is compensated; lost after the tools committed → the save refuses and the new holder's replay finishes; a stale escalation or opt-out is not written; a replayed escalation keeps reception in charge; a replayed cancel removes the event; the same provider id from two providers is two messages.

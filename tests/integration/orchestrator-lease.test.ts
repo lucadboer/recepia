@@ -11,6 +11,7 @@ import { recordConsent } from "../../src/agent/consent";
 import { handleInbound } from "../../src/agent/orchestrator";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { Pool } from "../../src/db/pool";
+import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
 import { claimNext, type InboundRow, insertInbound } from "../../src/db/repositories/inbound-repo";
 import { LeaseLostError } from "../../src/domain/errors";
 import { createTurnLease } from "../../src/jobs/inbound-worker";
@@ -112,7 +113,7 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     const row = await claimed();
     const h = makeAgent(pool, new FakeLLM(bookingScript()));
     await recordConsent(h.deps, PHONE);
-    h.deps.lease = createTurnLease(row);
+    h.deps.lease = createTurnLease(pool, row);
     await handleInbound(h.deps, MSG);
     expect(await countAudit(pool, "booking_confirmed")).toBe(1);
   });
@@ -121,7 +122,7 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     const row = await claimed();
     const h = makeAgent(pool, new TakeoverLLM(bookingScript(), 3, () => takeOver(row)));
     await recordConsent(h.deps, PHONE);
-    h.deps.lease = createTurnLease(row);
+    h.deps.lease = createTurnLease(pool, row);
 
     await expect(handleInbound(h.deps, MSG)).rejects.toBeInstanceOf(LeaseLostError);
     expect(h.calendar.createdCount).toBe(0);
@@ -136,7 +137,7 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     await recordConsent(h.deps, PHONE);
     const calendar = new TakeoverCalendar(() => takeOver(row));
     h.deps.calendar = calendar;
-    h.deps.lease = createTurnLease(row);
+    h.deps.lease = createTurnLease(pool, row);
 
     await expect(handleInbound(h.deps, MSG)).rejects.toBeInstanceOf(LeaseLostError);
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);
@@ -153,11 +154,46 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
   it("an escalation is fenced too: a stale turn never notifies reception", async () => {
     const row = await claimed();
     const h = makeAgent(pool, new FakeLLM([]));
-    h.deps.lease = createTurnLease(row);
+    h.deps.lease = createTurnLease(pool, row);
     await takeOver(row);
     await expect(
       handleInbound(h.deps, { ...MSG, text: "estou com muita dor" }),
     ).rejects.toBeInstanceOf(LeaseLostError);
     expect(await countAudit(pool, "escalated")).toBe(0);
+  });
+
+  it("lost after the tools committed: the state save refuses, and the new holder's replay finishes the message", async () => {
+    const row = await claimed();
+    const h = makeAgent(pool, new TakeoverLLM(bookingScript(), 4, () => takeOver(row)));
+    const store = new DbConversationStore(pool);
+    h.deps.conversations = store;
+    await recordConsent(h.deps, PHONE);
+    h.deps.lease = createTurnLease(pool, row);
+
+    await expect(handleInbound(h.deps, MSG)).rejects.toBeInstanceOf(LeaseLostError);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1); // committed while it held the lease
+    expect(await store.load(PHONE)).toBeNull(); // the save was fenced in its own transaction
+    expect(h.messaging.sent).toEqual([]);
+
+    // The worker that took the message over replays it: no second booking, the confirmation the
+    // first attempt committed is delivered, the conversation is finished.
+    h.deps.llm = new FakeLLM([]);
+    h.deps.lease = createTurnLease(pool, { id: row.id, lease: "w2/other-claim" });
+    expect((await handleInbound(h.deps, MSG)).status).toBe("noop");
+    expect(await countAudit(pool, "booking_confirmed")).toBe(1);
+    expect((await store.load(PHONE))?.status).toBe("completed");
+    expect(h.messaging.sent.map((m) => m.body).join(" ")).toMatch(/confirmada/);
+  });
+
+  it("a stale opt-out is not recorded (consent writes are fenced too)", async () => {
+    const row = await claimed();
+    const h = makeAgent(pool, new FakeLLM([]));
+    await recordConsent(h.deps, PHONE);
+    h.deps.lease = createTurnLease(pool, row);
+    await takeOver(row);
+    await expect(handleInbound(h.deps, { ...MSG, text: "me tira" })).rejects.toBeInstanceOf(
+      LeaseLostError,
+    );
+    expect(await countAudit(pool, "consent_revoked")).toBe(0);
   });
 });

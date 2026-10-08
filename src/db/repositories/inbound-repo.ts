@@ -4,11 +4,13 @@
 // across any number of workers.
 
 import { randomUUID } from "node:crypto";
+import { emptyState, markEscalated } from "../../agent/conversation";
 import type { InboundMessage } from "../../agent/types";
 import { escalationMessagePt } from "../../messages";
 import { currentTraceparent } from "../../telemetry/tracing";
 import type { Pool, PoolClient } from "../pool";
 import { appendAudit } from "./audit-repo";
+import { DbConversationStore } from "./conversation-repo";
 import { enqueueOutbox } from "./outbox-repo";
 
 type Queryable = Pool | PoolClient;
@@ -190,7 +192,8 @@ export async function markRetry(
 
 /**
  * The last attempt failed (FR-805): mark the message dead, audit it and hand the patient to
- * reception — one transaction, holder only. The phone's later messages become claimable.
+ * reception — the notice and the handed-off conversation state — in one transaction, holder only.
+ * The phone's later messages become claimable and stay with reception until it releases them.
  */
 export async function markDead(
   pool: Pool,
@@ -243,6 +246,11 @@ export async function markDead(
       actor: "system",
       payload: { reason: "inbound_failed", phone, context, summary: [], outboxId },
     });
+    // As after any hand-off (FR-211): the next messages get the handed-off reply, not the model,
+    // and no second reception notice (review).
+    const store = new DbConversationStore(pool);
+    const current = await store.load(phone, client);
+    await store.save(markEscalated(current ?? emptyState(phone, now), now), { client });
     await client.query("COMMIT");
     return true;
   } catch (err) {
