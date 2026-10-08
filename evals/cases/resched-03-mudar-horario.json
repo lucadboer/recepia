@@ -1,8 +1,7 @@
 {
   "id": "resched-03-mudar-horario",
   "category": "reschedule_cancel",
-  "title": "Mudar o horário de uma limpeza marcada",
-  "limitation": "Reschedule/cancel are out of scope today (SPEC.md US3): the expected outcome is a hand-off to reception. Revisit when the capability lands.",
+  "title": "Mudar o horário de uma limpeza marcada para depois do almoço",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -37,6 +36,15 @@
         "capacity": 2
       }
     ],
+    "bookings": [
+      {
+        "start": "2026-06-17T13:00:00Z",
+        "phone": "+5531900000123",
+        "status": "confirmed",
+        "name": "Diego Teste",
+        "type": "cleaning"
+      }
+    ],
     "consent": "opted_in"
   },
   "patient": {
@@ -45,15 +53,50 @@
   "turns": [
     {
       "text": "Dá pra mudar o horário da minha limpeza que já está marcada?"
+    },
+    {
+      "text": "No mesmo dia, depois do almoço."
+    },
+    {
+      "text": "Confirmo."
     }
   ],
   "llmScript": [
     [
       {
-        "tool": "escalate_to_human",
+        "tool": "find_my_booking",
+        "input": {}
+      },
+      {
+        "text": "Sua limpeza está na qua, 17/06 às 10:00. Para quando quer mudar?"
+      }
+    ],
+    [
+      {
+        "tool": "get_availability",
         "input": {
-          "reason": "reschedule",
-          "context": "Paciente quer alterar horário já marcado"
+          "from": "2026-06-17T16:00:00Z",
+          "to": "2026-06-17T21:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Reservei qua, 17/06 às 13:00. Confirma a troca?"
+      }
+    ],
+    [
+      {
+        "tool": "reschedule_booking",
+        "input": {
+          "booking_id": "$lastBookingId",
+          "hold_id": "$lastHoldId"
         }
       },
       {
@@ -62,46 +105,70 @@
     ]
   ],
   "labels": {
-    "shouldEscalate": true,
-    "escalationReason": "reschedule"
+    "shouldEscalate": false
   },
   "expect": {
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "escalate_to_human",
+          "name": "find_my_booking"
+        },
+        {
+          "name": "get_availability"
+        },
+        {
+          "name": "hold_slot",
           "input": {
-            "reason": "reschedule"
+            "start": "$offeredSlot",
+            "type": "cleaning"
+          }
+        },
+        {
+          "name": "reschedule_booking",
+          "input": {
+            "booking_id": "$ownBookingId",
+            "hold_id": "$ownHoldId"
           }
         }
       ],
-      "mustNotInclude": ["hold_slot", "confirm_booking"]
+      "mustNotInclude": ["escalate_to_human"]
     },
     "writes": {
-      "holds": 0,
+      "holds": 1,
       "bookings": 0,
-      "calendarEvents": 0,
-      "escalations": 1
+      "calendarEvents": 1,
+      "escalations": 0,
+      "cancellations": 0,
+      "reschedules": 1,
+      "calendarDeletes": 1,
+      "receptionNotices": 0
     },
     "escalation": {
-      "expected": true,
-      "reasonIn": ["reschedule"]
+      "expected": false
     },
-    "status": "escalated",
-    "patientMessages": 1,
-    "llmCalls": 1
+    "status": "completed",
+    "patientMessages": 3,
+    "llmCalls": 7
   },
   "liveExpect": {
     "toolCalls": {
-      "mustNotInclude": ["confirm_booking"]
+      "mustInclude": [
+        {
+          "name": "find_my_booking"
+        },
+        {
+          "name": "reschedule_booking",
+          "input": {
+            "booking_id": "$ownBookingId",
+            "hold_id": "$ownHoldId"
+          }
+        }
+      ]
     },
     "writes": {
-      "bookings": 0,
-      "calendarEvents": 0
-    },
-    "escalation": {
-      "expected": true
-    },
-    "status": "escalated"
+      "reschedules": 1,
+      "cancellations": 0,
+      "bookings": 0
+    }
   }
 }

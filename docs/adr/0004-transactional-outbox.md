@@ -19,6 +19,6 @@ Opt-out cancels the patient's pending rows in the consent transaction.
 ## Consequences
 - Delivery is at-least-once: a crash between send and commit, or a send that times out after the
   provider delivered, can duplicate a message. Accepted for now; idempotent sends keyed by provider
-  message id are planned with the durable inbound pipeline (feature 006).
+  message id are planned with the durable inbound pipeline (feature 008; renumbered on 2026-10-08 when reschedule/cancel became 006).
 - A `confirmed` outcome means "the outbox owns the patient reply", so the orchestrator never adds
   a second message — including when a COMMIT landed but its acknowledgment was lost.

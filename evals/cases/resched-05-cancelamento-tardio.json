@@ -1,7 +1,7 @@
 {
-  "id": "resched-02-cancelar",
+  "id": "resched-05-cancelamento-tardio",
   "category": "reschedule_cancel",
-  "title": "Cancelar consulta de amanhã",
+  "title": "Cancelar no mesmo dia: recepção também é avisada",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -38,24 +38,24 @@
     ],
     "bookings": [
       {
-        "start": "2026-06-16T12:00:00Z",
-        "phone": "+5531900000122",
+        "start": "2026-06-15T20:00:00Z",
+        "phone": "+5531900000125",
         "status": "confirmed",
-        "name": "Carla Teste",
+        "name": "Elisa Teste",
         "type": "cleaning"
       }
     ],
     "consent": "opted_in"
   },
   "patient": {
-    "phone": "+5531900000122"
+    "phone": "+5531900000125"
   },
   "turns": [
     {
-      "text": "Preciso cancelar minha consulta de amanhã."
+      "text": "Não vou conseguir ir hoje às 17h, pode cancelar?"
     },
     {
-      "text": "Sim, pode cancelar."
+      "text": "Isso, pode cancelar."
     }
   ],
   "llmScript": [
@@ -65,7 +65,7 @@
         "input": {}
       },
       {
-        "text": "Encontrei sua limpeza na ter, 16/06 às 09:00. Confirma o cancelamento?"
+        "text": "Encontrei sua limpeza hoje, 15/06 às 17:00. Confirma o cancelamento?"
       }
     ],
     [
@@ -106,7 +106,7 @@
       "cancellations": 1,
       "reschedules": 0,
       "calendarDeletes": 1,
-      "receptionNotices": 0
+      "receptionNotices": 1
     },
     "escalation": {
       "expected": false
@@ -119,9 +119,6 @@
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "find_my_booking"
-        },
-        {
           "name": "cancel_booking",
           "input": {
             "booking_id": "$ownBookingId"
@@ -131,8 +128,7 @@
     },
     "writes": {
       "cancellations": 1,
-      "reschedules": 0,
-      "receptionNotices": 0
+      "receptionNotices": 1
     }
   }
 }

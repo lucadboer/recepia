@@ -1,7 +1,7 @@
 {
-  "id": "resched-01-remarcar",
+  "id": "resched-10-optout-remarcar-pede-consentimento",
   "category": "reschedule_cancel",
-  "title": "Remarcar consulta de quinta para sexta",
+  "title": "Remarcar sem consentimento: o agente pede autorização antes",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -39,26 +39,26 @@
     "bookings": [
       {
         "start": "2026-06-18T12:00:00Z",
-        "phone": "+5531900000121",
+        "phone": "+5531900000130",
         "status": "confirmed",
-        "name": "Bruno Teste",
+        "name": "João Teste",
         "type": "cleaning"
       }
     ],
-    "consent": "opted_in"
+    "consent": "opted_out"
   },
   "patient": {
-    "phone": "+5531900000121"
+    "phone": "+5531900000130"
   },
   "turns": [
     {
-      "text": "Quero remarcar minha consulta de quinta para sexta."
+      "text": "Quero mudar minha consulta de quinta para sexta às 09h."
     },
     {
-      "text": "Às 09:30."
+      "text": "Pode ser 09:00."
     },
     {
-      "text": "Sim, pode trocar."
+      "text": "Sim, confirmo."
     }
   ],
   "llmScript": [
@@ -71,24 +71,24 @@
         "tool": "get_availability",
         "input": {
           "from": "2026-06-19T12:00:00Z",
-          "to": "2026-06-19T21:00:00Z",
+          "to": "2026-06-19T15:00:00Z",
           "type": "cleaning"
         }
       },
       {
-        "text": "Sua limpeza está na qui, 18/06 às 09:00. Na sexta tenho 09:00, 09:30 e 10:00. Qual prefere?"
+        "text": "Sua limpeza está na qui, 18/06 às 09:00. Na sexta tenho 09:00. Pode ser?"
       }
     ],
     [
       {
         "tool": "hold_slot",
         "input": {
-          "start": "$offeredSlot[1]",
+          "start": "$offeredSlot[0]",
           "type": "cleaning"
         }
       },
       {
-        "text": "Reservei sex, 19/06 às 09:30. Confirma a troca?"
+        "text": "Reservei sex, 19/06 às 09:00. Confirma?"
       }
     ],
     [
@@ -100,7 +100,7 @@
         }
       },
       {
-        "text": "unused"
+        "text": "Para concluir, preciso da sua autorização para tratar seus dados. Você autoriza? (responda SIM)"
       }
     ]
   ],
@@ -114,21 +114,10 @@
           "name": "find_my_booking"
         },
         {
-          "name": "get_availability"
+          "name": "hold_slot"
         },
         {
-          "name": "hold_slot",
-          "input": {
-            "start": "$offeredSlot",
-            "type": "cleaning"
-          }
-        },
-        {
-          "name": "reschedule_booking",
-          "input": {
-            "booking_id": "$ownBookingId",
-            "hold_id": "$ownHoldId"
-          }
+          "name": "reschedule_booking"
         }
       ],
       "mustNotInclude": ["escalate_to_human"]
@@ -136,37 +125,23 @@
     "writes": {
       "holds": 1,
       "bookings": 0,
-      "calendarEvents": 1,
+      "calendarEvents": 0,
       "escalations": 0,
       "cancellations": 0,
-      "reschedules": 1,
-      "calendarDeletes": 1,
+      "reschedules": 0,
+      "calendarDeletes": 0,
       "receptionNotices": 0
     },
     "escalation": {
       "expected": false
     },
-    "status": "completed",
+    "status": "active",
     "patientMessages": 3,
     "llmCalls": 7
   },
   "liveExpect": {
-    "toolCalls": {
-      "mustInclude": [
-        {
-          "name": "find_my_booking"
-        },
-        {
-          "name": "reschedule_booking",
-          "input": {
-            "booking_id": "$ownBookingId",
-            "hold_id": "$ownHoldId"
-          }
-        }
-      ]
-    },
     "writes": {
-      "reschedules": 1,
+      "reschedules": 0,
       "cancellations": 0,
       "bookings": 0
     }

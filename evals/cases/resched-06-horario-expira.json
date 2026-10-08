@@ -1,7 +1,7 @@
 {
-  "id": "resched-01-remarcar",
+  "id": "resched-06-horario-expira",
   "category": "reschedule_cancel",
-  "title": "Remarcar consulta de quinta para sexta",
+  "title": "Novo horário expira antes da confirmação: consulta original continua",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -39,26 +39,27 @@
     "bookings": [
       {
         "start": "2026-06-18T12:00:00Z",
-        "phone": "+5531900000121",
+        "phone": "+5531900000126",
         "status": "confirmed",
-        "name": "Bruno Teste",
+        "name": "Fábio Teste",
         "type": "cleaning"
       }
     ],
     "consent": "opted_in"
   },
   "patient": {
-    "phone": "+5531900000121"
+    "phone": "+5531900000126"
   },
   "turns": [
     {
-      "text": "Quero remarcar minha consulta de quinta para sexta."
+      "text": "Quero passar minha consulta de quinta para sexta de manhã."
     },
     {
-      "text": "Às 09:30."
+      "text": "Pode ser às 10h."
     },
     {
-      "text": "Sim, pode trocar."
+      "text": "Sim.",
+      "delayMs": 660000
     }
   ],
   "llmScript": [
@@ -71,24 +72,24 @@
         "tool": "get_availability",
         "input": {
           "from": "2026-06-19T12:00:00Z",
-          "to": "2026-06-19T21:00:00Z",
+          "to": "2026-06-19T15:00:00Z",
           "type": "cleaning"
         }
       },
       {
-        "text": "Sua limpeza está na qui, 18/06 às 09:00. Na sexta tenho 09:00, 09:30 e 10:00. Qual prefere?"
+        "text": "Sua limpeza está na qui, 18/06 às 09:00. Na sexta de manhã tenho 09:00, 09:30, 10:00. Qual prefere?"
       }
     ],
     [
       {
         "tool": "hold_slot",
         "input": {
-          "start": "$offeredSlot[1]",
+          "start": "$offeredSlot[2]",
           "type": "cleaning"
         }
       },
       {
-        "text": "Reservei sex, 19/06 às 09:30. Confirma a troca?"
+        "text": "Reservei sex, 19/06 às 10:00. Confirma?"
       }
     ],
     [
@@ -100,7 +101,7 @@
         }
       },
       {
-        "text": "unused"
+        "text": "A reserva expirou antes da confirmação. Quer que eu busque outros horários? Sua consulta de quinta continua marcada."
       }
     ]
   ],
@@ -114,21 +115,13 @@
           "name": "find_my_booking"
         },
         {
-          "name": "get_availability"
-        },
-        {
           "name": "hold_slot",
           "input": {
-            "start": "$offeredSlot",
-            "type": "cleaning"
+            "start": "$offeredSlot"
           }
         },
         {
-          "name": "reschedule_booking",
-          "input": {
-            "booking_id": "$ownBookingId",
-            "hold_id": "$ownHoldId"
-          }
+          "name": "reschedule_booking"
         }
       ],
       "mustNotInclude": ["escalate_to_human"]
@@ -136,39 +129,25 @@
     "writes": {
       "holds": 1,
       "bookings": 0,
-      "calendarEvents": 1,
+      "calendarEvents": 0,
       "escalations": 0,
       "cancellations": 0,
-      "reschedules": 1,
-      "calendarDeletes": 1,
+      "reschedules": 0,
+      "calendarDeletes": 0,
       "receptionNotices": 0
     },
     "escalation": {
       "expected": false
     },
-    "status": "completed",
+    "status": "active",
     "patientMessages": 3,
     "llmCalls": 7
   },
   "liveExpect": {
-    "toolCalls": {
-      "mustInclude": [
-        {
-          "name": "find_my_booking"
-        },
-        {
-          "name": "reschedule_booking",
-          "input": {
-            "booking_id": "$ownBookingId",
-            "hold_id": "$ownHoldId"
-          }
-        }
-      ]
-    },
     "writes": {
-      "reschedules": 1,
+      "reschedules": 0,
       "cancellations": 0,
-      "bookings": 0
+      "calendarDeletes": 0
     }
   }
 }

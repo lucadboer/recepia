@@ -11,6 +11,8 @@ import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { Pool } from "../../src/db/pool";
 import { messageRef } from "../../src/telemetry/pseudonym";
 import { withSpan } from "../../src/telemetry/tracing";
+import { confirmBooking } from "../../src/tools/confirm-booking";
+import { holdSlot } from "../../src/tools/hold-slot";
 import { createWebhookServer } from "../../src/webhook/server";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
 import { ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
@@ -212,6 +214,35 @@ describe("tracing — turn shapes and guardrail names (handleInbound)", () => {
       [TOOL_NAMES.hold, "rejected", "invalid_args"],
       [TOOL_NAMES.escalate, "ok", undefined],
       [TOOL_NAMES.availability, "rejected", "after_handoff"],
+    ]);
+  });
+
+  it("006 gates are recorded: not_surfaced and confirmation_required (FR-610)", async () => {
+    const h = makeAgent(pool, new FakeLLM([]));
+    await recordConsent(h.deps, PHONE);
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(FIRST_SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    const { booking } = await confirmBooking(h.deps, hold.id, { phone: PHONE, name: "Ana Teste" });
+    h.deps.llm = new FakeLLM([
+      toolUseTurn(toolUse(TOOL_NAMES.cancelBooking, { booking_id: booking.id }, "tu_ns")),
+      toolUseTurn(toolUse(TOOL_NAMES.findBooking, {}, "tu_find")),
+      toolUseTurn(toolUse(TOOL_NAMES.cancelBooking, { booking_id: booking.id }, "tu_cr")),
+      finalTurn("Confirma o cancelamento?"),
+    ]);
+    await withSpan("test.root", {}, () =>
+      handleInbound(h.deps, { phone: PHONE, text: "cancela", providerMessageId: "m-006" }),
+    );
+    const outcomes = tel
+      .spans()
+      .filter((s) => s.name.startsWith("execute_tool "))
+      .map((s) => [s.attributes["gen_ai.tool.name"], s.attributes["recepia.tool.rejected_by"]]);
+    expect(outcomes).toEqual([
+      [TOOL_NAMES.cancelBooking, "not_surfaced"],
+      [TOOL_NAMES.findBooking, undefined],
+      [TOOL_NAMES.cancelBooking, "confirmation_required"],
     ]);
   });
 

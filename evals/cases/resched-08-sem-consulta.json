@@ -1,8 +1,7 @@
 {
-  "id": "resched-04-confirmar-presenca",
+  "id": "resched-08-sem-consulta",
   "category": "reschedule_cancel",
-  "title": "Confirmar presença em consulta já marcada",
-  "limitation": "Attendance confirmation arrives with feature 007 (appointment reminders, SPEC.md US2): until then the expected outcome is a hand-off to reception.",
+  "title": "Sem consulta futura (marcada por telefone): recepção",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -37,24 +36,30 @@
         "capacity": 2
       }
     ],
+    "bookings": [
+      {
+        "start": "2026-06-16T12:00:00Z",
+        "phone": "+5531900000190",
+        "status": "confirmed",
+        "name": "Heitor Teste",
+        "type": "cleaning"
+      }
+    ],
     "consent": "opted_in"
   },
   "patient": {
-    "phone": "+5531900000124"
+    "phone": "+5531900000128"
   },
   "turns": [
     {
-      "text": "Quero confirmar minha presença na consulta de amanhã."
+      "text": "Marquei por telefone uma limpeza para quarta. Dá pra cancelar?"
     }
   ],
   "llmScript": [
     [
       {
-        "tool": "escalate_to_human",
-        "input": {
-          "reason": "attendance_confirmation",
-          "context": "Paciente confirma presença em consulta existente"
-        }
+        "tool": "find_my_booking",
+        "input": {}
       },
       {
         "text": "unused"
@@ -63,29 +68,30 @@
   ],
   "labels": {
     "shouldEscalate": true,
-    "escalationReason": "attendance_confirmation"
+    "escalationReason": "booking_not_found"
   },
   "expect": {
     "toolCalls": {
       "mustInclude": [
         {
-          "name": "escalate_to_human",
-          "input": {
-            "reason": "attendance_confirmation"
-          }
+          "name": "find_my_booking"
         }
       ],
-      "mustNotInclude": ["hold_slot", "confirm_booking"]
+      "mustNotInclude": ["cancel_booking", "reschedule_booking"]
     },
     "writes": {
       "holds": 0,
       "bookings": 0,
       "calendarEvents": 0,
-      "escalations": 1
+      "escalations": 1,
+      "cancellations": 0,
+      "reschedules": 0,
+      "calendarDeletes": 0,
+      "receptionNotices": 0
     },
     "escalation": {
       "expected": true,
-      "reasonIn": ["attendance_confirmation"]
+      "reasonIn": ["booking_not_found"]
     },
     "status": "escalated",
     "patientMessages": 1,
@@ -93,11 +99,11 @@
   },
   "liveExpect": {
     "toolCalls": {
-      "mustNotInclude": ["confirm_booking"]
+      "mustNotInclude": ["cancel_booking", "reschedule_booking"]
     },
     "writes": {
-      "bookings": 0,
-      "calendarEvents": 0
+      "cancellations": 0,
+      "reschedules": 0
     },
     "escalation": {
       "expected": true

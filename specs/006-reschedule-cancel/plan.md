@@ -56,7 +56,7 @@ src/
 ├── tools/find-my-booking.ts
 ├── tools/cancel-booking.ts
 ├── tools/reschedule-booking.ts
-├── tools/late-change.ts                # isLateChange(start, now) + reception notice enqueue
+├── tools/reception-notices.ts          # isLateChange, late-change notice, calendar cleanup request
 ├── messages.ts                         # cancellation / reschedule / reception-notice pt-BR text
 ├── agent/types.ts, agent/conversation.ts  # turnSeq, surfacedBookings, holdSeqs + reducers, bounds, reset
 ├── agent/tool-schemas.ts               # 3 new strict tool definitions

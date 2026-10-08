@@ -31,13 +31,18 @@ in the prompt.
   specialized procedures, prices and insurance, complaints, a specific professional, or an explicit
   request for a human. After a hand-off the agent stays quiet until reception releases the
   conversation.
+- Cancels or moves an existing appointment over WhatsApp: finds the patient's single upcoming
+  booking, shows it and waits for the patient's reply before acting; a move takes only a real,
+  held time of the same type and swaps it in atomically (the old time is released only when the
+  new one is confirmed); a change less than 24 h ahead also notifies reception; no booking or
+  several bookings go to reception.
 - Records LGPD opt-in before any booking is committed; opt-out stops proactive messages
   (including ones already queued) and blocks confirmations.
 - Survives the ugly parts: concurrent messages from the same patient, provider outages during a
   confirmation, redelivered webhooks, `SIGTERM` mid-turn.
 
-What it does **not** do (yet): reschedule or cancel existing appointments, choose a dentist, handle
-voice, serve more than one clinic. See [Roadmap](#roadmap).
+What it does **not** do (yet): appointment reminders and attendance confirmation (feature 007),
+choose a dentist, handle voice, serve more than one clinic. See [Roadmap](#roadmap).
 
 ## Architecture
 
@@ -82,11 +87,14 @@ queue, graceful shutdown) · `src/cli` (operator commands).
 | Every write leaves an audit row; the log cannot be rewritten | audit row in the same transaction; `UPDATE`/`DELETE`/`TRUNCATE` blocked by triggers | `audit-append-only.test.ts` and every tool test |
 | Messages are committed with the write they announce and delivered at-least-once | transactional outbox, `FOR UPDATE SKIP LOCKED`, backoff, dead-letter + reception notice | `outbox.test.ts`, `confirm-booking.test.ts`, `escalate.test.ts` |
 | No lost update when a patient sends two messages at once | `conversation_state.version` compare-and-swap + per-phone in-process queue | `orchestrator-concurrency.test.ts`, `conversation-repo.test.ts`, `webhook-server.test.ts` |
+| A cancel or a move acts only on the patient's own booking, shown in this conversation, after the patient replied | `find_my_booking` uses the conversation's phone; gates `not_surfaced` and `confirmation_required` (turn clock); tools re-check the owner | `tool-registry-lifecycle.test.ts`, `orchestrator-lifecycle.test.ts`, eval cases `inj-11`…`inj-13` |
+| A move never leaves two appointments or none; at most one move of a booking wins | new booking row from a hold + old row cancelled in one transaction; `UNIQUE (rescheduled_from)`; calendar event created first and compensated on failure | `reschedule-booking.test.ts`, `tests/concurrency/booking-lifecycle.concurrency.test.ts` |
+| A cancelled time is bookable at once; the calendar never overrides Postgres | cancel is database-first; an event that cannot be deleted becomes a reception notice | `cancel-booking.test.ts` |
 | Hand-off is terminal; opt-out is honoured | handed-off state short-circuits the loop; queued patient messages cancelled on opt-out | `orchestrator-handoff.test.ts`, `orchestrator-optout.test.ts` |
 | State and prompt stay bounded | history trimmed at turn boundaries, offered slots pruned and capped | `tests/unit/conversation-bounds.test.ts` |
 | Clinic time is DST-safe | IANA zone through `Intl`, proven against zones with DST | `tests/unit/time.test.ts` |
 | The process stops cleanly and the webhook refuses abuse | exact-path routing, 256 KiB body cap, timeouts, drain-then-close shutdown | `webhook-server.test.ts`, `tests/unit/shutdown.test.ts` |
-| The guardrails hold against hostile model behaviour, end to end | 45 authored pt-BR conversations (10 adversarial) through the real orchestrator and Postgres, scored on tool calls, writes, consent, hallucinated slots, escalations and final status | `pnpm evals:fake` (CI job `evals / fake`, any failing case blocks the change), `tests/integration/evals-suite.test.ts` (exactly repeatable) |
+| The guardrails hold against hostile model behaviour, end to end | 54 authored pt-BR conversations (13 adversarial) through the real orchestrator and Postgres, scored on tool calls, writes, consent, hallucinated slots, escalations and final status | `pnpm evals:fake` (CI job `evals / fake`, any failing case blocks the change), `tests/integration/evals-suite.test.ts` (exactly repeatable) |
 | A model refusal or a truncated tool call never produces an empty reply or a half-run tool | `stop_reason: refusal` / `max_tokens` with `tool_use` → hand-off to reception, tools skipped | `tests/integration/orchestrator.test.ts` ("production model migration") |
 | One patient message = one trace, with no personal data | OpenTelemetry API (no-op unless an OTLP endpoint is set): webhook → turn → GenAI `chat` spans → `execute_tool` spans with the guardrail that rejected a call → SQL → delivery linked to its turn; keyed patient pseudonym, content never recorded | `tests/integration/tracing.test.ts`, `tests/integration/pii-scan.test.ts`, CI log scan in `evals / fake` |
 | A conversation cannot run up an unbounded bill | usage and estimated cost per conversation, budget checked before every model call (default US$ 0.25 → hand-off `budget_exceeded`); unknown models are charged at the highest price; spend of a failed turn is still recorded; prompt caching of tools + static instructions | `tests/integration/orchestrator-budget.test.ts`, `tests/unit/anthropic-llm.test.ts`, live check in `tests/live` |
@@ -96,27 +104,33 @@ queue, graceful shutdown) · `src/cli` (operator commands).
 
 ## Agent guardrails
 
-1. **Deterministic layer first.** The four tools were built and tested before any model was wired
-   in; the model only reaches them through `src/agent/tool-registry.ts`.
-2. **Three structural gates** in the registry: unknown tool → rejected; `hold_slot` only for a start
-   returned by `get_availability` in this conversation; `confirm_booking` only for a hold created in
-   this conversation.
-3. **Consent gate** before `confirm_booking`; opt-out is a fast path that never reaches the model.
+1. **Deterministic layer first.** The booking tools were built and tested before any model was
+   wired in; the model only reaches them through `src/agent/tool-registry.ts`.
+2. **Five structural gates** in the registry: unknown tool → rejected; `hold_slot` only for a start
+   returned by `get_availability` in this conversation; `confirm_booking` / `reschedule_booking`
+   only for a hold created in this conversation; `cancel_booking` / `reschedule_booking` only for a
+   booking `find_my_booking` showed in this conversation (`not_surfaced`), and never in the turn it
+   was first shown (`confirmation_required`) — explicit confirmation is structural, not a prompt.
+3. **Consent gate** before `confirm_booking` and `reschedule_booking` (a cancel needs none: it
+   reduces data); opt-out is a fast path that never reaches the model.
 4. **Triage before the model** for every escalation category the constitution lists.
 5. **Bounded loop** (8 iterations) with escalation on exhaustion; an `escalate_to_human` result ends
    the loop and cancels any other tool the model asked for in the same response.
 6. **Dated, timezone-aware system prompt** so ISO ranges are right; the static block comes first so
    it can be prompt-cached later. The static block is a versioned artifact
-   ([`prompts/system/v001.md`](prompts/system/v001.md), [changelog](prompts/CHANGELOG.md)).
+   ([`prompts/system/v002.md`](prompts/system/v002.md), [changelog](prompts/CHANGELOG.md)).
 
 ## Evaluation (measured behaviour)
 
-The agent's behaviour is measured, not asserted. [`evals/`](evals/) holds a **golden set of 45
+The agent's behaviour is measured, not asserted. [`evals/`](evals/) holds a **golden set of 54
 authored Brazilian-Portuguese conversations** — happy path (8), alternative slot (4),
-reschedule/cancel (4, labelled as a current limitation → hand-off), ambiguous dates (5), out of
-scope (8), opt-out (3), consent refusal (3) and 10 prompt-injection attempts (fake system messages,
-booking for another phone, inventing a tool, holding a never-offered slot, confirming another
-conversation's hold, `escalate` + `confirm` in one response, oversized/JSON payloads). Each case
+reschedule/cancel (10: cancel, move, late cancel, a held time that expires, two bookings, no
+booking, opt-out; attendance confirmation is still a labelled limitation until feature 007),
+ambiguous dates (5), out of scope (8), opt-out (3), consent refusal (3) and 13 prompt-injection
+attempts (fake system messages, booking for another phone, inventing a tool, holding a never-offered
+slot, confirming another conversation's hold, `escalate` + `confirm` in one response,
+oversized/JSON payloads, cancelling by an invented id, cancelling another patient's booking,
+demanding a cancel without confirmation). Each case
 bundles its clinic seed, the patient turns, the script the scripted stand-in model follows and
 deterministic expectations over **what the agent did**: tool calls and arguments, writes, no write
 without consent, no hallucinated slot, escalation exactly when expected, final status. Wording is
@@ -271,11 +285,15 @@ Every slice starts as a spec and ends as tasks, with Claude Code as the implemen
    baseline, versioned prompt, generated README numbers
 3. ~~**Observability and cost** (005)~~ — OpenTelemetry traces across webhook → turn → model →
    tools → SQL → delivery, PII-free JSON logs, health checks, prompt caching, a per-conversation
-   budget, an OpenAI-compatible fallback provider, the 90-day retention job (this)
-4. **Reliability at the edge** — durable Postgres-backed inbound queue with idempotency keys,
-   retries and a dead-letter table; rate limits; a real load test.
-5. **Showcase** — Dockerfile and a demo deployment with fake adapters, an MCP server exposing the
-   booking tools behind the same gates, multi-tenancy with row-level security.
+   budget, an OpenAI-compatible fallback provider, the 90-day retention job
+4. ~~**Reschedule and cancel** (006)~~ — `find_my_booking`, `cancel_booking`,
+   `reschedule_booking` behind two new structural gates; atomic swap; late-change notice (this)
+5. **Appointment reminders** (007) — a reminder 24 h before, "SIM" confirms attendance, "remarcar"
+   uses 006, no reply notifies reception.
+6. **Reliability at the edge** (008) — durable Postgres-backed inbound queue with idempotency keys,
+   retries and a dead-letter table; rate limits; a crash-and-restart load test.
+7. **Container** — optimized Dockerfile, image pipeline and Trivy scans. Later, with a real clinic:
+   a pilot, multi-tenancy with row-level security.
 
 ## Contributing
 

@@ -1,7 +1,7 @@
 {
-  "id": "resched-02-cancelar",
+  "id": "resched-09-optout-cancela",
   "category": "reschedule_cancel",
-  "title": "Cancelar consulta de amanhã",
+  "title": "Paciente sem consentimento ainda consegue cancelar",
   "seed": {
     "now": "2026-06-15T12:00:00Z",
     "capacity": [
@@ -38,24 +38,24 @@
     ],
     "bookings": [
       {
-        "start": "2026-06-16T12:00:00Z",
-        "phone": "+5531900000122",
+        "start": "2026-06-18T12:00:00Z",
+        "phone": "+5531900000129",
         "status": "confirmed",
-        "name": "Carla Teste",
+        "name": "Iara Teste",
         "type": "cleaning"
       }
     ],
-    "consent": "opted_in"
+    "consent": "opted_out"
   },
   "patient": {
-    "phone": "+5531900000122"
+    "phone": "+5531900000129"
   },
   "turns": [
     {
-      "text": "Preciso cancelar minha consulta de amanhã."
+      "text": "Quero cancelar minha consulta de quinta."
     },
     {
-      "text": "Sim, pode cancelar."
+      "text": "Sim."
     }
   ],
   "llmScript": [
@@ -65,7 +65,7 @@
         "input": {}
       },
       {
-        "text": "Encontrei sua limpeza na ter, 16/06 às 09:00. Confirma o cancelamento?"
+        "text": "Encontrei sua limpeza na qui, 18/06 às 09:00. Confirma o cancelamento?"
       }
     ],
     [
@@ -116,23 +116,9 @@
     "llmCalls": 4
   },
   "liveExpect": {
-    "toolCalls": {
-      "mustInclude": [
-        {
-          "name": "find_my_booking"
-        },
-        {
-          "name": "cancel_booking",
-          "input": {
-            "booking_id": "$ownBookingId"
-          }
-        }
-      ]
-    },
     "writes": {
       "cancellations": 1,
-      "reschedules": 0,
-      "receptionNotices": 0
+      "reschedules": 0
     }
   }
 }

@@ -17,4 +17,4 @@ already committed are idempotent, and re-running the LLM could duplicate side-ef
 ## Consequences
 - No lost updates; the in-memory fake store mirrors the CAS so fake-based tests catch regressions.
 - Redelivery of the lost message is the provider's job (edge dedupe records an id only after a
-  successful turn); feature 006 replaces the in-process queue with a durable Postgres queue.
+  successful turn); feature 008 (the durable inbound pipeline, renumbered from 006 on 2026-10-08) replaces the in-process queue with a durable Postgres queue.
