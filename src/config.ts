@@ -36,6 +36,11 @@ export const INBOUND_CONCURRENCY = 4;
 export const INBOUND_LEASE_MS = 5 * 60 * 1000;
 export const INBOUND_MAX_ATTEMPTS = 5;
 export const INBOUND_POLL_MS = 1_000;
+/**
+ * Longest a turn may run before its attempt counts as failed (review: a provider call that never
+ * returns must not hold a slot and renew its lease forever). Well above a normal turn's seconds.
+ */
+export const INBOUND_TURN_TIMEOUT_MS = 4 * 60 * 1000;
 /** Unfinished messages per phone beyond which new ones are stored as dropped (flood guard). */
 export const INBOUND_PHONE_MAX_PENDING = 20;
 /** Retry delays per failed attempt; each is jittered ±20 % (inboundBackoff). */

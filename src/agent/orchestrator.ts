@@ -241,6 +241,13 @@ async function runTurn(
     });
   };
 
+  // A reply is an effect of this turn: only the message's owner sends it (008 review — the save's
+  // fence does not cover what happens after later awaits, such as the outbox flush).
+  const sendReply = async (text: string): Promise<void> => {
+    await deps.lease?.fence();
+    await deps.messaging.sendMessage(msg.phone, text);
+  };
+
   const loaded = state; // before this message touches it (see recordSpendOnFailure)
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
@@ -263,7 +270,7 @@ async function runTurn(
     // The hand-off reply goes out after the save the crash prevented, so the patient has not had
     // it — unless a message that turn committed (a confirmation) owns the reply (T227).
     if (committed.some((w) => w.action !== "escalated")) return { status: "escalated" };
-    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    await sendReply(reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
   state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
@@ -274,7 +281,7 @@ async function runTurn(
     await recordOptOut(deps, msg.phone);
     state = setAwaitingConsent(state, false, now);
     state = await persist(state);
-    await deps.messaging.sendMessage(msg.phone, reply.optedOut());
+    await sendReply(reply.optedOut());
     return { status: "replied", reply: reply.optedOut() };
   }
 
@@ -285,7 +292,7 @@ async function runTurn(
     if (shouldSendHandoffNotice(state, now)) {
       state = markHandoffNoticed(state, now);
       state = await persist(state);
-      await deps.messaging.sendMessage(msg.phone, reply.handedOff());
+      await sendReply(reply.handedOff());
       return { status: "handed_off", reply: reply.handedOff() };
     }
     state = await persist(state); // records the processed id; stays silent
@@ -338,7 +345,7 @@ async function runTurn(
     state = markEscalated(state, now);
     state = await persist(state);
     await flushOutbox();
-    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    await sendReply(reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
 
@@ -401,7 +408,7 @@ async function runTurn(
     state = markEscalated(state, now);
     state = await persist(state);
     await flushOutbox();
-    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    await sendReply(reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   };
   /**
@@ -574,7 +581,7 @@ async function runTurn(
       state = await persist(state);
       await flushOutbox();
       if (confirmationEnqueued) return { status: "escalated" }; // the confirmation owns the reply
-      await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+      await sendReply(reply.escalatedToReception());
       return { status: "escalated", reply: reply.escalatedToReception() };
     }
   }
@@ -594,7 +601,7 @@ async function runTurn(
     await flushOutbox();
     // Don't tell the patient "couldn't complete" if a confirmation already went out (T227).
     if (!confirmationDelivered) {
-      await deps.messaging.sendMessage(msg.phone, reply.couldNotComplete());
+      await sendReply(reply.couldNotComplete());
     }
     return { status: "max_iterations", reply: reply.couldNotComplete() };
   }
@@ -607,6 +614,6 @@ async function runTurn(
   // Suppress the closing send only when a confirmation was actually delivered: a
   // successful booking yields exactly one patient message (not two), and a re-confirm
   // that sent nothing still gets a reply (not zero) — T227.
-  if (!confirmationDelivered) await deps.messaging.sendMessage(msg.phone, replyText);
+  if (!confirmationDelivered) await sendReply(replyText);
   return { status: state.status === "escalated" ? "escalated" : "replied", reply: replyText };
 }

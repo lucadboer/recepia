@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FakeCalendar } from "../../src/adapters/fakes/fake-calendar";
+import { FakeConversationStore } from "../../src/adapters/fakes/fake-conversation-store";
 import {
   FakeLLM,
   finalTurn,
@@ -7,9 +8,11 @@ import {
   toolUse,
   toolUseTurn,
 } from "../../src/adapters/fakes/fake-llm";
+import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import { recordConsent } from "../../src/agent/consent";
 import { handleInbound } from "../../src/agent/orchestrator";
 import { TOOL_NAMES } from "../../src/agent/tool-schemas";
+import type { ConversationState } from "../../src/agent/types";
 import { HOLD_TTL_MS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
@@ -18,11 +21,13 @@ import { LeaseLostError } from "../../src/domain/errors";
 import { expireHolds, removeAbandonedEvents } from "../../src/jobs/expire-holds";
 import { createTurnLease } from "../../src/jobs/inbound-worker";
 import type { CreateEventInput, CreateEventResult } from "../../src/ports/calendar-port";
+import type { SaveOptions } from "../../src/ports/conversation-store-port";
 import type { LlmTurnInput, LlmTurnResult } from "../../src/ports/llm-port";
+import type { MessageTemplate } from "../../src/ports/messaging-port";
 import { confirmBooking } from "../../src/tools/confirm-booking";
 import { holdSlot } from "../../src/tools/hold-slot";
 import { rescheduleBooking } from "../../src/tools/reschedule-booking";
-import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
+import { AGENT_NOW, DAY_END, lastHoldId, makeAgent, RECEPTION } from "../helpers/agent";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
 
 // 008 review (Codex P1): a worker whose lease expired can still be running its turn when another
@@ -111,6 +116,29 @@ class TakeoverLLM extends FakeLLM {
     this.calls++;
     if (this.calls === this.at) await this.hook();
     return super.turn(input);
+  }
+}
+
+/** A store whose next save dies like a SIGKILL after the tools committed. */
+class DyingStore extends FakeConversationStore {
+  dieOnNextSave = true;
+  override async save(state: ConversationState, opts?: SaveOptions): Promise<ConversationState> {
+    if (this.dieOnNextSave) {
+      this.dieOnNextSave = false;
+      throw new Error("process killed before the state was saved");
+    }
+    return super.save(state, opts);
+  }
+}
+
+/** Loses the message while the outbox delivers the reception notice. */
+class TakeoverMessaging extends FakeMessaging {
+  constructor(private readonly onReception: () => Promise<void>) {
+    super();
+  }
+  override async sendMessage(to: string, body: string, template?: MessageTemplate): Promise<void> {
+    await super.sendMessage(to, body, template);
+    if (to === RECEPTION) await this.onReception();
   }
 }
 
@@ -278,5 +306,21 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
       LeaseLostError,
     );
     expect(await countAudit(pool, "consent_revoked")).toBe(0);
+  });
+
+  it("a reply is never sent once the message was taken over (every direct send is fenced)", async () => {
+    // First run: the escalation commits, then the process dies before saving the state.
+    const row = await claimed();
+    const h = makeAgent(pool, new FakeLLM([]));
+    h.deps.conversations = new DyingStore();
+    const urgent = { ...MSG, text: "estou com muita dor" };
+    await expect(handleInbound(h.deps, urgent)).rejects.toThrow(/killed/);
+
+    // The replay delivers the committed reception notice — and loses the message meanwhile.
+    const messaging = new TakeoverMessaging(() => takeOver(row));
+    h.deps.messaging = messaging;
+    h.deps.lease = createTurnLease(pool, row);
+    await expect(handleInbound(h.deps, urgent)).rejects.toBeInstanceOf(LeaseLostError);
+    expect(messaging.sent.map((m) => m.to)).toEqual([RECEPTION]); // nothing to the patient
   });
 });

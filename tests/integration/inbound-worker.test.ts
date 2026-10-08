@@ -232,4 +232,67 @@ describe("createInboundWorker", () => {
     expect(await worker.drain(2_000)).toBe(true);
     expect(Date.now() - t0).toBeLessThan(1_000);
   });
+
+  it("a turn that never settles is bounded: its attempt is retried and its slot freed", async () => {
+    await put("+5531900000821", "stuck-1");
+    await put("+5531900000822", "next-1");
+    const seen: string[] = [];
+    let staleSignal: AbortSignal | null = null;
+    const worker = createInboundWorker({
+      pool,
+      clock: new FakeClock(NOW),
+      receptionPhone: RECEPTION,
+      concurrency: 1,
+      pollMs: 10,
+      turnTimeoutMs: 100,
+      handler: async (m, lease) => {
+        seen.push(m.providerMessageId);
+        if (m.providerMessageId === "stuck-1") {
+          staleSignal = lease.signal;
+          await new Promise(() => {}); // a provider call that never returns
+        }
+      },
+    });
+    worker.start();
+    await until(async () => (await statusOf("next-1")) === "done");
+    await worker.drain(1_000);
+    expect(seen).toContain("next-1"); // the only slot was freed
+    const { rows } = await pool.query(
+      "SELECT status, locked_by, last_error FROM inbound_message WHERE provider_message_id = 'stuck-1'",
+    );
+    expect(rows[0]).toEqual({
+      status: "pending",
+      locked_by: null, // the stalled attempt's lease token is void: its writes are fenced
+      last_error: "InboundTurnTimeoutError",
+    });
+    expect((staleSignal as AbortSignal | null)?.aborted).toBe(true);
+  });
+
+  it("a message whose turns kept crashing goes to reception without running again", async () => {
+    await put("+5531900000823", "crashy-1");
+    // Five attempts were claimed and their processes died mid-turn: the lease expired each time.
+    await pool.query(
+      `UPDATE inbound_message SET status = 'processing', attempts = 5, locked_by = 'dead/1',
+         locked_until = $1 WHERE provider_message_id = 'crashy-1'`,
+      [new Date(NOW.getTime() - 1)],
+    );
+    let ran = false;
+    const worker = createInboundWorker({
+      pool,
+      clock: new FakeClock(NOW),
+      receptionPhone: RECEPTION,
+      concurrency: 1,
+      pollMs: 10,
+      maxAttempts: 5,
+      handler: async () => {
+        ran = true;
+      },
+    });
+    worker.start();
+    await until(async () => (await statusOf("crashy-1")) === "dead");
+    await worker.drain(1_000);
+    expect(ran).toBe(false);
+    expect(await countAudit(pool, "inbound_dead_letter")).toBe(1);
+    expect(await countAudit(pool, "escalated")).toBe(1);
+  });
 });
