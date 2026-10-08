@@ -17,7 +17,7 @@ import { HOLD_TTL_MS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
 import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
 import { claimNext, type InboundRow, insertInbound } from "../../src/db/repositories/inbound-repo";
-import { LeaseLostError } from "../../src/domain/errors";
+import { HoldExpiredError, LeaseLostError } from "../../src/domain/errors";
 import { expireHolds, removeAbandonedEvents } from "../../src/jobs/expire-holds";
 import { createTurnLease } from "../../src/jobs/inbound-worker";
 import type { CreateEventInput, CreateEventResult } from "../../src/ports/calendar-port";
@@ -29,6 +29,7 @@ import { holdSlot } from "../../src/tools/hold-slot";
 import { rescheduleBooking } from "../../src/tools/reschedule-booking";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent, RECEPTION } from "../helpers/agent";
 import { countAudit, ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { interceptingPool } from "../helpers/pool";
 
 // 008 review (Codex P1): a worker whose lease expired can still be running its turn when another
 // worker reclaims the message. From the moment it lost the message it must not write: every final
@@ -139,6 +140,27 @@ class TakeoverMessaging extends FakeMessaging {
   override async sendMessage(to: string, body: string, template?: MessageTemplate): Promise<void> {
     await super.sendMessage(to, body, template);
     if (to === RECEPTION) await this.onReception();
+  }
+}
+
+/** A calendar whose deletes wait for `gate` (a compensation still in flight). */
+class SlowDeleteCalendar extends FakeCalendar {
+  deleting = false;
+  constructor(private readonly gate: Promise<void>) {
+    super();
+  }
+  override async deleteEvent(idempotencyKey: string): Promise<void> {
+    this.deleting = true;
+    await this.gate;
+    return super.deleteEvent(idempotencyKey);
+  }
+}
+
+async function until(cond: () => Promise<boolean> | boolean, ms = 5_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > deadline) throw new Error("timed out waiting");
+    await new Promise((r) => setTimeout(r, 10));
   }
 }
 
@@ -322,5 +344,48 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     h.deps.lease = createTurnLease(pool, row);
     await expect(handleInbound(h.deps, urgent)).rejects.toBeInstanceOf(LeaseLostError);
     expect(messaging.sent.map((m) => m.to)).toEqual([RECEPTION]); // nothing to the patient
+  });
+
+  it("an event is only deleted after its hold is ended: a late compensation never hits a new confirm", async () => {
+    const row = await claimed();
+    const h = makeAgent(pool, new FakeLLM([]));
+    await recordConsent(h.deps, PHONE);
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    // The confirm's commit fails, so its event is an orphan to compensate; the delete is slow.
+    let release: () => void = () => {};
+    const slowDelete = new Promise<void>((r) => {
+      release = r;
+    });
+    const calendar = new SlowDeleteCalendar(slowDelete);
+    const failing = interceptingPool(pool, {
+      reject: (sql) =>
+        sql.includes("SET status = 'confirmed', patient_name") ? new Error("commit lost") : null,
+    });
+    const stale = { ...h.deps, pool: failing, calendar, lease: createTurnLease(pool, row) };
+    const compensation = confirmBooking(stale, hold.id, { phone: PHONE, name: "Ana Teste" }).catch(
+      (err: unknown) => err,
+    );
+    await until(async () => calendar.deleting);
+
+    // Meanwhile the turn times out and another attempt tries to confirm the same hold: it cannot,
+    // the hold was ended before the delete started.
+    await takeOver(row);
+    const fresh = {
+      ...h.deps,
+      calendar,
+      lease: createTurnLease(pool, { id: row.id, lease: OTHER }),
+    };
+    await expect(
+      confirmBooking(fresh, hold.id, { phone: PHONE, name: "Ana Teste" }),
+    ).rejects.toBeInstanceOf(HoldExpiredError);
+
+    release();
+    await compensation;
+    expect(calendar.events.has(hold.id)).toBe(false);
+    expect(await countAudit(pool, "booking_confirmed")).toBe(0);
   });
 });

@@ -2,7 +2,8 @@
 // outside any database transaction. Postgres owns capacity; the calendar may lag, never lead.
 
 import { CALENDAR_MAX_ATTEMPTS, CALENDAR_RETRY_BASE_MS } from "../config.ts";
-import { flagEventCleanup } from "../db/repositories/booking-repo.ts";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { flagEventCleanup, releaseHeld } from "../db/repositories/booking-repo.ts";
 import type { Deps } from "../deps.ts";
 import { LeaseLostError } from "../domain/errors.ts";
 import type { Booking } from "../domain/types.ts";
@@ -86,5 +87,39 @@ export async function yieldIfLeaseLost(deps: Deps, holdId: string): Promise<void
   } catch (err) {
     if (err instanceof LeaseLostError) await flagEventCleanup(deps.pool, holdId);
     throw err;
+  }
+}
+
+/**
+ * End a hold whose confirmation will not happen, BEFORE its calendar event is removed (008 review):
+ * an event is only ever deleted once its hold can no longer be confirmed, so a retry of the message
+ * can never confirm that hold after — or while — its event is being deleted. Fenced on the turn's
+ * lease: a turn that lost its message flags the hold instead and stops with LeaseLostError.
+ */
+export async function retireHold(deps: Deps, holdId: string, reason: string): Promise<void> {
+  const client = await deps.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await deps.lease?.fence(client);
+    const { rows } = await client.query("SELECT status FROM booking WHERE id = $1 FOR UPDATE", [
+      holdId,
+    ]);
+    if (rows[0]?.status === "held") {
+      await releaseHeld(client, holdId);
+      await appendAudit(client, {
+        entity: "booking",
+        entityId: holdId,
+        action: "hold_released",
+        actor: "system",
+        payload: { reason },
+      });
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    if (err instanceof LeaseLostError) await flagEventCleanup(deps.pool, holdId);
+    throw err;
+  } finally {
+    client.release();
   }
 }

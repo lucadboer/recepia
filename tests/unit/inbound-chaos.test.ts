@@ -10,6 +10,7 @@ const ok = {
   stuck: 0,
   overbookedSlots: 0,
   duplicatePatients: 0,
+  confirmedPatients: 60,
 };
 
 describe("chaosVerdict", () => {
@@ -19,5 +20,11 @@ describe("chaosVerdict", () => {
     expect(chaosVerdict({ ...ok, stuck: 1 }).pass).toBe(false);
     expect(chaosVerdict({ ...ok, overbookedSlots: 1 }).pass).toBe(false);
     expect(chaosVerdict({ ...ok, duplicatePatients: 1 }).pass).toBe(false);
+  });
+
+  it("fails a run in which bookings did not actually happen (the other checks would pass vacuously)", () => {
+    expect(chaosVerdict({ ...ok, confirmedPatients: 0 }).pass).toBe(false);
+    expect(chaosVerdict({ ...ok, confirmedPatients: 29 }).pass).toBe(false);
+    expect(chaosVerdict({ ...ok, confirmedPatients: 30 }).pass).toBe(true);
   });
 });

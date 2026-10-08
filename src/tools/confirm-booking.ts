@@ -1,12 +1,17 @@
 import { appendAudit } from "../db/repositories/audit-repo.ts";
-import { confirmHeld, getById, releaseHeld } from "../db/repositories/booking-repo.ts";
+import { confirmHeld, getById } from "../db/repositories/booking-repo.ts";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo.ts";
 import { type Deps, fencedStamp } from "../deps.ts";
 import { isExpired } from "../domain/booking.ts";
 import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors.ts";
 import type { Booking, Patient } from "../domain/types.ts";
 import { confirmationMessagePt } from "../messages.ts";
-import { deleteEventWithRetry, writeEventWithRetry, yieldIfLeaseLost } from "./booking-calendar.ts";
+import {
+  deleteEventWithRetry,
+  retireHold,
+  writeEventWithRetry,
+  yieldIfLeaseLost,
+} from "./booking-calendar.ts";
 import { escalateToHuman } from "./escalate-to-human.ts";
 import { requestCalendarCleanup } from "./reception-notices.ts";
 
@@ -62,26 +67,8 @@ export async function confirmBooking(
   const eventId = await writeEventWithRetry(deps, existing, patient);
 
   if (eventId === null) {
-    await yieldIfLeaseLost(deps, existing.id); // the hold may be the new holder's to confirm
-    const client = await deps.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await deps.lease?.fence(client);
-      await releaseHeld(client, existing.id);
-      await appendAudit(client, {
-        entity: "booking",
-        entityId: existing.id,
-        action: "hold_released",
-        actor: "system",
-        payload: { reason: "calendar_write_failed" },
-      });
-      await client.query("COMMIT");
-    } catch (err) {
-      await client.query("ROLLBACK").catch(() => {});
-      throw err;
-    } finally {
-      client.release();
-    }
+    // No event to keep: end the hold (fenced — a turn that lost its message leaves it alone).
+    await retireHold(deps, existing.id, "calendar_write_failed");
     await escalateToHuman(deps, {
       reason: "calendar_write_failed",
       phone: patient.phone,
@@ -156,7 +143,9 @@ export async function confirmBooking(
     return { booking: current, outcome: owned ? "confirmed" : "already_confirmed" };
   }
 
-  // True orphan: an event exists with no booking. Delete it, audit, escalate.
+  // True orphan: an event exists with no booking. End the hold first (it can then never be
+  // confirmed with this event), delete the event, audit, escalate.
+  await retireHold(deps, existing.id, "calendar_orphan");
   const deleted = await deleteEventWithRetry(deps, existing.id);
   const reason = commitError ? "commit_failed" : "hold_not_held";
   if (!deleted) {

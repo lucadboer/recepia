@@ -14,6 +14,8 @@ import { makePool, type Pool } from "../src/db/pool";
 
 const SECRET = "chaos-secret";
 const CAPACITY = 2;
+/** At least this share of the acknowledged booking requests must end in a booking (as perf-smoke). */
+const MIN_CONFIRMED_RATIO = 0.5;
 
 export interface ChaosInvariants {
   acknowledged: number;
@@ -22,13 +24,19 @@ export interface ChaosInvariants {
   stuck: number;
   overbookedSlots: number;
   duplicatePatients: number;
+  /** Patients with a booking at the end: the run must really book, not only escalate (review). */
+  confirmedPatients: number;
   pass: boolean;
 }
 
 /** Pure verdict over what the database says — unit-tested. */
 export function chaosVerdict(r: Omit<ChaosInvariants, "pass">): ChaosInvariants {
   const pass =
-    r.lost.length === 0 && r.stuck === 0 && r.overbookedSlots === 0 && r.duplicatePatients === 0;
+    r.lost.length === 0 &&
+    r.stuck === 0 &&
+    r.overbookedSlots === 0 &&
+    r.duplicatePatients === 0 &&
+    r.confirmedPatients >= Math.ceil(r.acknowledged * MIN_CONFIRMED_RATIO);
   return { ...r, pass };
 }
 
@@ -167,6 +175,10 @@ async function main(): Promise<void> {
     `SELECT patient_phone FROM booking WHERE status IN ('confirmed','patient_confirmed','done')
      GROUP BY patient_phone HAVING count(*) > 1`,
   );
+  const booked = await pool.query(
+    `SELECT count(DISTINCT patient_phone)::int AS n FROM booking
+     WHERE status IN ('confirmed','patient_confirmed','done')`,
+  );
   await pool.end();
   const verdict = chaosVerdict({
     acknowledged: acknowledged.length,
@@ -175,6 +187,7 @@ async function main(): Promise<void> {
     stuck,
     overbookedSlots: over.rows.length,
     duplicatePatients: dup.rows.length,
+    confirmedPatients: booked.rows[0].n as number,
   });
   console.log(JSON.stringify({ kills: killsDone, ...verdict }, null, 2));
   if (!verdict.pass) process.exit(1);

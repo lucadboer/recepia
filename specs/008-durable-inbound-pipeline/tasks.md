@@ -76,3 +76,8 @@
 > effects get a bounded grace period to settle before the message is retryable; the last failed
 > turn attempt is followed by a recovery pass before any dead letter; the abandoned-event cleanup
 > is a separate scheduled job.
+>
+> Ninth pass, fixed with tests: compensation ends the hold (fenced) before deleting its event — an
+> event is only deleted once its hold can no longer be confirmed, so a late or slow delete never
+> removes the event of a booking a retry confirmed; the chaos verdict requires at least 50 % of
+> the acknowledged requests to end in a booking.
