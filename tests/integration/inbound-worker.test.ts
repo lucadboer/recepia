@@ -119,36 +119,40 @@ describe("createInboundWorker", () => {
     await worker.drain(1_000);
   });
 
-  it("retries a failing turn later, and after the last attempt dead-letters it to reception", async () => {
+  it("retries a failing turn later; after the last attempt and a recovery pass it dead-letters to reception", async () => {
     const clock = new FakeClock(NOW);
-    let calls = 0;
+    const runs: Record<string, string[]> = {};
     const worker = createInboundWorker({
       pool,
       clock,
       receptionPhone: RECEPTION,
       pollMs: 5,
       maxAttempts: 3,
-      handler: async () => {
-        calls++;
+      handler: async (m, _lease, opts) => {
+        const r = runs[m.providerMessageId] ?? [];
+        runs[m.providerMessageId] = r;
+        r.push(opts?.recoverOnly ? "recover" : "turn");
         throw new TypeError("boom");
       },
     });
     await put("+5531900000814", "f1");
     await put("+5531900000814", "f2"); // must still be processed after f1 dies
     worker.start();
-    await until(async () => (await statusOf("f1")) === "pending" && calls === 1);
+    await until(async () => (await statusOf("f1")) === "pending" && runs.f1?.length === 1);
     clock.advance(10 * 60_000); // past any backoff
     worker.wake();
-    await until(async () => calls === 2);
+    await until(async () => runs.f1?.length === 2);
     clock.advance(10 * 60_000);
     worker.wake();
     await until(async () => (await statusOf("f1")) === "dead");
+    // Three turns, then one recovery pass (nothing to recover: it throws) before the dead letter.
+    expect(runs.f1).toEqual(["turn", "turn", "turn", "recover"]);
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(1);
     const esc = await pool.query("SELECT to_phone FROM outbox_message WHERE kind = 'escalation'");
     expect(esc.rows).toEqual([{ to_phone: RECEPTION }]);
-    await until(async () => (await statusOf("f2")) !== "pending" || calls >= 4);
+    await until(async () => (runs.f2?.length ?? 0) >= 1);
     await worker.drain(1_000);
-    expect(calls).toBeGreaterThanOrEqual(4); // f2 was attempted after f1 died
+    expect(runs.f2?.[0]).toBe("turn"); // f2 was attempted after f1 died
   });
 
   it("drain() waits for the turns in flight and stops claiming", async () => {
@@ -247,6 +251,7 @@ describe("createInboundWorker", () => {
       concurrency: 1,
       pollMs: 10,
       turnTimeoutMs: 100,
+      turnGraceMs: 50, // this one never settles at all
       handler: async (m, lease) => {
         seen.push(m.providerMessageId);
         if (m.providerMessageId === "stuck-1") {
@@ -323,6 +328,7 @@ describe("createInboundWorker", () => {
         concurrency: 1,
         pollMs: 10,
         turnTimeoutMs: 100,
+        turnGraceMs: 2_000,
         handler: async (_m, lease) => {
           // The fenced save holds the message row FOR SHARE, then waits on the conversation row.
           const loaded = await store.load(phone);
@@ -347,5 +353,55 @@ describe("createInboundWorker", () => {
       blocker.release();
       await tight.end();
     }
+  });
+
+  it("a timed-out turn's in-flight effects settle before another attempt may run the message", async () => {
+    await put("+5531900000826", "slow-1");
+    let statusWhenSettled: string | undefined;
+    const worker = createInboundWorker({
+      pool,
+      clock: new FakeClock(NOW),
+      receptionPhone: RECEPTION,
+      concurrency: 1,
+      pollMs: 10,
+      turnTimeoutMs: 100,
+      turnGraceMs: 2_000,
+      handler: async (m) => {
+        if (m.providerMessageId !== "slow-1") return;
+        // A compensating Calendar delete already under way: the abort cannot cancel it.
+        await new Promise((r) => setTimeout(r, 400));
+        statusWhenSettled = await statusOf("slow-1");
+        throw new Error("compensated");
+      },
+    });
+    worker.start();
+    await until(async () => statusWhenSettled !== undefined);
+    await until(async () => (await statusOf("slow-1")) === "pending");
+    await worker.drain(1_000);
+    // Not retryable while the stalled attempt was still acting on what a retry would reuse.
+    expect(statusWhenSettled).toBe("processing");
+  });
+
+  it("the last attempt's committed work is recovered instead of dead-lettered", async () => {
+    await put("+5531900000827", "last-1");
+    const modes: boolean[] = [];
+    const worker = createInboundWorker({
+      pool,
+      clock: new FakeClock(NOW),
+      receptionPhone: RECEPTION,
+      concurrency: 1,
+      pollMs: 10,
+      maxAttempts: 1,
+      handler: async (_m, _lease, opts) => {
+        modes.push(opts?.recoverOnly === true);
+        // The turn committed (say, an escalation), then failed before saving the conversation.
+        if (!opts?.recoverOnly) throw new Error("save failed after the commit");
+      },
+    });
+    worker.start();
+    await until(async () => (await statusOf("last-1")) === "done");
+    await worker.drain(1_000);
+    expect(modes).toEqual([false, true]); // one turn, then one recovery pass — no second turn
+    expect(await countAudit(pool, "inbound_dead_letter")).toBe(0);
   });
 });

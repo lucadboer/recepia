@@ -32,8 +32,10 @@ one process.
   the event if the hold ends unconfirmed.
 - **Flood guard under a per-phone lock**: the count of a phone's unfinished rows and the insert run
   under `pg_advisory_xact_lock`, so concurrent deliveries cannot pass the limit together.
-- **Bounded turns**: a turn still running after 4 min fails its attempt (its lease token becomes
-  void, so anything it still tries to write is fenced) and frees its slot; a claim whose earlier
+- **Bounded turns**: every Google Calendar request times out (15 s). A turn still running after
+  4 min is aborted; effects it already started (a compensating calendar delete) get a bounded grace
+  period to settle, then the attempt fails (its lease token becomes void, so anything it still
+  tries to write is fenced) and the slot is freed; a claim whose earlier
   attempts never finished (crashes) counts them, so the attempt limit holds across crashes too —
   such a claim only recovers what the last attempt committed (`recoverOnly`) and otherwise goes to
   reception. A replay whose calendar cleanup neither succeeds nor gets recorded fails, so the
@@ -41,9 +43,11 @@ one process.
   Postgres `lock_timeout` (10 s): a timed-out turn stuck on a lock inside a fenced transaction
   fails and rolls back, releasing the message row so its attempt can be finished and reclaimed.
   Every direct patient reply is fenced on the lease as well.
-- **Retries** with jittered backoff (2 s … 10 min); the 5th failure marks the row dead, audits it
-  and hands the patient to reception — notice and handed-off conversation state — in one
-  transaction.
+- **Retries** with jittered backoff (2 s … 10 min); the 5th failed turn is followed by one recovery
+  pass (no new turn: it only finishes what that attempt committed), and only a failed recovery
+  marks the row dead, audits it and hands the patient to reception — notice and handed-off
+  conversation state — in one transaction. The abandoned-event cleanup runs as its own job, apart
+  from the hold sweep.
 - **Replay guard** (found by the chaos test): every final write's audit row carries the
   `inbound_message` id (unique across providers, unlike the provider's message id); a reclaimed
   message whose turn already committed a final write is finished without running the model again:

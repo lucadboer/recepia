@@ -12,6 +12,7 @@ import {
   INBOUND_LEASE_MS,
   INBOUND_MAX_ATTEMPTS,
   INBOUND_POLL_MS,
+  INBOUND_TURN_GRACE_MS,
   INBOUND_TURN_TIMEOUT_MS,
 } from "../config";
 import type { Pool } from "../db/pool";
@@ -54,6 +55,8 @@ export interface InboundWorkerOptions {
   pollMs?: number;
   /** A turn still running after this long is a failed attempt (see INBOUND_TURN_TIMEOUT_MS). */
   turnTimeoutMs?: number;
+  /** How long a timed-out turn may still settle before its message may run again. */
+  turnGraceMs?: number;
   workerId?: string;
 }
 
@@ -71,6 +74,25 @@ export class InboundTurnTimeoutError extends Error {
   constructor(ms: number) {
     super(`The turn did not finish within ${ms} ms.`);
     this.name = "InboundTurnTimeoutError";
+  }
+}
+
+/** True when `p` settles (either way) within `ms`. */
+async function settlesWithin(p: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([
+      p.then(
+        () => true as const,
+        () => true as const,
+      ),
+      late,
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -101,6 +123,7 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
   const maxAttempts = opts.maxAttempts ?? INBOUND_MAX_ATTEMPTS;
   const pollMs = opts.pollMs ?? INBOUND_POLL_MS;
   const turnTimeoutMs = opts.turnTimeoutMs ?? INBOUND_TURN_TIMEOUT_MS;
+  const turnGraceMs = opts.turnGraceMs ?? INBOUND_TURN_GRACE_MS;
   const workerId = opts.workerId ?? `${hostname()}:${process.pid}`; // + a uuid per claim
 
   let stopping = false;
@@ -143,7 +166,10 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
     }
     const type = errorTypeOf(err);
     const ref = messageRef(row.providerMessageId);
-    if (row.attempts >= maxAttempts) {
+    // The last turn attempt failed: one recovery pass follows (recoverOnly, no new turn) so work
+    // that attempt committed is finished instead of reported as a failure (review); only a
+    // failed recovery pass goes to reception.
+    if (row.attempts > maxAttempts) {
       if (!(await markDead(opts.pool, row.id, row.lease, now, type, opts.receptionPhone))) {
         leaseLost(row);
         return;
@@ -154,7 +180,9 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       );
       return;
     }
-    const nextAt = new Date(now.getTime() + inboundBackoff(row.attempts));
+    const nextAt = new Date(
+      now.getTime() + (row.attempts >= maxAttempts ? 0 : inboundBackoff(row.attempts)),
+    );
     if (!(await markRetry(opts.pool, row.id, row.lease, nextAt, type))) {
       leaseLost(row);
       return;
@@ -235,8 +263,9 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
       clearTimeout(bound);
     }
     if (timedOut) {
-      // Tell the stalled turn to stop, then fail this attempt with the claim's token: from then on
-      // the token is void, so anything the turn still tries to write is fenced.
+      // Tell the stalled turn to stop; its writes are fenced from here on. Effects it already
+      // started (a compensating calendar delete, say) cannot be cancelled, so they settle first
+      // — bounded — before the attempt fails and another may reuse what they touch (review).
       lease.lose();
       log.warn(
         {
@@ -246,6 +275,12 @@ export function createInboundWorker(opts: InboundWorkerOptions): InboundWorker {
         },
         "inbound turn exceeded its time bound",
       );
+      if (!(await settlesWithin(turn, turnGraceMs))) {
+        log.error(
+          { event: "inbound.turn_stuck", messageRef: messageRef(row.providerMessageId) },
+          "a timed-out inbound turn did not settle within its grace period",
+        );
+      }
       await finish(row, failure);
       return;
     }

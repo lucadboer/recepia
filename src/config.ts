@@ -14,6 +14,11 @@ export const HORIZON_DAYS = 30; // book at most 30 days ahead
 // confirm_booking calendar-write retry policy (short backoff).
 export const CALENDAR_MAX_ATTEMPTS = 3;
 export const CALENDAR_RETRY_BASE_MS = 25;
+/**
+ * Every Google Calendar request gives up after this long (008 review): a call that never returns
+ * must not stall a turn, its compensation or the hold sweep.
+ */
+export const CALENDAR_REQUEST_TIMEOUT_MS = 15_000;
 
 // Safety cap on the LLM tool-use loop (final, T225): one booking needs 3 tool calls; 8 leaves
 // room for one alternative slot plus recovery. The cost bound is DEFAULT_AGENT_BUDGET_USD below.
@@ -46,6 +51,12 @@ export const INBOUND_POLL_MS = 1_000;
  * returns must not hold a slot and renew its lease forever). Well above a normal turn's seconds.
  */
 export const INBOUND_TURN_TIMEOUT_MS = 4 * 60 * 1000;
+/**
+ * After that bound, how long the worker lets the aborted turn settle before the message may run
+ * again: effects already under way (a compensating calendar delete, bounded by
+ * CALENDAR_REQUEST_TIMEOUT_MS per try) finish first, so a retry never races them.
+ */
+export const INBOUND_TURN_GRACE_MS = 2 * 60 * 1000;
 /** Unfinished messages per phone beyond which new ones are stored as dropped (flood guard). */
 export const INBOUND_PHONE_MAX_PENDING = 20;
 /** Retry delays per failed attempt; each is jittered ±20 % (inboundBackoff). */
