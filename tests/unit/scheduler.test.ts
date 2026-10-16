@@ -98,3 +98,17 @@ describe("startJobs — reminder jobs (007)", () => {
     }
   });
 });
+
+describe("startJobs — hold sweep and abandoned events (008 review)", () => {
+  it("runs the abandoned-event cleanup as its own job, so a stalled Calendar call never blocks hold expiry", async () => {
+    const { startJobs, stopJobs } = await import("../../src/jobs/scheduler");
+    const jobs = startJobs({} as never);
+    try {
+      expect(jobs.map((j) => j.name)).toEqual(
+        expect.arrayContaining(["hold-sweep", "abandoned-events"]),
+      );
+    } finally {
+      stopJobs(jobs);
+    }
+  });
+});

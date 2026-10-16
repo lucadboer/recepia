@@ -43,8 +43,11 @@ in the prompt.
   did not answer. On the official WhatsApp channel the reminder is an approved template.
 - Records LGPD opt-in before any booking is committed; opt-out stops proactive messages
   (including ones already queued) and blocks confirmations.
-- Survives the ugly parts: concurrent messages from the same patient, provider outages during a
-  confirmation, redelivered webhooks, `SIGTERM` mid-turn.
+- Survives the ugly parts: every patient message is stored before the webhook answers, so a crash
+  or a restart never loses an acknowledged message; each patient's messages run in order, one at a
+  time, across workers; a message that keeps failing goes to reception; a reclaimed message whose
+  turn already committed is never run twice (proven by a `kill -9` chaos test); provider outages
+  during a confirmation, redelivered webhooks, `SIGTERM` mid-turn.
 
 What it does **not** do (yet): measure a no-show rate (needs reception to mark who did not come),
 choose a dentist, handle voice, serve more than one clinic. See [Roadmap](#roadmap).
@@ -91,7 +94,8 @@ queue, graceful shutdown) · `src/cli` (operator commands).
 | Exactly one calendar event per booking; orphans compensated | idempotent `createEvent` keyed by booking id, retry, compensation + escalation | `confirm-booking.test.ts`, `confirm-booking-orphan.test.ts` |
 | Every write leaves an audit row; the log cannot be rewritten | audit row in the same transaction; `UPDATE`/`DELETE`/`TRUNCATE` blocked by triggers | `audit-append-only.test.ts` and every tool test |
 | Messages are committed with the write they announce and delivered at-least-once | transactional outbox, `FOR UPDATE SKIP LOCKED`, backoff, dead-letter + reception notice | `outbox.test.ts`, `confirm-booking.test.ts`, `escalate.test.ts` |
-| No lost update when a patient sends two messages at once | `conversation_state.version` compare-and-swap + per-phone in-process queue | `orchestrator-concurrency.test.ts`, `conversation-repo.test.ts`, `webhook-server.test.ts` |
+| No lost update when a patient sends two messages at once | `conversation_state.version` compare-and-swap + one turn in flight per phone from the durable queue's claim | `orchestrator-concurrency.test.ts`, `conversation-repo.test.ts`, `inbound-repo.test.ts` |
+| An acknowledged message is never lost; each patient's messages run in order, one at a time; a message is never run twice | store-then-ack `inbound_message` (unique provider id), FIFO-per-phone claim with a lease and heartbeat, jittered retries, dead letter to reception, replay guard on the inbound message id stamped in the audit log | `inbound-repo.test.ts`, `inbound-worker.test.ts`, `inbound-load.test.ts` (4 workers × 200 messages), `orchestrator-replay.test.ts`, `scripts/inbound-chaos.ts` (kill -9 × 3, CI) |
 | A cancel or a move acts only on the patient's own booking, shown in this conversation, after the patient replied | `find_my_booking` uses the conversation's phone; gates `not_surfaced` and `confirmation_required` (turn clock); tools re-check the owner | `tool-registry-lifecycle.test.ts`, `orchestrator-lifecycle.test.ts`, eval cases `inj-11`…`inj-13` |
 | A move never leaves two appointments or none; at most one move of a booking wins | new booking row from a hold + old row cancelled in one transaction; `UNIQUE (rescheduled_from)`; calendar event created first and compensated on failure | `reschedule-booking.test.ts`, `tests/concurrency/booking-lifecycle.concurrency.test.ts` |
 | A cancelled time is bookable at once; the calendar never overrides Postgres | cancel is database-first; an event that cannot be deleted becomes a reception notice | `cancel-booking.test.ts` |
@@ -300,9 +304,9 @@ Every slice starts as a spec and ends as tasks, with Claude Code as the implemen
 4. ~~**Reschedule and cancel** (006)~~ — `find_my_booking`, `cancel_booking`,
    `reschedule_booking` behind two new structural gates; atomic swap; late-change notice
 5. ~~**Appointment reminders** (007)~~ — a reminder 24 h before, "SIM" confirms attendance with no
-   model call, "remarcar" uses 006, no reply notifies reception, WhatsApp templates (this)
-6. **Reliability at the edge** (008) — durable Postgres-backed inbound queue with idempotency keys,
-   retries and a dead-letter table; rate limits; a crash-and-restart load test.
+   model call, "remarcar" uses 006, no reply notifies reception, WhatsApp templates
+6. ~~**Reliability at the edge** (008)~~ — store-then-ack inbound queue, FIFO per phone with a
+   lease, retries and dead letter, flood guard, replay guard, a `kill -9` chaos test (this)
 7. **Container** — optimized Dockerfile, image pipeline and Trivy scans. Later, with a real clinic:
    a pilot, multi-tenancy with row-level security.
 

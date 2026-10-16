@@ -1,6 +1,6 @@
 import type { ConversationState } from "../../agent/types";
 import { ConversationConflictError } from "../../domain/errors";
-import type { ConversationStorePort } from "../../ports/conversation-store-port";
+import type { ConversationStorePort, SaveOptions } from "../../ports/conversation-store-port";
 
 /**
  * In-memory ConversationStorePort for tests/dev. Stores copies to avoid aliasing and
@@ -15,7 +15,8 @@ export class FakeConversationStore implements ConversationStorePort {
     return s ? structuredClone(s) : null;
   }
 
-  async save(state: ConversationState): Promise<ConversationState> {
+  async save(state: ConversationState, opts: SaveOptions = {}): Promise<ConversationState> {
+    await opts.fence?.();
     const currentVersion = this.map.get(state.phone)?.version ?? 0;
     if (state.version !== currentVersion) {
       throw new ConversationConflictError(state.phone, state.version);

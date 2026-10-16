@@ -14,6 +14,11 @@ export const HORIZON_DAYS = 30; // book at most 30 days ahead
 // confirm_booking calendar-write retry policy (short backoff).
 export const CALENDAR_MAX_ATTEMPTS = 3;
 export const CALENDAR_RETRY_BASE_MS = 25;
+/**
+ * Every Google Calendar request gives up after this long (008 review): a call that never returns
+ * must not stall a turn, its compensation or the hold sweep.
+ */
+export const CALENDAR_REQUEST_TIMEOUT_MS = 15_000;
 
 // Safety cap on the LLM tool-use loop (final, T225): one booking needs 3 tool calls; 8 leaves
 // room for one alternative slot plus recovery. The cost bound is DEFAULT_AGENT_BUDGET_USD below.
@@ -31,6 +36,31 @@ export const HISTORY_MAX_MESSAGES = 40;
 export const AVAILABILITY_MAX_SLOTS = 40;
 export const OFFERED_SLOTS_MAX = 3 * AVAILABILITY_MAX_SLOTS;
 export const ACTIVE_HOLDS_MAX = 10;
+/**
+ * Postgres `lock_timeout` on every connection (008 review): lock waits in this app last
+ * milliseconds; one that lasts this long is a stuck transaction and fails instead of blocking.
+ */
+export const DB_LOCK_TIMEOUT_MS = 10_000;
+/** Durable inbound pipeline (008). */
+export const INBOUND_CONCURRENCY = 4;
+export const INBOUND_LEASE_MS = 5 * 60 * 1000;
+export const INBOUND_MAX_ATTEMPTS = 5;
+export const INBOUND_POLL_MS = 1_000;
+/**
+ * Longest a turn may run before its attempt counts as failed (review: a provider call that never
+ * returns must not hold a slot and renew its lease forever). Well above a normal turn's seconds.
+ */
+export const INBOUND_TURN_TIMEOUT_MS = 4 * 60 * 1000;
+/**
+ * After that bound, how long the worker lets the aborted turn settle before the message may run
+ * again: effects already under way (a compensating calendar delete, bounded by
+ * CALENDAR_REQUEST_TIMEOUT_MS per try) finish first, so a retry never races them.
+ */
+export const INBOUND_TURN_GRACE_MS = 2 * 60 * 1000;
+/** Unfinished messages per phone beyond which new ones are stored as dropped (flood guard). */
+export const INBOUND_PHONE_MAX_PENDING = 20;
+/** Retry delays per failed attempt; each is jittered ±20 % (inboundBackoff). */
+export const INBOUND_BACKOFF_MS = [2_000, 10_000, 30_000, 120_000, 600_000] as const;
 /** Reminder jobs cadence (007): a reminder may leave up to this long after its 24 h mark. */
 export const REMINDERS_INTERVAL_MS = 15 * 60 * 1000;
 export const REMINDERS_FIRST_RUN_MS = 30 * 1000;

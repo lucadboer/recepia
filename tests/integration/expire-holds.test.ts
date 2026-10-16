@@ -4,8 +4,10 @@ import { FakeClock } from "../../src/adapters/fakes/fake-clock";
 import { FakeMessaging } from "../../src/adapters/fakes/fake-messaging";
 import { HOLD_TTL_MS } from "../../src/config";
 import type { Pool } from "../../src/db/pool";
+import { flagEventCleanup } from "../../src/db/repositories/booking-repo";
 import type { Deps } from "../../src/deps";
-import { expireHolds } from "../../src/jobs/expire-holds";
+import { expireHolds, removeAbandonedEvents } from "../../src/jobs/expire-holds";
+import { confirmBooking } from "../../src/tools/confirm-booking";
 import { holdSlot } from "../../src/tools/hold-slot";
 import {
   countActiveHolds,
@@ -116,5 +118,87 @@ describe("expireHolds — the scheduled sweep (T245)", () => {
       "SELECT entity_id FROM audit_log WHERE action = 'hold_expired'",
     );
     expect(audited.rows.map((r) => r.entity_id)).toEqual([victim.id]);
+  });
+});
+
+describe("removeAbandonedEvents — events left by a turn that lost its message (008 review)", () => {
+  it("removes the event of a flagged hold once it ended unconfirmed, and only then", async () => {
+    const clock = new FakeClock(NOW);
+    const d = makeDeps(clock);
+    const calendar = d.calendar as FakeCalendar;
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" });
+    await calendar.createEvent({
+      idempotencyKey: hold.id,
+      start: SLOT,
+      end: new Date(SLOT.getTime() + 30 * 60_000),
+      title: "Consulta de rotina (cleaning)",
+      patientName: "Ana",
+      patientPhone: "+55a",
+    });
+    await flagEventCleanup(pool, hold.id);
+
+    expect(await removeAbandonedEvents(d)).toBe(0); // still held: the new holder may confirm it
+    expect(calendar.events.has(hold.id)).toBe(true);
+
+    clock.advance(HOLD_TTL_MS + 1);
+    await expireHolds(d);
+    expect(await removeAbandonedEvents(d)).toBe(1);
+    expect(calendar.events.has(hold.id)).toBe(false);
+    expect(await removeAbandonedEvents(d)).toBe(0); // done once
+  });
+
+  it("never touches a flagged hold that was confirmed after all", async () => {
+    const clock = new FakeClock(NOW);
+    const d = makeDeps(clock);
+    const calendar = d.calendar as FakeCalendar;
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" });
+    await flagEventCleanup(pool, hold.id);
+    await confirmBooking(d, hold.id, { phone: "+55a", name: "Ana" });
+    clock.advance(HOLD_TTL_MS + 1);
+    await expireHolds(d);
+    expect(await removeAbandonedEvents(d)).toBe(0);
+    expect(calendar.events.has(hold.id)).toBe(true);
+    expect(await statusOf(hold.id)).toBe("confirmed");
+  });
+
+  it("an event that cannot be removed becomes a reception cleanup notice", async () => {
+    const clock = new FakeClock(NOW);
+    const d = makeDeps(clock);
+    (d.calendar as FakeCalendar).deleteFailAlways = true;
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" });
+    await flagEventCleanup(pool, hold.id);
+    clock.advance(HOLD_TTL_MS + 1);
+    await expireHolds(d);
+    expect(await removeAbandonedEvents(d)).toBe(1);
+    const notices = await pool.query(
+      "SELECT dedupe_key FROM outbox_message WHERE kind = 'reception_notice'",
+    );
+    expect(notices.rows).toEqual([{ dedupe_key: `calendar_cleanup:${hold.id}` }]);
+    expect(await removeAbandonedEvents(d)).toBe(0);
+  });
+
+  it("keeps the flag until the event is removed or the reception notice is stored", async () => {
+    const clock = new FakeClock(NOW);
+    const d = makeDeps(clock);
+    (d.calendar as FakeCalendar).deleteFailAlways = true;
+    const hold = await holdSlot(d, { start: SLOT, type: "cleaning" }, { phone: "+55a" });
+    await flagEventCleanup(pool, hold.id);
+    clock.advance(HOLD_TTL_MS + 1);
+    await expireHolds(d);
+
+    // The notice cannot be stored this time (a transient database failure on its insert).
+    const failing = interceptingPool(pool, {
+      reject: (sql) =>
+        sql.includes("INSERT INTO outbox_message") ? new Error("connection reset") : null,
+    });
+    expect(await removeAbandonedEvents({ ...d, pool: failing })).toBe(0);
+    const flagged = await pool.query("SELECT event_cleanup_pending FROM booking WHERE id = $1", [
+      hold.id,
+    ]);
+    expect(flagged.rows[0].event_cleanup_pending).toBe(true);
+
+    // The next sweep stores it and settles the hold.
+    expect(await removeAbandonedEvents(d)).toBe(1);
+    expect(await removeAbandonedEvents(d)).toBe(0);
   });
 });

@@ -80,6 +80,7 @@ describe("purgeInactive", () => {
     expect(audit[0].payload).toEqual({
       conversationStates: 2,
       outboxMessages: 3,
+      inboundMessages: 0,
       olderThanDays: 90,
       cutoff: daysAgo(90).toISOString(),
     });
@@ -134,5 +135,34 @@ describe("retention wiring", () => {
     expect(() => parseRetentionArgs(["--days", "0"])).toThrow(/--days/);
     expect(() => parseRetentionArgs(["--days"])).toThrow(/--days/);
     expect(() => parseRetentionArgs(["--force"])).toThrow(/unknown/);
+  });
+});
+
+describe("008 — finished inbound messages are purged after 90 days, open ones never", () => {
+  it("deletes old done/dead/dropped rows and keeps pending/processing and recent ones", async () => {
+    await resetDb(pool);
+    const old = daysAgo(91);
+    const insert = (id: string, status: string, created: Date) =>
+      pool.query(
+        `INSERT INTO inbound_message (provider, provider_message_id, phone, body, received_at, status, next_attempt_at, created_at, locked_until)
+         VALUES ('evolution', $1, '+5531900000890', NULL, $3, $2, $3, $3, CASE WHEN $2 = 'processing' THEN $3::timestamptz END)`,
+        [id, status, created],
+      );
+    await insert("old-done", "done", old);
+    await insert("old-dead", "dead", old);
+    await insert("old-dropped", "dropped", old);
+    await insert("old-pending", "pending", old);
+    await insert("old-processing", "processing", old);
+    await insert("new-done", "done", daysAgo(10));
+    const r = await purgeInactive(pool, NOW);
+    expect(r.inboundMessages).toBe(3);
+    const { rows } = await pool.query(
+      "SELECT provider_message_id FROM inbound_message ORDER BY id",
+    );
+    expect(rows.map((x) => x.provider_message_id)).toEqual([
+      "old-pending",
+      "old-processing",
+      "new-done",
+    ]);
   });
 });

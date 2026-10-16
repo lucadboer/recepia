@@ -11,7 +11,7 @@ import {
   propagation,
   ROOT_CONTEXT,
   type Span,
-  type SpanKind,
+  SpanKind,
   SpanStatusCode,
   trace,
 } from "@opentelemetry/api";
@@ -20,6 +20,8 @@ export const TRACER_NAME = "recepia";
 
 export const SPAN = {
   inbound: "webhook.inbound",
+  /** The worker's turn for one stored message, a child of the webhook span that stored it (008). */
+  inboundProcess: "inbound.process",
   turn: "agent.turn",
   chat: (model: string) => `chat ${model}`,
   tool: (name: string) => `execute_tool ${name}`,
@@ -58,6 +60,7 @@ export const ATTR = {
   outboxKind: "recepia.outbox.kind",
   outboxAttempt: "recepia.outbox.attempt",
   outboxResult: "recepia.outbox.result",
+  inboundAttempt: "recepia.inbound.attempt",
 } as const;
 
 export function tracer() {
@@ -177,4 +180,35 @@ export function linkFromTraceparent(traceparent: string | null | undefined): Lin
   const ctx = propagation.extract(ROOT_CONTEXT, { traceparent });
   const sc = trace.getSpanContext(ctx);
   return sc && isSpanContextValid(sc) ? { context: sc } : undefined;
+}
+
+/**
+ * Run `fn` in a span whose parent is the span behind a stored traceparent (008: the worker's turn
+ * continues the trace of the webhook request that stored the message, minutes later or after a
+ * restart). Without a valid traceparent the span is a root.
+ */
+export async function withRemoteParent<T>(
+  traceparent: string | null | undefined,
+  name: string,
+  attributes: MaybeAttributes,
+  fn: (span: Span) => Promise<T>,
+): Promise<T> {
+  const extracted = traceparent ? propagation.extract(ROOT_CONTEXT, { traceparent }) : ROOT_CONTEXT;
+  const sc = trace.getSpanContext(extracted);
+  const parent = sc && isSpanContextValid(sc) ? extracted : ROOT_CONTEXT;
+  return tracer().startActiveSpan(
+    name,
+    { kind: SpanKind.CONSUMER, attributes: defined(attributes) },
+    parent,
+    async (span) => {
+      try {
+        return await fn(span);
+      } catch (err) {
+        recordError(span, err);
+        throw err;
+      } finally {
+        span.end();
+      }
+    },
+  );
 }

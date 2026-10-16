@@ -5,13 +5,18 @@ import {
   DEFAULT_AGENT_BUDGET_USD,
   isRoutineType,
 } from "../config";
-import { hasLiveHold } from "../db/repositories/booking-repo";
+import { type CommittedWrite, committedTurnWrites } from "../db/repositories/audit-repo";
+import { getById, hasLiveHold } from "../db/repositories/booking-repo";
 import { pendingRemindersForPhone } from "../db/repositories/reminder-repo";
 import type { Deps } from "../deps";
-import { ConversationConflictError } from "../domain/errors";
+import {
+  AttemptsExhaustedError,
+  CleanupPendingError,
+  ConversationConflictError,
+} from "../domain/errors";
 import { dispatchOutbox } from "../jobs/dispatch-outbox";
 import { costUsdFailClosed, loadPricing, type PricingTable } from "../llm/pricing";
-import type { ConversationStorePort } from "../ports/conversation-store-port";
+import type { ConversationStorePort, SaveOptions } from "../ports/conversation-store-port";
 import type { LLMPort, LlmContent, LlmTurnInput, LlmTurnResult } from "../ports/llm-port";
 import { log } from "../telemetry/logger";
 import { maskPhone, messageRef, patientRef } from "../telemetry/pseudonym";
@@ -23,6 +28,7 @@ import {
   setAttributes,
   withSpan,
 } from "../telemetry/tracing";
+import { removeEventOrNotify } from "../tools/booking-calendar";
 import { confirmAttendance } from "../tools/confirm-attendance";
 import { escalateToHuman } from "../tools/escalate-to-human";
 import { hasConsent, recordConsent, recordOptOut } from "./consent";
@@ -30,6 +36,7 @@ import {
   addUsage,
   appendMessage,
   appendUserText,
+  applyCommittedTurn,
   boundState,
   emptyState,
   isAutoReleaseDue,
@@ -53,7 +60,7 @@ import { buildSystemPrompt, reminderContextLine } from "./system-prompt";
 import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas";
 import { triage } from "./triage";
-import type { ConversationState, InboundMessage, LoopResult } from "./types";
+import type { ConversationState, InboundMessage, LoopResult, TurnOptions } from "./types";
 
 /** Dependencies for the conversational layer: the deterministic Deps + the LLM and conversation store. */
 export interface AgentDeps extends Deps {
@@ -143,13 +150,17 @@ interface TurnObservation {
  * this function adds idempotency, opt-out/opt-in, the deterministic triage backstop,
  * the consent gate before confirm, and the bounded loop.
  */
-export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promise<LoopResult> {
+export async function handleInbound(
+  deps: AgentDeps,
+  msg: InboundMessage,
+  opts: TurnOptions = {},
+): Promise<LoopResult> {
   return withSpan(
     SPAN.turn,
     { [ATTR.messageRef]: messageRef(msg.providerMessageId) },
     async (span) => {
       const seen: TurnObservation = {};
-      const result = await runTurn(deps, msg, seen);
+      const result = await runTurn(deps, msg, seen, opts);
       setAttributes(span, {
         [ATTR.turnStatus]: result.status,
         [ATTR.conversationStatus]: seen.conversationStatus,
@@ -172,10 +183,31 @@ export async function handleInbound(deps: AgentDeps, msg: InboundMessage): Promi
   );
 }
 
+/**
+ * A cancel or a reschedule removes the cancelled booking's calendar event after its commit; a turn
+ * that died in between left the event behind (008 review). The replay finishes that removal —
+ * idempotent, and a delete that keeps failing still becomes a reception notice. When neither
+ * happens the message must not finish: CleanupPendingError, so it is retried.
+ */
+async function finishCalendarCleanup(
+  deps: AgentDeps,
+  committed: CommittedWrite[],
+  phone: string,
+  now: Date,
+): Promise<void> {
+  for (const w of committed) {
+    if (w.action !== "booking_cancelled" || !w.entityId) continue;
+    const cancelled = await getById(deps.pool, w.entityId);
+    if (cancelled?.status !== "cancelled") continue;
+    if (!(await removeEventOrNotify(deps, cancelled, phone, now))) throw new CleanupPendingError();
+  }
+}
+
 async function runTurn(
   deps: AgentDeps,
   msg: InboundMessage,
   seen: TurnObservation,
+  opts: TurnOptions,
 ): Promise<LoopResult> {
   const now = deps.clock.now();
   // Bound the state on the way in (stale offered slots, oversized history) and on the
@@ -199,8 +231,12 @@ async function runTurn(
   // ConversationConflictError and the turn fails loudly (no retry, no patient message).
   // Provider reasoning blocks are replayed only within this turn and never persisted (004 R1):
   // the history is edited between inbound turns, which would invalidate their signatures.
+  // A turn that lost its message to another worker saves nothing (008 fencing): the store checks
+  // the lease inside the save's own transaction.
+  const lease = deps.lease;
+  const saveOpts: SaveOptions = lease ? { fence: (tx) => lease.fence(tx) } : {};
   const persist = async (s: ConversationState): Promise<ConversationState> => {
-    const saved = await deps.conversations.save(stripThinking(boundState(s, now)));
+    const saved = await deps.conversations.save(stripThinking(boundState(s, now)), saveOpts);
     seen.conversationStatus = saved.status;
     seen.conversationCostUsd = saved.usage.costUsd;
     return saved;
@@ -216,9 +252,40 @@ async function runTurn(
     });
   };
 
+  // A reply is an effect of this turn: only the message's owner sends it (008 review — the save's
+  // fence does not cover what happens after later awaits, such as the outbox flush).
+  const sendReply = async (text: string): Promise<void> => {
+    await deps.lease?.fence();
+    await deps.messaging.sendMessage(msg.phone, text);
+  };
+
   const loaded = state; // before this message touches it (see recordSpendOnFailure)
   // 1. Idempotency.
   if (isProcessed(state, msg.providerMessageId)) return { status: "noop" };
+  // Every write of this turn carries the message that caused it (008 replay guard): the durable
+  // queue's id, unique across providers (the provider id outside the queue).
+  const turnKey = msg.inboundMessageId ?? msg.providerMessageId;
+  const msgDeps: AgentDeps = { ...deps, inboundMessageId: turnKey };
+  // 1b. Replay guard (found by the chaos test): the durable queue re-runs a message whose worker
+  //     died after the turn's tools committed but before this state was saved. If that turn
+  //     already produced a final write, running it again would duplicate it (a second booking, a
+  //     second hand-off): finish the message instead — the outbox still delivers what it committed
+  //     — and leave the conversation as that turn would have saved it (a hand-off stays handed off).
+  const committed = await committedTurnWrites(deps.pool, turnKey);
+  if (committed.length > 0) {
+    await finishCalendarCleanup(deps, committed, msg.phone, now);
+    state = applyCommittedTurn(markProcessed(state, msg.providerMessageId, now), committed, now);
+    state = await persist(state);
+    await flushOutbox();
+    if (state.status !== "escalated") return { status: "noop" };
+    // The hand-off reply goes out after the save the crash prevented, so the patient has not had
+    // it — unless a message that turn committed (a confirmation) owns the reply (T227).
+    if (committed.some((w) => w.action !== "escalated")) return { status: "escalated" };
+    await sendReply(reply.escalatedToReception());
+    return { status: "escalated", reply: reply.escalatedToReception() };
+  }
+  // Out of attempts and nothing to recover: the turn may not run again (it goes to reception).
+  if (opts.recoverOnly) throw new AttemptsExhaustedError();
   state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
   state = appendUserText(state, msg.text, now);
 
@@ -227,7 +294,7 @@ async function runTurn(
     await recordOptOut(deps, msg.phone);
     state = setAwaitingConsent(state, false, now);
     state = await persist(state);
-    await deps.messaging.sendMessage(msg.phone, reply.optedOut());
+    await sendReply(reply.optedOut());
     return { status: "replied", reply: reply.optedOut() };
   }
 
@@ -238,7 +305,7 @@ async function runTurn(
     if (shouldSendHandoffNotice(state, now)) {
       state = markHandoffNoticed(state, now);
       state = await persist(state);
-      await deps.messaging.sendMessage(msg.phone, reply.handedOff());
+      await sendReply(reply.handedOff());
       return { status: "handed_off", reply: reply.handedOff() };
     }
     state = await persist(state); // records the processed id; stays silent
@@ -269,7 +336,7 @@ async function runTurn(
     isStrictAffirmative(msg.text) &&
     !(await hasLiveHold(deps.pool, state.activeHoldIds, now))
   ) {
-    await confirmAttendance(deps, pendingReminders[0].id, msg.phone, "fast_path");
+    await confirmAttendance(msgDeps, pendingReminders[0].id, msg.phone, "fast_path");
     state = markCompleted(state, now);
     state = await persist(state);
     await flushOutbox(); // the attendance reply committed with the change is the only message
@@ -282,7 +349,7 @@ async function runTurn(
   // 3. Deterministic escalation triage — BEFORE the LLM ("escalar na dúvida").
   const triaged = triage(msg.text);
   if (triaged.escalate) {
-    await escalateToHuman(deps, {
+    await escalateToHuman(msgDeps, {
       reason: triaged.reason ?? "triage",
       phone: msg.phone,
       context: msg.text,
@@ -291,7 +358,7 @@ async function runTurn(
     state = markEscalated(state, now);
     state = await persist(state);
     await flushOutbox();
-    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    await sendReply(reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   }
 
@@ -303,7 +370,7 @@ async function runTurn(
     context: reminderContextLine(pendingReminders),
   });
   // Every write the model initiates from here on is audited with this prompt version.
-  const turnDeps: AgentDeps = { ...deps, promptVersion: prompt.version };
+  const turnDeps: AgentDeps = { ...msgDeps, promptVersion: prompt.version };
   state = setPromptVersion(state, prompt.version, now);
   seen.promptVersion = prompt.version;
   // One `chat` span per model call with the GenAI attributes (FR-502); never content.
@@ -354,7 +421,7 @@ async function runTurn(
     state = markEscalated(state, now);
     state = await persist(state);
     await flushOutbox();
-    await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+    await sendReply(reply.escalatedToReception());
     return { status: "escalated", reply: reply.escalatedToReception() };
   };
   /**
@@ -366,7 +433,7 @@ async function runTurn(
   const recordSpendOnFailure = async (err: unknown): Promise<never> => {
     if (state.usage.calls > loaded.usage.calls && !(err instanceof ConversationConflictError)) {
       await deps.conversations
-        .save(boundState({ ...loaded, usage: state.usage, updatedAt: now }, now))
+        .save(boundState({ ...loaded, usage: state.usage, updatedAt: now }, now), saveOpts)
         .catch(() => {});
     }
     throw err;
@@ -405,6 +472,8 @@ async function runTurn(
       );
     }
     iterations++;
+    // Still this worker's message? A turn that lost it stops before paying for another call (008).
+    await deps.lease?.fence();
     const turn = await callModel({
       system: prompt.text,
       systemCacheablePrefix: prompt.cacheablePrefixLength,
@@ -450,6 +519,9 @@ async function runTurn(
           rejectedBy: "after_handoff",
         };
       }
+      // A turn that lost its message to another worker runs no tool (008): this check spares the
+      // external effects (calendar), the write transactions re-check under a row lock.
+      await deps.lease?.fence();
       // Consent gate: block confirm until opt-in is recorded (confirm_booking stamps
       // consent_at unconditionally, so this is the enforcement point).
       // A reschedule writes a new booking with the patient's data, so it needs consent too (006
@@ -522,7 +594,7 @@ async function runTurn(
       state = await persist(state);
       await flushOutbox();
       if (confirmationEnqueued) return { status: "escalated" }; // the confirmation owns the reply
-      await deps.messaging.sendMessage(msg.phone, reply.escalatedToReception());
+      await sendReply(reply.escalatedToReception());
       return { status: "escalated", reply: reply.escalatedToReception() };
     }
   }
@@ -542,7 +614,7 @@ async function runTurn(
     await flushOutbox();
     // Don't tell the patient "couldn't complete" if a confirmation already went out (T227).
     if (!confirmationDelivered) {
-      await deps.messaging.sendMessage(msg.phone, reply.couldNotComplete());
+      await sendReply(reply.couldNotComplete());
     }
     return { status: "max_iterations", reply: reply.couldNotComplete() };
   }
@@ -555,6 +627,6 @@ async function runTurn(
   // Suppress the closing send only when a confirmation was actually delivered: a
   // successful booking yields exactly one patient message (not two), and a re-confirm
   // that sent nothing still gets a reply (not zero) — T227.
-  if (!confirmationDelivered) await deps.messaging.sendMessage(msg.phone, replyText);
+  if (!confirmationDelivered) await sendReply(replyText);
   return { status: state.status === "escalated" ? "escalated" : "replied", reply: replyText };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseAndAccept, RecentIds, safeEqual } from "../../src/webhook/dispatch";
+import { parseAndAccept, safeEqual } from "../../src/webhook/dispatch";
 
 const SECRET = "shared-secret-123"; // length 17
 
@@ -18,7 +18,6 @@ function base(over: Partial<Parameters<typeof parseAndAccept>[0]> = {}) {
     authHeader: SECRET,
     pathToken: SECRET,
     secret: SECRET,
-    seen: new RecentIds(),
     ...over,
   };
 }
@@ -72,20 +71,9 @@ describe("parseAndAccept", () => {
     expect(r.msg).toBeUndefined();
   });
 
-  it("skips an id already recorded in `seen` (200, no msg) but does NOT record ids itself [T230]", () => {
-    const seen = new RecentIds();
-    const first = parseAndAccept(base({ seen }));
-    expect(first.msg).toBeDefined();
-    // Recording is the server's job, AFTER onInbound succeeded — so a failed turn can be
-    // re-processed on redelivery. The pure parser only consults the set.
-    expect(seen.has("M1")).toBe(false);
-    const again = parseAndAccept(base({ seen }));
-    expect(again.msg).toBeDefined();
-
-    seen.add("M1");
-    const skipped = parseAndAccept(base({ seen }));
-    expect(skipped.status).toBe(200);
-    expect(skipped.msg).toBeUndefined();
+  it("returns the message on every valid delivery — redeliveries are deduped by the durable store (008)", () => {
+    expect(parseAndAccept(base()).msg?.providerMessageId).toBe("M1");
+    expect(parseAndAccept(base()).msg?.providerMessageId).toBe("M1");
   });
 
   it("rejects when the path token matches but the header is WRONG -> 401", () => {
@@ -111,28 +99,5 @@ describe("parseAndAccept", () => {
       base({ authHeader: "wrong", pathToken: "wrong", rawBody: "{not json" }),
     );
     expect(r.status).toBe(401);
-  });
-});
-
-describe("RecentIds (bounded FIFO edge dedupe)", () => {
-  it("evicts the oldest id once `max` is exceeded", () => {
-    const seen = new RecentIds(2);
-    seen.add("A");
-    seen.add("B");
-    seen.add("C"); // exceeds max=2 -> A evicted
-    expect(seen.has("A")).toBe(false);
-    expect(seen.has("B")).toBe(true);
-    expect(seen.has("C")).toBe(true);
-  });
-
-  it("a duplicate add does not refresh FIFO ordering", () => {
-    const seen = new RecentIds(2);
-    seen.add("A");
-    seen.add("B");
-    seen.add("B"); // duplicate — must NOT move B to the back nor evict A
-    seen.add("C"); // still evicts the genuine oldest (A)
-    expect(seen.has("A")).toBe(false);
-    expect(seen.has("B")).toBe(true);
-    expect(seen.has("C")).toBe(true);
   });
 });

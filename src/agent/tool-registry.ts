@@ -7,7 +7,7 @@
 
 import { AVAILABILITY_MAX_SLOTS } from "../config";
 import type { Deps } from "../deps";
-import { hasEscalatedFlag } from "../domain/errors";
+import { hasEscalatedFlag, LeaseLostError } from "../domain/errors";
 import { slotLabelPt, toLocalIso } from "../domain/time";
 import { errorTypeOf } from "../telemetry/tracing";
 import { cancelBooking } from "../tools/cancel-booking";
@@ -376,6 +376,8 @@ export async function dispatchTool(
         });
     }
   } catch (e) {
+    // The turn lost its message to another worker (008): it ends here, nothing for the model.
+    if (e instanceof LeaseLostError) throw e;
     // A tool may have escalated internally BEFORE failing (confirm_booking on persistent
     // calendar failure / orphan compensation). Surface it so the orchestrator hands the
     // conversation off instead of letting the model carry on — reception is not notified twice.

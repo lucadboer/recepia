@@ -1,12 +1,17 @@
 import { SHUTDOWN_TIMEOUT_MS } from "../config";
 import { type JobHandle, stopJobs } from "../jobs/scheduler";
 import { log as defaultLog } from "../telemetry/logger";
-import type { PerKeyQueue } from "./per-key-queue";
+
+/** Anything that can wait (bounded) for the work it already started — the inbound worker (008). */
+export interface Drainable {
+  drain(timeoutMs: number): Promise<boolean>;
+}
 
 export interface ShutdownOptions {
   server: { close(cb?: (err?: Error) => void): unknown };
   jobs: JobHandle[];
-  queue: PerKeyQueue;
+  /** The inbound worker: stops claiming and waits for the turns in flight. */
+  queue: Drainable;
   /** Release shared resources (pool, adapters) — called exactly once, last. */
   close: () => Promise<void>;
   /** Budget to drain in-flight turns. Default: SHUTDOWN_TIMEOUT_MS. */
@@ -38,7 +43,8 @@ export function createShutdown(opts: ShutdownOptions): () => Promise<boolean> {
       closed.then(() => true),
       sleep(remaining()).then(() => false),
     ]);
-    // 2. Only now drain the per-phone queue — nothing new can be enqueued anymore.
+    // 2. Only now drain the inbound worker — nothing new can be stored anymore; messages still
+    //    queued stay in the database for the next start (008).
     const drained = await opts.queue.drain(remaining());
     // 3. Release shared resources last — bounded too: pool.end() waits for checked-out
     //    clients, and a stalled DB operation would otherwise hold the process forever.

@@ -261,9 +261,10 @@ describe("confirm_booking — orphan-event compensation", () => {
 
     await expect(confirmBooking(deps, hold.id, PATIENT)).rejects.toBe(sentinel);
 
-    // Rolled back: still held, no event id, no confirmation enqueued, nothing sent to the patient.
+    // Rolled back: no event id, no confirmation enqueued, nothing sent to the patient — and the hold
+    // was ended before its event was deleted, so it can never be confirmed with it (008 review).
     const booking = await getById(pool, hold.id);
-    expect(booking?.status).toBe("held");
+    expect(booking?.status).toBe("expired");
     expect(booking?.googleEventId).toBeNull();
     expect(await countOutbox("booking_confirmation")).toBe(0);
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);

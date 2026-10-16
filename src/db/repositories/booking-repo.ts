@@ -203,6 +203,30 @@ export async function findRescheduleOf(q: Queryable, id: string): Promise<Bookin
   return rows[0] ? rowToBooking(rows[0]) : null;
 }
 
+/**
+ * Flag a hold whose calendar event a turn that lost its inbound message left behind (008 review):
+ * the hold sweep removes that event if the hold ends unconfirmed; a confirmed booking keeps it.
+ */
+export async function flagEventCleanup(q: Queryable, id: string): Promise<void> {
+  await q.query(
+    "UPDATE booking SET event_cleanup_pending = true WHERE id = $1 AND status IN ('held', 'expired')",
+    [id],
+  );
+}
+
+/** Holds that ended unconfirmed with a flagged calendar event, oldest first. */
+export async function abandonedEventHolds(q: Queryable, limit = 50): Promise<Booking[]> {
+  const { rows } = await q.query(
+    "SELECT * FROM booking WHERE event_cleanup_pending AND status = 'expired' ORDER BY updated_at LIMIT $1",
+    [limit],
+  );
+  return rows.map((r) => rowToBooking(r as BookingRow));
+}
+
+export async function clearEventCleanup(q: Queryable, id: string): Promise<void> {
+  await q.query("UPDATE booking SET event_cleanup_pending = false WHERE id = $1", [id]);
+}
+
 /** Release a still-held booking (frees the seat). Used on unrecoverable calendar failure. */
 export async function releaseHeld(q: Queryable, id: string): Promise<void> {
   await q.query(

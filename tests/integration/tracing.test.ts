@@ -1,5 +1,3 @@
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { SpanKind } from "@opentelemetry/api";
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-node";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -13,9 +11,9 @@ import { messageRef } from "../../src/telemetry/pseudonym";
 import { withSpan } from "../../src/telemetry/tracing";
 import { confirmBooking } from "../../src/tools/confirm-booking";
 import { holdSlot } from "../../src/tools/hold-slot";
-import { createWebhookServer } from "../../src/webhook/server";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
 import { ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { startPipeline, waitProcessed } from "../helpers/pipeline";
 import { startTestTelemetry, type TestTelemetry, telemetryStrings } from "../helpers/telemetry";
 
 // T511 — one trace per patient message with the full step tree, linked delivery, guardrail
@@ -77,23 +75,24 @@ function bookingLlm(): FakeLLM {
 }
 
 describe("tracing — booking through the webhook", () => {
-  let server: Server | null = null;
-  afterAll(() => server?.close());
+  let pipeline: Awaited<ReturnType<typeof startPipeline>> | null = null;
+  afterAll(async () => {
+    await pipeline?.stop();
+  });
 
-  it("produces one trace per message: inbound → turn → chat/tool steps → linked delivery, no PII", async () => {
+  it("produces one trace per message: inbound → stored → worker turn → chat/tool steps → linked delivery, no PII", async () => {
     const h = makeAgent(pool, bookingLlm());
     await recordConsent(h.deps, PHONE);
-    server = createWebhookServer({ secret: SECRET, onInbound: (m) => handleInbound(h.deps, m) });
-    await new Promise<void>((r) => server?.listen(0, "127.0.0.1", () => r()));
-    const port = (server.address() as AddressInfo).port;
+    pipeline = await startPipeline(h.deps, { secret: SECRET });
 
-    const res = await fetch(`http://127.0.0.1:${port}/webhook/evolution/${SECRET}`, {
+    const res = await fetch(`${pipeline.base}/webhook/evolution/${SECRET}`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: SECRET },
       body: upsert("MSG-1", BOOKING_TEXT),
     });
     expect(res.status).toBe(200);
-    await untilSpans("webhook.inbound", 1);
+    await waitProcessed(pool, "MSG-1");
+    await untilSpans("agent.turn", 1);
 
     const [inbound] = tel.byName("webhook.inbound");
     expect(inbound.parentSpanContext).toBeUndefined(); // a root per patient message
@@ -105,8 +104,14 @@ describe("tracing — booking through the webhook", () => {
     });
     expect(inbound.attributes["recepia.patient.id"]).toMatch(/^[0-9a-f]{16}$/);
 
+    // 008: the webhook span ends once the message is stored; the worker's turn continues the SAME
+    // trace through the stored traceparent (inbound.process → agent.turn).
+    const [processed] = tel.byName("inbound.process");
+    expect(processed.parentSpanContext?.spanId).toBe(inbound.spanContext().spanId);
+    expect(processed.spanContext().traceId).toBe(inbound.spanContext().traceId);
+    expect(processed.attributes["recepia.inbound.attempt"]).toBe(1);
     const [turn] = tel.byName("agent.turn");
-    expect(turn.parentSpanContext?.spanId).toBe(inbound.spanContext().spanId);
+    expect(turn.parentSpanContext?.spanId).toBe(processed.spanContext().spanId);
     expect(turn.attributes).toMatchObject({
       "recepia.turn.status": "replied",
       "recepia.conversation.status": "completed",

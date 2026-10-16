@@ -20,7 +20,7 @@ export async function resetDb(pool: Pool): Promise<void> {
   try {
     await client.query("ALTER TABLE audit_log DISABLE TRIGGER USER");
     await client.query(
-      "TRUNCATE booking, audit_log, capacity_rule, capacity_override, patient_consent, conversation_state, outbox_message RESTART IDENTITY",
+      "TRUNCATE booking, audit_log, capacity_rule, capacity_override, patient_consent, conversation_state, outbox_message, inbound_message RESTART IDENTITY",
     );
   } finally {
     await client.query("ALTER TABLE audit_log ENABLE TRIGGER USER").catch(() => {});

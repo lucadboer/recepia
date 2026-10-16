@@ -1,5 +1,3 @@
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { Writable } from "node:stream";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { FakeLLM, finalTurn, toolUse, toolUseTurn } from "../../src/adapters/fakes/fake-llm";
@@ -9,9 +7,9 @@ import { TOOL_NAMES } from "../../src/agent/tool-schemas";
 import type { Pool } from "../../src/db/pool";
 import { ConversationConflictError } from "../../src/domain/errors";
 import { configureLogger, log } from "../../src/telemetry/logger";
-import { createWebhookServer } from "../../src/webhook/server";
 import { AGENT_NOW, DAY_END, lastHoldId, makeAgent } from "../helpers/agent";
 import { ensureSchema, resetDb, seedRule, testPool } from "../helpers/db";
+import { startPipeline, waitProcessed } from "../helpers/pipeline";
 import { startTestTelemetry, type TestTelemetry, telemetryStrings } from "../helpers/telemetry";
 
 // T522 / SC-502 — run real conversations with debug logs captured and an in-memory exporter and
@@ -78,15 +76,13 @@ async function postAndWait(base: string, id: string, text: string): Promise<void
     }),
   });
   expect(res.status).toBe(200);
+  await waitProcessed(pool, id); // the worker ran the turn (008: webhook → store → worker)
   for (let i = 0; i < 200 && tel.byName("webhook.inbound").length <= before; i++) {
     await new Promise((r) => setTimeout(r, 10));
   }
 }
 
 describe("SC-502 — no personal data in logs or traces", () => {
-  let server: Server | null = null;
-  afterAll(() => server?.close());
-
   it("a booking and an urgent message through the webhook leave only pseudonyms behind", async () => {
     const llm = new FakeLLM([
       toolUseTurn(
@@ -110,12 +106,14 @@ describe("SC-502 — no personal data in logs or traces", () => {
     ]);
     const h = makeAgent(pool, llm);
     await recordConsent(h.deps, PHONE);
-    server = createWebhookServer({ secret: SECRET, onInbound: (m) => handleInbound(h.deps, m) });
-    await new Promise<void>((r) => server?.listen(0, "127.0.0.1", () => r()));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-
-    await postAndWait(base, "PII-1", TEXTS.booking);
-    await postAndWait(base, "PII-2", TEXTS.pain);
+    const pipeline = await startPipeline(h.deps, { secret: SECRET });
+    const base = pipeline.base;
+    try {
+      await postAndWait(base, "PII-1", TEXTS.booking);
+      await postAndWait(base, "PII-2", TEXTS.pain);
+    } finally {
+      await pipeline.stop();
+    }
 
     const parsed = lines.flatMap((l) => l.split("\n").filter(Boolean)).map((l) => JSON.parse(l));
     const inbound = parsed.filter((l) => l.event === "webhook.inbound");
@@ -141,13 +139,11 @@ describe("SC-502 — no personal data in logs or traces", () => {
         throw new Error(`HTTP 400 recipient ${to.replace("+", "")} rejected text "${body}"`);
       },
     };
-    const srv = createWebhookServer({ secret: SECRET, onInbound: (m) => handleInbound(h.deps, m) });
-    await new Promise<void>((r) => srv.listen(0, "127.0.0.1", () => r()));
+    const pipeline = await startPipeline(h.deps, { secret: SECRET });
     try {
-      const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
-      await postAndWait(base, WAMID, TEXTS.pain); // triage → escalation → patient reply send fails
+      await postAndWait(pipeline.base, WAMID, TEXTS.pain); // triage → escalation → reply send fails
     } finally {
-      srv.close();
+      await pipeline.stop();
     }
     const haystack = [...lines, ...telemetryStrings(tel.spans())];
     for (const s of haystack) {
@@ -158,11 +154,13 @@ describe("SC-502 — no personal data in logs or traces", () => {
     }
     // The failure is still diagnosable: masked message in the log, error type on the span.
     const parsed = lines.flatMap((l) => l.split("\n").filter(Boolean)).map((l) => JSON.parse(l));
-    const failed = parsed.find((l) => l.event === "webhook.inbound_failed");
+    const failed = parsed.find((l) => l.event === "inbound.turn_failed");
     expect(failed?.err?.message).toMatch(/HTTP 400 recipient \*\*\*0155/);
     const [inbound] = tel.byName("webhook.inbound");
-    expect(inbound.status.code).toBe(2);
-    expect(inbound.attributes["error.type"]).toBe("Error");
+    const [processed] = tel.byName("inbound.process"); // 008: the worker's turn, same trace
+    expect(processed.status.code).toBe(2);
+    expect(processed.attributes["error.type"]).toBe("Error");
+    expect(processed.spanContext().traceId).toBe(inbound.spanContext().traceId);
     // Webhook log lines carry the inbound span's trace id (Codex review).
     const accepted = parsed.find((l) => l.event === "webhook.inbound");
     expect(accepted?.trace_id).toBe(inbound.spanContext().traceId);

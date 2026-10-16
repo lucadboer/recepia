@@ -54,6 +54,27 @@ describe("DbConversationStore", () => {
     expect(loaded?.updatedAt).toBeInstanceOf(Date);
   });
 
+  it("a fenced save runs its fence inside the save's transaction; a failing fence saves nothing (008)", async () => {
+    const store = new DbConversationStore(pool);
+    const seen: unknown[] = [];
+    await store.save(emptyState("+55f", NOW), {
+      fence: async (tx) => {
+        seen.push(tx);
+      },
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeDefined(); // the save's own transaction client, not a separate check
+    const v1 = await store.load("+55f");
+    await expect(
+      store.save(markProcessed(v1 as NonNullable<typeof v1>, "m1", NOW), {
+        fence: async () => {
+          throw new Error("lease lost");
+        },
+      }),
+    ).rejects.toThrow(/lease lost/);
+    expect((await store.load("+55f"))?.processedInboundIds).toEqual([]);
+  });
+
   it("load → modify → save chains versions (optimistic concurrency, T240)", async () => {
     const store = new DbConversationStore(pool);
     await store.save(emptyState("+55a", NOW)); // v1

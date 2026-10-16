@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appendUserText,
+  applyCommittedTurn,
   emptyState,
   hasActiveHold,
   isAutoReleaseDue,
@@ -172,5 +173,40 @@ describe("stripThinking — provider thinking blocks never reach the persisted s
   it("returns the same reference when there is nothing to strip", () => {
     const s = appendUserText(emptyState("+55a", NOW), "oi", NOW);
     expect(stripThinking(s)).toBe(s);
+  });
+});
+
+describe("applyCommittedTurn — the status a replayed turn's committed writes imply (008)", () => {
+  const base = emptyState("+55a", NOW);
+  const w = (action: string, entityId: string | null = null) => ({ action, entityId });
+
+  it("an escalation hands the conversation off, even after a booking in the same turn", () => {
+    const s = applyCommittedTurn(base, [w("booking_confirmed", "b1"), w("escalated")], NOW);
+    expect(s.status).toBe("escalated");
+    expect(s.escalatedAt).toBe(NOW.toISOString());
+  });
+
+  it("a booking or a reschedule finishes it with the booking recorded", () => {
+    expect(applyCommittedTurn(base, [w("booking_confirmed", "b1")], NOW)).toMatchObject({
+      status: "completed",
+      lastConfirmedBookingId: "b1",
+    });
+    const rescheduled = applyCommittedTurn(
+      base,
+      [w("booking_cancelled", "old"), w("booking_rescheduled", "new")],
+      NOW,
+    );
+    expect(rescheduled).toMatchObject({ status: "completed", lastConfirmedBookingId: "new" });
+  });
+
+  it("a cancellation or an attendance confirmation finishes it", () => {
+    expect(applyCommittedTurn(base, [w("booking_cancelled", "b1")], NOW).status).toBe("completed");
+    expect(applyCommittedTurn(base, [w("attendance_confirmed", "b1")], NOW).status).toBe(
+      "completed",
+    );
+  });
+
+  it("nothing committed leaves the state as it was", () => {
+    expect(applyCommittedTurn(base, [], NOW)).toBe(base);
   });
 });

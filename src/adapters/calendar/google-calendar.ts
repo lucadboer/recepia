@@ -1,4 +1,5 @@
 import { type calendar_v3, google } from "googleapis";
+import { CALENDAR_REQUEST_TIMEOUT_MS } from "../../config";
 import { CalendarWriteError, NotConfigured } from "../../domain/errors";
 import type { CalendarPort, CreateEventInput, CreateEventResult } from "../../ports/calendar-port";
 
@@ -38,7 +39,8 @@ export class GoogleCalendar implements CalendarPort {
     }
     // GoogleAuth/keyFile are lazy — no network or file read happens here.
     const auth = new google.auth.GoogleAuth({ keyFile: credentials, scopes: SCOPES });
-    this.calendar = google.calendar({ version: "v3", auth });
+    // Every request is bounded (008 review): a stalled call cannot hold a turn or the hold sweep.
+    this.calendar = google.calendar({ version: "v3", auth, timeout: CALENDAR_REQUEST_TIMEOUT_MS });
     this.calendarId = calendarId;
   }
 

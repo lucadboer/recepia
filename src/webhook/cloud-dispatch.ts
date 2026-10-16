@@ -5,7 +5,7 @@ import {
   parseCloudApiStatuses,
 } from "../adapters/messaging/inbound/cloud-api-parser";
 import type { InboundMessage } from "../agent/types";
-import { type RecentIds, safeEqual } from "./dispatch";
+import { safeEqual } from "./dispatch";
 
 /**
  * WhatsApp Cloud API webhook routing — distinct from Evolution (dispatch.ts):
@@ -48,7 +48,6 @@ export interface CloudDispatchInput {
   rawBody: Buffer;
   signatureHeader: string | undefined;
   appSecret: string;
-  seen: RecentIds;
 }
 
 export interface CloudDispatchResult {
@@ -77,7 +76,6 @@ export function parseAndAcceptCloud(input: CloudDispatchInput): CloudDispatchRes
   const statuses = parseCloudApiStatuses(payload); // log-only, never routed
   const msgs: InboundMessage[] = [];
   for (const m of parseCloudApiInbound(payload)) {
-    if (input.seen.has(m.providerMessageId)) continue; // edge dedupe (recorded by the server after success, T230)
     msgs.push(m);
   }
   return { status: 200, msgs, statuses };
