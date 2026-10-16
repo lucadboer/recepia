@@ -388,4 +388,37 @@ describe("a turn whose message was taken over by another worker (fencing)", () =
     expect(calendar.events.has(hold.id)).toBe(false);
     expect(await countAudit(pool, "booking_confirmed")).toBe(0);
   });
+
+  it("a crash between ending the hold and deleting its event leaves the event to the sweep", async () => {
+    const h = makeAgent(pool, new FakeLLM([]));
+    await recordConsent(h.deps, PHONE);
+    const hold = await holdSlot(
+      h.deps,
+      { start: new Date(SLOT), type: "cleaning" },
+      { phone: PHONE },
+    );
+    // The confirm's commit fails; its compensation dies while deleting (the delete never returns).
+    const dying = new SlowDeleteCalendar(new Promise<void>(() => {}));
+    const failing = interceptingPool(pool, {
+      reject: (sql) =>
+        sql.includes("SET status = 'confirmed', patient_name") ? new Error("commit lost") : null,
+    });
+    void confirmBooking({ ...h.deps, pool: failing, calendar: dying }, hold.id, {
+      phone: PHONE,
+      name: "Ana Teste",
+    }).catch(() => {});
+    await until(() => dying.deleting);
+    const { rows } = await pool.query(
+      "SELECT status, event_cleanup_pending FROM booking WHERE id = $1",
+      [hold.id],
+    );
+    // Ended and flagged in one step, so the cleanup intent survives the crash.
+    expect(rows[0]).toEqual({ status: "expired", event_cleanup_pending: true });
+
+    // After the restart the abandoned-event job removes the event.
+    const calendar = new FakeCalendar();
+    for (const [k, v] of dying.events) calendar.events.set(k, v);
+    expect(await removeAbandonedEvents({ ...h.deps, calendar })).toBe(1);
+    expect(calendar.events.has(hold.id)).toBe(false);
+  });
 });

@@ -1,5 +1,5 @@
 import { appendAudit } from "../db/repositories/audit-repo.ts";
-import { confirmHeld, getById } from "../db/repositories/booking-repo.ts";
+import { clearEventCleanup, confirmHeld, getById } from "../db/repositories/booking-repo.ts";
 import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo.ts";
 import { type Deps, fencedStamp } from "../deps.ts";
 import { isExpired } from "../domain/booking.ts";
@@ -147,6 +147,8 @@ export async function confirmBooking(
   // confirmed with this event), delete the event, audit, escalate.
   await retireHold(deps, existing.id, "calendar_orphan");
   const deleted = await deleteEventWithRetry(deps, existing.id);
+  // Removed now: the abandoned-event job has nothing left to do (otherwise it keeps retrying).
+  if (deleted) await clearEventCleanup(deps.pool, existing.id);
   const reason = commitError ? "commit_failed" : "hold_not_held";
   if (!deleted) {
     // Never claim a compensation that did not happen (006 review): reception removes it by hand.

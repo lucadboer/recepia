@@ -110,8 +110,8 @@ export function createTurnLease(
     lose,
     async fence(tx) {
       controller.signal.throwIfAborted();
-      if (await leaseHeld(tx ?? pool, row.id, row.lease)) return;
-      lose();
+      if (!(await leaseHeld(tx ?? pool, row.id, row.lease))) lose();
+      // Also after the query: the turn may have been aborted (timed out) while it ran (review).
       controller.signal.throwIfAborted();
     },
   };

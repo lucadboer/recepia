@@ -4,9 +4,13 @@ import { emptyState } from "../../src/agent/conversation";
 import type { InboundMessage } from "../../src/agent/types";
 import { makePool, type Pool } from "../../src/db/pool";
 import { DbConversationStore } from "../../src/db/repositories/conversation-repo";
-import { insertInbound } from "../../src/db/repositories/inbound-repo";
+import { claimNext, insertInbound } from "../../src/db/repositories/inbound-repo";
 import { AttemptsExhaustedError, LeaseLostError } from "../../src/domain/errors";
-import { createInboundWorker, inboundBackoff } from "../../src/jobs/inbound-worker";
+import {
+  createInboundWorker,
+  createTurnLease,
+  inboundBackoff,
+} from "../../src/jobs/inbound-worker";
 import { countAudit, ensureSchema, resetDb, testPool } from "../helpers/db";
 
 // T802 / T807 / T810 (008) — the worker drives the queue: one turn per claimed message, in order
@@ -403,5 +407,26 @@ describe("createInboundWorker", () => {
     await worker.drain(1_000);
     expect(modes).toEqual([false, true]); // one turn, then one recovery pass — no second turn
     expect(await countAudit(pool, "inbound_dead_letter")).toBe(0);
+  });
+
+  it("a fence whose lease query was in flight when the turn was aborted still refuses", async () => {
+    await put("+5531900000828", "fence-1");
+    const row = await claimNext(pool, "w1", NOW, 60_000);
+    if (!row) throw new Error("expected a claim");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const slowPool = {
+      query: async (text: string, values?: unknown[]) => {
+        await gate;
+        return pool.query(text, values);
+      },
+    } as unknown as Pool;
+    const lease = createTurnLease(slowPool, row);
+    const pending = lease.fence(); // the query still finds the claim held...
+    lease.lose(); // ...but the turn timed out meanwhile
+    release();
+    await expect(pending).rejects.toBeInstanceOf(LeaseLostError);
   });
 });

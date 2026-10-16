@@ -93,7 +93,9 @@ export async function yieldIfLeaseLost(deps: Deps, holdId: string): Promise<void
 /**
  * End a hold whose confirmation will not happen, BEFORE its calendar event is removed (008 review):
  * an event is only ever deleted once its hold can no longer be confirmed, so a retry of the message
- * can never confirm that hold after — or while — its event is being deleted. Fenced on the turn's
+ * can never confirm that hold after — or while — its event is being deleted. The hold is flagged
+ * for the abandoned-event job in the same transaction, so a crash before the caller's delete still
+ * gets the event removed (the job deletes idempotently and clears the flag). Fenced on the turn's
  * lease: a turn that lost its message flags the hold instead and stops with LeaseLostError.
  */
 export async function retireHold(deps: Deps, holdId: string, reason: string): Promise<void> {
@@ -114,6 +116,7 @@ export async function retireHold(deps: Deps, holdId: string, reason: string): Pr
         payload: { reason },
       });
     }
+    await flagEventCleanup(client, holdId);
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});

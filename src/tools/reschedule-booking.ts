@@ -1,6 +1,7 @@
 import { appendAudit } from "../db/repositories/audit-repo.ts";
 import {
   cancelActive,
+  clearEventCleanup,
   confirmHeld,
   getById,
   lockBookingForUpdate,
@@ -225,6 +226,8 @@ export async function rescheduleBooking(
   // with this event), compensate the event, hand off.
   await retireHold(deps, hold.id, "reschedule_not_committed");
   const deleted = await deleteEventWithRetry(deps, hold.id);
+  // Removed now: the abandoned-event job has nothing left to do (otherwise it keeps retrying).
+  if (deleted) await clearEventCleanup(deps.pool, hold.id);
   const reason = failure ? "commit_failed" : "booking_or_hold_changed";
   await auditOrphan(deps, hold.id, eventId, reason, deleted);
   if (!deleted) {

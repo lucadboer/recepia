@@ -30,8 +30,9 @@ one process.
   confirming and that hold's calendar event (idempotent by hold id) may be the new holder's to
   confirm, so it only flags the hold (`booking.event_cleanup_pending`) and the hold sweep removes
   the event if the hold ends unconfirmed. Invariant: an event is only ever deleted once its hold
-  or booking can no longer be confirmed — compensation ends the hold (fenced) before deleting —
-  so a late delete can never remove the event of a booking a retry confirmed.
+  or booking can no longer be confirmed — compensation ends the hold (fenced) and flags it for the
+  abandoned-event job in one transaction before deleting — so a late delete can never remove the
+  event of a booking a retry confirmed, and a crash before the delete still gets it removed.
 - **Flood guard under a per-phone lock**: the count of a phone's unfinished rows and the insert run
   under `pg_advisory_xact_lock`, so concurrent deliveries cannot pass the limit together.
 - **Bounded turns**: every Google Calendar request times out (15 s). A turn still running after
