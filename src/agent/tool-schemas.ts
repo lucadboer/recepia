@@ -1,5 +1,5 @@
-import { ROUTINE_TYPES } from "../config";
-import type { LlmToolDef } from "../ports/llm-port";
+import { ROUTINE_TYPES } from "../config.ts";
+import type { LlmToolDef } from "../ports/llm-port.ts";
 
 /** The ONLY tools exposed to the LLM (closed allowlist). Names are stable identifiers. */
 export const TOOL_NAMES = {

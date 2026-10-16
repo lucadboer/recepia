@@ -1,19 +1,19 @@
-import { appendAudit } from "../db/repositories/audit-repo";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
 import {
   cancelActive,
   clearEventCleanup,
   confirmHeld,
   getById,
   lockBookingForUpdate,
-} from "../db/repositories/booking-repo";
+} from "../db/repositories/booking-repo.ts";
 import {
   confirmationStatus,
   enqueueOutbox,
   releasedBookingMessages,
   supersedePending,
-} from "../db/repositories/outbox-repo";
-import { type Deps, fencedStamp } from "../deps";
-import { isExpired } from "../domain/booking";
+} from "../db/repositories/outbox-repo.ts";
+import { type Deps, fencedStamp } from "../deps.ts";
+import { isExpired } from "../domain/booking.ts";
 import {
   BookingNotChangeableError,
   BookingNotFoundError,
@@ -21,18 +21,22 @@ import {
   flagEscalated,
   HoldExpiredError,
   InvalidRescheduleError,
-} from "../domain/errors";
-import type { Booking } from "../domain/types";
-import { rescheduledMessagePt } from "../messages";
+} from "../domain/errors.ts";
+import type { Booking } from "../domain/types.ts";
+import { rescheduledMessagePt } from "../messages.ts";
 import {
   deleteEventWithRetry,
   removeEventOrNotify,
   retireHold,
   writeEventWithRetry,
   yieldIfLeaseLost,
-} from "./booking-calendar";
-import { escalateToHuman } from "./escalate-to-human";
-import { enqueueLateChangeNotice, isLateChange, requestCalendarCleanup } from "./reception-notices";
+} from "./booking-calendar.ts";
+import { escalateToHuman } from "./escalate-to-human.ts";
+import {
+  enqueueLateChangeNotice,
+  isLateChange,
+  requestCalendarCleanup,
+} from "./reception-notices.ts";
 
 export type RescheduleOutcome = "rescheduled" | "already_rescheduled";
 

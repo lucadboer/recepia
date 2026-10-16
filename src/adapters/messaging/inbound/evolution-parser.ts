@@ -1,4 +1,4 @@
-import type { InboundMessage } from "../../../agent/types";
+import type { InboundMessage } from "../../../agent/types.ts";
 
 // Minimal shape of an Evolution API `messages.upsert` webhook payload (text only).
 interface EvolutionPayload {

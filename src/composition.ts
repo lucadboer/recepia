@@ -1,19 +1,19 @@
-import { GoogleCalendar } from "./adapters/calendar/google-calendar";
-import { AnthropicLLM, DEFAULT_MODEL } from "./adapters/llm/anthropic-llm";
-import { FallbackLLM } from "./adapters/llm/fallback-llm";
-import { OpenAICompatibleLLM } from "./adapters/llm/openai-compatible-llm";
-import { CloudApiMessaging } from "./adapters/messaging/cloud-api-messaging";
-import { EvolutionMessaging } from "./adapters/messaging/evolution-messaging";
-import type { AgentDeps } from "./agent/orchestrator";
-import { DEFAULT_AGENT_BUDGET_USD } from "./config";
-import { loadEnv } from "./db/env";
-import { makePool } from "./db/pool";
-import { DbConversationStore } from "./db/repositories/conversation-repo";
-import { NotConfigured } from "./domain/errors";
-import type { ReminderSettings } from "./jobs/reminders";
-import { assertPriced, loadPricing } from "./llm/pricing";
-import { systemClock } from "./ports/clock";
-import type { MessagingPort } from "./ports/messaging-port";
+import { GoogleCalendar } from "./adapters/calendar/google-calendar.ts";
+import { AnthropicLLM, DEFAULT_MODEL } from "./adapters/llm/anthropic-llm.ts";
+import { FallbackLLM } from "./adapters/llm/fallback-llm.ts";
+import { OpenAICompatibleLLM } from "./adapters/llm/openai-compatible-llm.ts";
+import { CloudApiMessaging } from "./adapters/messaging/cloud-api-messaging.ts";
+import { EvolutionMessaging } from "./adapters/messaging/evolution-messaging.ts";
+import type { AgentDeps } from "./agent/orchestrator.ts";
+import { DEFAULT_AGENT_BUDGET_USD } from "./config.ts";
+import { loadEnv } from "./db/env.ts";
+import { makePool } from "./db/pool.ts";
+import { DbConversationStore } from "./db/repositories/conversation-repo.ts";
+import { NotConfigured } from "./domain/errors.ts";
+import type { ReminderSettings } from "./jobs/reminders.ts";
+import { assertPriced, loadPricing } from "./llm/pricing.ts";
+import { systemClock } from "./ports/clock.ts";
+import type { MessagingPort } from "./ports/messaging-port.ts";
 
 function isCloudProvider(raw: string | undefined): boolean {
   const provider = (raw ?? "evolution").toLowerCase();

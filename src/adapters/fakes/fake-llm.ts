@@ -4,7 +4,7 @@ import type {
   LlmTurnInput,
   LlmTurnResult,
   LlmUsage,
-} from "../../ports/llm-port";
+} from "../../ports/llm-port.ts";
 
 /** Fakes cost nothing; the shape matches the real adapter so metrics code has one path. */
 export const ZERO_USAGE: LlmUsage = {

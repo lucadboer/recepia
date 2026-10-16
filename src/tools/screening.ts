@@ -1,6 +1,6 @@
-import { isRoutineType } from "../config";
-import type { Deps } from "../deps";
-import { escalateToHuman } from "./escalate-to-human";
+import { isRoutineType } from "../config.ts";
+import type { Deps } from "../deps.ts";
+import { escalateToHuman } from "./escalate-to-human.ts";
 
 /**
  * US3 guard: a routine type passes (returns true). Anything else is escalated to

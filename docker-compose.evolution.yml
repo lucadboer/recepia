@@ -1,0 +1,17 @@
+# Override for running the containerized app against the local Evolution stack (./evolution):
+#   docker compose -f evolution/docker-compose.yml up -d          # once: the WhatsApp gateway
+#   docker compose -f docker-compose.yml -f docker-compose.evolution.yml --profile app up --build
+# The app joins the stack's network and reaches the API by container name; the host URL in .env
+# (http://127.0.0.1:8081) would point the container at itself.
+services:
+  app:
+    environment:
+      EVOLUTION_BASE_URL: http://recepia-evolution-api:8080
+    networks:
+      - default
+      - evolution
+
+networks:
+  evolution:
+    name: recepia-evolution-net
+    external: true

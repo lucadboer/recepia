@@ -3,7 +3,7 @@
 //   FALLBACK_LLM_BASE_URL (…/v1), FALLBACK_LLM_API_KEY, FALLBACK_LLM_MODEL, FALLBACK_LLM_TIMEOUT_MS.
 // Reasoning blocks from the primary are dropped (another provider cannot read them).
 
-import { NotConfigured } from "../../domain/errors";
+import { NotConfigured } from "../../domain/errors.ts";
 import type {
   LLMPort,
   LlmContent,
@@ -11,9 +11,9 @@ import type {
   LlmTurnInput,
   LlmTurnResult,
   LlmUsage,
-} from "../../ports/llm-port";
-import { maskPhonesIn } from "../../telemetry/pseudonym";
-import { isTransientStatus, LlmProviderError } from "./errors";
+} from "../../ports/llm-port.ts";
+import { maskPhonesIn } from "../../telemetry/pseudonym.ts";
+import { isTransientStatus, LlmProviderError } from "./errors.ts";
 
 const MAX_TOKENS = 4096;
 const DEFAULT_TIMEOUT_MS = 30_000;

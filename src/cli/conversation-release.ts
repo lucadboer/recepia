@@ -1,9 +1,9 @@
 import { fileURLToPath } from "node:url";
-import { resetConversation } from "../agent/conversation";
-import { loadEnv } from "../db/env";
-import { makePool, type Pool } from "../db/pool";
-import { appendAudit } from "../db/repositories/audit-repo";
-import { DbConversationStore } from "../db/repositories/conversation-repo";
+import { resetConversation } from "../agent/conversation.ts";
+import { loadEnv } from "../db/env.ts";
+import { makePool, type Pool } from "../db/pool.ts";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { DbConversationStore } from "../db/repositories/conversation-repo.ts";
 
 /**
  * Reception releases a handed-off conversation (FR-211): the next patient message is

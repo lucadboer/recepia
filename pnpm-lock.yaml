@@ -11,6 +11,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.133.0
         version: 0.133.0
+      '@googleapis/calendar':
+        specifier: ^20.1.0
+        version: 20.1.0
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -29,9 +32,6 @@ importers:
       '@opentelemetry/sdk-trace-node':
         specifier: ^2.12.0
         version: 2.12.0(@opentelemetry/api@1.9.1)
-      googleapis:
-        specifier: ^185.0.0
-        version: 185.0.0
       pg:
         specifier: ^8.23.1
         version: 8.23.1
@@ -318,6 +318,10 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@googleapis/calendar@20.1.0':
+    resolution: {integrity: sha512-bPO9wts48OAEhJn5UfgPC4FuyW/D6ufUzdXx0JHfeJIqg+O5bHvX/TenaAdbJuGhluhn5FLlyl6HzuhE4rFJqw==}
+    engines: {node: '>=22.0.0'}
 
   '@jridgewell/resolve-uri@3.1.2':
     resolution: {integrity: sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==}
@@ -865,10 +869,6 @@ packages:
   googleapis-common@9.2.0:
     resolution: {integrity: sha512-OYCBMfAPDJSB4E1RiQQzrIxCJLGMVrCgeVvuUKzSLBgnSSA+hH3X16/q76UMjS/HCJmOjcVVopwhUUnTo2SHyg==}
     engines: {node: '>=22'}
-
-  googleapis@185.0.0:
-    resolution: {integrity: sha512-w/rO9+ank7JpAj65X6DzUoSLbxvHtsTf4F2kD9+8AScA3KEzDjeTFOUFVldDSePSuRSlpJkP/s36fMaqgFX3sw==}
-    engines: {node: '>=22.0.0'}
 
   gopd@1.2.0:
     resolution: {integrity: sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg==}
@@ -1447,6 +1447,12 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
+  '@googleapis/calendar@20.1.0':
+    dependencies:
+      googleapis-common: 9.2.0
+    transitivePeerDependencies:
+      - supports-color
+
   '@jridgewell/resolve-uri@3.1.2': {}
 
   '@jridgewell/sourcemap-codec@1.6.0': {}
@@ -1925,13 +1931,6 @@ snapshots:
       google-logging-utils: 2.0.1
       qs: 6.16.0
       url-template: 2.0.8
-    transitivePeerDependencies:
-      - supports-color
-
-  googleapis@185.0.0:
-    dependencies:
-      google-auth-library: 11.2.0
-      googleapis-common: 9.2.0
     transitivePeerDependencies:
       - supports-color
 

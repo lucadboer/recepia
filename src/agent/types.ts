@@ -1,4 +1,4 @@
-import type { LlmMessage } from "../ports/llm-port";
+import type { LlmMessage } from "../ports/llm-port.ts";
 
 /** A normalized inbound patient message (from any provider parser). */
 export interface InboundMessage {

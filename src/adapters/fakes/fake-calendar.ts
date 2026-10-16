@@ -1,4 +1,8 @@
-import type { CalendarPort, CreateEventInput, CreateEventResult } from "../../ports/calendar-port";
+import type {
+  CalendarPort,
+  CreateEventInput,
+  CreateEventResult,
+} from "../../ports/calendar-port.ts";
 
 /**
  * In-memory CalendarPort. Idempotent on `idempotencyKey`. Failure is configurable:

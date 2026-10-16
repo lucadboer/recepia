@@ -1,6 +1,6 @@
-import { findUpcomingForPhone } from "../db/repositories/booking-repo";
-import type { Deps } from "../deps";
-import type { Booking } from "../domain/types";
+import { findUpcomingForPhone } from "../db/repositories/booking-repo.ts";
+import type { Deps } from "../deps.ts";
+import type { Booking } from "../domain/types.ts";
 
 export type FindResult =
   | { kind: "found"; booking: Booking }

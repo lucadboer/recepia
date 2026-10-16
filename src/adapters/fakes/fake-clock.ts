@@ -1,4 +1,4 @@
-import type { Clock } from "../../ports/clock";
+import type { Clock } from "../../ports/clock.ts";
 
 /** Controllable clock for deterministic tests. */
 export class FakeClock implements Clock {

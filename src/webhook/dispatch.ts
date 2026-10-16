@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import { parseEvolutionInbound } from "../adapters/messaging/inbound/evolution-parser";
-import type { InboundMessage } from "../agent/types";
+import { parseEvolutionInbound } from "../adapters/messaging/inbound/evolution-parser.ts";
+import type { InboundMessage } from "../agent/types.ts";
 
 /**
  * Timing-safe secret comparison. Evolution webhooks are NOT HMAC-signed, so origin

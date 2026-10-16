@@ -5,7 +5,7 @@
 // signalled to stop, its writes are fenced on that token, and it finishes nothing.
 
 import { hostname } from "node:os";
-import type { InboundMessage, TurnOptions } from "../agent/types";
+import type { InboundMessage, TurnOptions } from "../agent/types.ts";
 import {
   INBOUND_BACKOFF_MS,
   INBOUND_CONCURRENCY,
@@ -14,8 +14,8 @@ import {
   INBOUND_POLL_MS,
   INBOUND_TURN_GRACE_MS,
   INBOUND_TURN_TIMEOUT_MS,
-} from "../config";
-import type { Pool } from "../db/pool";
+} from "../config.ts";
+import type { Pool } from "../db/pool.ts";
 import {
   claimNext,
   heartbeat,
@@ -24,13 +24,13 @@ import {
   markDead,
   markDone,
   markRetry,
-} from "../db/repositories/inbound-repo";
-import type { TurnLease } from "../deps";
-import { LeaseLostError } from "../domain/errors";
-import type { Clock } from "../ports/clock";
-import { log } from "../telemetry/logger";
-import { messageRef } from "../telemetry/pseudonym";
-import { ATTR, errorTypeOf, SPAN, withRemoteParent } from "../telemetry/tracing";
+} from "../db/repositories/inbound-repo.ts";
+import type { TurnLease } from "../deps.ts";
+import { LeaseLostError } from "../domain/errors.ts";
+import type { Clock } from "../ports/clock.ts";
+import { log } from "../telemetry/logger.ts";
+import { messageRef } from "../telemetry/pseudonym.ts";
+import { ATTR, errorTypeOf, SPAN, withRemoteParent } from "../telemetry/tracing.ts";
 
 /** Delay before retry `attempt` (1-based): the backoff step × uniform(0.8, 1.2), capped. */
 export function inboundBackoff(attempt: number, random: () => number = Math.random): number {

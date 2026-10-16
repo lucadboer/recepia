@@ -1,13 +1,13 @@
-import { handleInbound } from "./agent/orchestrator";
-import { buildAgentDeps, closeAgentDeps, reminderSettings } from "./composition";
-import { createInboundWorker } from "./jobs/inbound-worker";
-import { startJobs } from "./jobs/scheduler";
-import { log } from "./telemetry/logger";
-import { usingRandomPseudonymKey } from "./telemetry/pseudonym";
-import { shutdownTelemetry, telemetryEndpointConfigured } from "./telemetry/register";
-import { createDurableEnqueue } from "./webhook/enqueue";
-import { type CloudWebhookOptions, createWebhookServer } from "./webhook/server";
-import { createShutdown } from "./webhook/shutdown";
+import { handleInbound } from "./agent/orchestrator.ts";
+import { buildAgentDeps, closeAgentDeps, reminderSettings } from "./composition.ts";
+import { createInboundWorker } from "./jobs/inbound-worker.ts";
+import { startJobs } from "./jobs/scheduler.ts";
+import { log } from "./telemetry/logger.ts";
+import { usingRandomPseudonymKey } from "./telemetry/pseudonym.ts";
+import { shutdownTelemetry, telemetryEndpointConfigured } from "./telemetry/register.ts";
+import { createDurableEnqueue } from "./webhook/enqueue.ts";
+import { type CloudWebhookOptions, createWebhookServer } from "./webhook/server.ts";
+import { createShutdown } from "./webhook/shutdown.ts";
 
 /**
  * Production entrypoint: wire the real AgentDeps into the webhook server. The HTTP

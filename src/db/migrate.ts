@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadEnv } from "./env";
-import type { Pool } from "./pool";
-import { makePool } from "./pool";
+import { loadEnv } from "./env.ts";
+import type { Pool } from "./pool.ts";
+import { makePool } from "./pool.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(HERE, "migrations");

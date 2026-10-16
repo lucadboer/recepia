@@ -1,16 +1,16 @@
 // 007 appointment-reminders (SPEC.md US2): the agent's only proactive messages. Both jobs are
 // deterministic writers — claim (SKIP LOCKED) → stamp → outbox → audit in one transaction.
 
-import { appendAudit } from "../db/repositories/audit-repo";
-import { enqueueOutbox } from "../db/repositories/outbox-repo";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { enqueueOutbox } from "../db/repositories/outbox-repo.ts";
 import {
   claimDueReminders,
   claimUnconfirmed,
   markReminderSent,
   markUnconfirmedNoticed,
-} from "../db/repositories/reminder-repo";
-import type { Deps } from "../deps";
-import { reminderMessagePt, reminderTemplateParams, unconfirmedNoticePt } from "../messages";
+} from "../db/repositories/reminder-repo.ts";
+import type { Deps } from "../deps.ts";
+import { reminderMessagePt, reminderTemplateParams, unconfirmedNoticePt } from "../messages.ts";
 
 export interface ReminderSettings {
   /** How long before the appointment the reminder goes out (owner: 24 h). */

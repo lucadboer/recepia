@@ -1,13 +1,13 @@
 // Reception notices committed by the booking-lifecycle tools (006): a late change (FR-606) and a
 // calendar event that could not be removed (FR-604). Both go through the outbox like every message.
 
-import type { PoolClient } from "../db/pool";
-import { appendAudit } from "../db/repositories/audit-repo";
-import { enqueueOutbox } from "../db/repositories/outbox-repo";
-import type { Deps } from "../deps";
-import type { AppointmentType } from "../domain/types";
-import { calendarCleanupNoticePt, lateChangeNoticePt } from "../messages";
-import { log } from "../telemetry/logger";
+import type { PoolClient } from "../db/pool.ts";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { enqueueOutbox } from "../db/repositories/outbox-repo.ts";
+import type { Deps } from "../deps.ts";
+import type { AppointmentType } from "../domain/types.ts";
+import { calendarCleanupNoticePt, lateChangeNoticePt } from "../messages.ts";
+import { log } from "../telemetry/logger.ts";
 
 /** A cancel or reschedule this close to the appointment also notifies reception (owner, 2026-10-08). */
 export const LATE_CHANGE_MS = 24 * 60 * 60 * 1000;

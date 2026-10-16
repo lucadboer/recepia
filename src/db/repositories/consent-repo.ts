@@ -1,4 +1,4 @@
-import type { Pool, PoolClient } from "../pool";
+import type { Pool, PoolClient } from "../pool.ts";
 
 type Queryable = Pool | PoolClient;
 

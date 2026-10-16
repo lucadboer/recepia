@@ -1,5 +1,5 @@
-import type { CapacityOverrideRow, CapacityRuleRow } from "../db/repositories/capacity-repo";
-import { timeToMinutes, toLocalParts } from "./time";
+import type { CapacityOverrideRow, CapacityRuleRow } from "../db/repositories/capacity-repo.ts";
+import { timeToMinutes, toLocalParts } from "./time.ts";
 
 /**
  * Pooled capacity for a slot: capacity(T) = override(date, window) ?? rule(weekday, window).

@@ -1,11 +1,11 @@
-import { appendAudit } from "../db/repositories/audit-repo";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
 import {
   abandonedEventHolds,
   clearEventCleanup,
   expireDueHolds,
-} from "../db/repositories/booking-repo";
-import type { Deps } from "../deps";
-import { removeEventOrNotify } from "../tools/booking-calendar";
+} from "../db/repositories/booking-repo.ts";
+import type { Deps } from "../deps.ts";
+import { removeEventOrNotify } from "../tools/booking-calendar.ts";
 
 /**
  * Sweep: expire all holds past their TTL and audit each release (Constitution V).

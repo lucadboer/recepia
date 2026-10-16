@@ -1,5 +1,5 @@
-import type { ConversationState } from "../agent/types";
-import type { PoolClient } from "../db/pool";
+import type { ConversationState } from "../agent/types.ts";
+import type { PoolClient } from "../db/pool.ts";
 
 export interface SaveOptions {
   /**

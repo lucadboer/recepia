@@ -1,4 +1,4 @@
-import { CLINIC_TIMEZONE, HORIZON_DAYS, MIN_LEAD_MS, SLOT_MINUTES } from "../config";
+import { CLINIC_TIMEZONE, HORIZON_DAYS, MIN_LEAD_MS, SLOT_MINUTES } from "../config.ts";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SLOT_MS = SLOT_MINUTES * 60_000;

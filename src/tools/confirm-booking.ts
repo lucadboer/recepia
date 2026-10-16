@@ -1,19 +1,19 @@
-import { appendAudit } from "../db/repositories/audit-repo";
-import { clearEventCleanup, confirmHeld, getById } from "../db/repositories/booking-repo";
-import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo";
-import { type Deps, fencedStamp } from "../deps";
-import { isExpired } from "../domain/booking";
-import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors";
-import type { Booking, Patient } from "../domain/types";
-import { confirmationMessagePt } from "../messages";
+import { appendAudit } from "../db/repositories/audit-repo.ts";
+import { clearEventCleanup, confirmHeld, getById } from "../db/repositories/booking-repo.ts";
+import { confirmationStatus, enqueueOutbox } from "../db/repositories/outbox-repo.ts";
+import { type Deps, fencedStamp } from "../deps.ts";
+import { isExpired } from "../domain/booking.ts";
+import { CalendarWriteError, flagEscalated, HoldExpiredError } from "../domain/errors.ts";
+import type { Booking, Patient } from "../domain/types.ts";
+import { confirmationMessagePt } from "../messages.ts";
 import {
   deleteEventWithRetry,
   retireHold,
   writeEventWithRetry,
   yieldIfLeaseLost,
-} from "./booking-calendar";
-import { escalateToHuman } from "./escalate-to-human";
-import { requestCalendarCleanup } from "./reception-notices";
+} from "./booking-calendar.ts";
+import { escalateToHuman } from "./escalate-to-human.ts";
+import { requestCalendarCleanup } from "./reception-notices.ts";
 
 const CONFIRMED_STATUSES = new Set(["confirmed", "patient_confirmed", "done"]);
 

@@ -4,14 +4,14 @@
 // across any number of workers.
 
 import { randomUUID } from "node:crypto";
-import { emptyState, markEscalated } from "../../agent/conversation";
-import type { InboundMessage } from "../../agent/types";
-import { escalationMessagePt } from "../../messages";
-import { currentTraceparent } from "../../telemetry/tracing";
-import type { Pool, PoolClient } from "../pool";
-import { appendAudit } from "./audit-repo";
-import { DbConversationStore } from "./conversation-repo";
-import { enqueueOutbox } from "./outbox-repo";
+import { emptyState, markEscalated } from "../../agent/conversation.ts";
+import type { InboundMessage } from "../../agent/types.ts";
+import { escalationMessagePt } from "../../messages.ts";
+import { currentTraceparent } from "../../telemetry/tracing.ts";
+import type { Pool, PoolClient } from "../pool.ts";
+import { appendAudit } from "./audit-repo.ts";
+import { DbConversationStore } from "./conversation-repo.ts";
+import { enqueueOutbox } from "./outbox-repo.ts";
 
 type Queryable = Pool | PoolClient;
 
