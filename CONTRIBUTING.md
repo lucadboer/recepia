@@ -127,4 +127,7 @@ signals reach the script). They are linted and type-checked like `src/`.
 `rewriteRelativeImportExtensions` turns them into `.js` on `pnpm build`. Files read at runtime
 relative to the code must be copied into the image at the same path (see the `Dockerfile`). Base
 images are pinned by digest and bumped by Dependabot; `docker.yml` must stay green (Trivy has no
-fixable HIGH/CRITICAL finding, the smoke test boots the image as `nonroot`).
+fixable HIGH/CRITICAL finding, the smoke test boots the image as `nonroot`, both compose files
+validate, and publishing waits for the repository scan). In compose, anything in `.env` that names
+a host path or a host loopback URL needs a container equivalent: the Calendar key is a read-only
+bind mount, the Evolution API is reached through `docker-compose.evolution.yml`.

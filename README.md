@@ -277,12 +277,18 @@ hold-expiry sweep every 60 s, reminders and unconfirmed notices every 15 min, re
 
 ```bash
 docker compose --profile app up --build   # builds the image, runs the migrations once, starts the app on :3000
+# with the local WhatsApp gateway (./evolution) running: the app joins its network
+docker compose -f docker-compose.yml -f docker-compose.evolution.yml --profile app up --build
 docker build -t recepia .                 # the image alone: distroless Node 24, non-root, ~210 MB
 docker run --rm -e DATABASE_URL=… recepia src/db/migrate.js   # migrations are a one-off command
 ```
 
 The image runs the `tsc` output (no `tsx`), as `nonroot`, with a `HEALTHCHECK` on `/healthz`;
 credentials come from the environment, never from the image ([ADR 0011](docs/adr/0011-container-image.md)).
+Compose reads your `.env`, mounts the Calendar key it names read-only at
+`/run/secrets/google-calendar.json` (startup fails if the file is missing) and points the app at
+the database container; host loopback URLs such as the Evolution one do not work inside the
+container, which is what the `docker-compose.evolution.yml` override is for.
 CI scans it with Trivy and publishes it to `ghcr.io/lucadboer/recepia` from `main`.
 
 ## Design decisions

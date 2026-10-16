@@ -45,6 +45,10 @@ jobs:
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+      - name: Compose files are valid (base and the Evolution override)
+        run: |
+          docker compose --profile app config -q
+          docker compose -f docker-compose.yml -f docker-compose.evolution.yml --profile app config -q
       - name: Gate — no fixable HIGH/CRITICAL finding
         run: |
           docker run --rm -v "$PWD:/src" -v "$HOME/.cache/trivy:/root/.cache/trivy" -w /src "$TRIVY" \
@@ -52,6 +56,9 @@ jobs:
 
   image:
     name: image — build, scan, smoke (push on main)
+    # Publishing is gated on the repository scan too (review): a secret or misconfiguration that
+    # never reaches the runtime image still blocks the push.
+    needs: trivy-fs
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

@@ -31,6 +31,10 @@ prompt, the pricing table, `package.json`).
   `ghcr.io/lucadboer/recepia` (commit-sha and `latest` tags) with an SBOM and provenance. A weekly
   run rescans for newly published vulnerabilities; Dependabot watches the pinned base images.
 - A `.dockerignore` allowlist keeps `.env`, `secrets/`, tests and reports out of the build context.
+- **Compose for local runs**: `migrate` then `app`, reading the developer's `.env`; the Calendar key
+  is a read-only bind mount at a fixed container path (startup fails without it), and an override
+  file joins the local Evolution stack's network, since host paths and loopback URLs in `.env` do
+  not resolve inside the container. Publishing on `main` also waits for the repository scan.
 
 ## Consequences
 - Local development keeps `pnpm start` (tsx); the image runs the compiled output.
