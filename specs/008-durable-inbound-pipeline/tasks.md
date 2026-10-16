@@ -81,3 +81,8 @@
 > event is only deleted once its hold can no longer be confirmed, so a late or slow delete never
 > removes the event of a booking a retry confirmed; the chaos verdict requires at least 50 % of
 > the acknowledged requests to end in a booking.
+>
+> Tenth pass (approved by the owner), fixed with tests: ending an orphaned hold also flags it for
+> the abandoned-event job in the same transaction (a crash before the delete no longer leaves the
+> event behind; an immediate successful delete clears the flag); the lease fence re-checks the
+> abort signal after its query, so a turn that timed out while the query ran cannot pass it.
