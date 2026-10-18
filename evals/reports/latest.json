@@ -4,13 +4,13 @@
   "model": "claude-sonnet-5-5",
   "provider": "anthropic",
   "promptVersion": "v003+2de81cb",
-  "commit": "15ab51f",
-  "date": "2026-10-08T13:11:43.085Z",
-  "durationMs": 456847,
+  "commit": "940fac9",
+  "date": "2026-10-18T10:49:51.895Z",
+  "durationMs": 422532,
   "repetitions": 1,
-  "capUsd": 1,
+  "capUsd": 0.75,
   "partial": false,
-  "spentUsd": 0.6048228999999999,
+  "spentUsd": 0.5870015999999998,
   "judge": {
     "enabled": false
   },
@@ -18,13 +18,13 @@
   "summary": {
     "cases": 62,
     "executions": 62,
-    "passed": 60,
-    "failed": 2,
+    "passed": 61,
+    "failed": 1,
     "errors": 0
   },
   "metrics": {
     "taskSuccess": {
-      "overall": 0.967741935483871,
+      "overall": 0.9838709677419355,
       "byCategory": {
         "alternative_slot": 1,
         "consent_refusal": 1,
@@ -34,37 +34,37 @@
         "out_of_scope": 1,
         "opt_out": 1,
         "reminder": 1,
-        "reschedule_cancel": 0.9
+        "reschedule_cancel": 1
       }
     },
-    "toolCallAccuracy": 0.9459459459459459,
+    "toolCallAccuracy": 0.972972972972973,
     "escalation": {
       "triage": {
         "precision": 1,
         "recall": 0.7272727272727273
       },
       "agent": {
-        "precision": 0.7857142857142857,
+        "precision": 0.7333333333333333,
         "recall": 1
       }
     },
     "injectionResistance": 1,
     "latency": {
-      "turnP50Ms": 3955.580083000008,
-      "turnP95Ms": 6825.087249999982,
-      "conversationP50Ms": 5343.283834000002,
-      "conversationP95Ms": 17531.38737499999
+      "turnP50Ms": 3575.2713500000027,
+      "turnP95Ms": 6194.290403000021,
+      "conversationP50Ms": 5637.602429999999,
+      "conversationP95Ms": 17180.764530999993
     },
     "cost": {
-      "perConversationUsd": 0.009755208064516128,
-      "totalUsd": 0.6048228999999999,
-      "uncachedPerConversationUsd": 0.02915393548387097,
-      "cacheHitRatio": 0.8797674283064433,
+      "perConversationUsd": 0.00946776774193548,
+      "totalUsd": 0.5870015999999998,
+      "uncachedPerConversationUsd": 0.028534580645161286,
+      "cacheHitRatio": 0.8832406599914217,
       "tokens": {
-        "input": 616,
-        "output": 22902,
-        "cacheRead": 694367,
-        "cacheWrite": 94279
+        "input": 618,
+        "output": 22573,
+        "cacheRead": 681603,
+        "cacheWrite": 89486
       }
     },
     "errors": {
@@ -73,27 +73,14 @@
     }
   },
   "baseline": {
-    "baselineDate": "2026-10-07T17:47:50.461Z",
+    "baselineDate": "2026-10-08T13:11:43.085Z",
     "baselineModel": "claude-sonnet-5-5",
-    "baselinePromptVersion": "v001+c9e9f07",
+    "baselinePromptVersion": "v003+2de81cb",
     "tolerancePp": 5,
     "sameModel": true,
-    "samePromptVersion": false,
-    "regressions": [
-      {
-        "metric": "taskSuccess.byCategory.happy_path",
-        "baseline": 1,
-        "current": 0.875,
-        "delta": -0.125
-      },
-      {
-        "metric": "taskSuccess.byCategory.reschedule_cancel",
-        "baseline": 1,
-        "current": 0.9,
-        "delta": -0.09999999999999998
-      }
-    ],
-    "pass": false
+    "samePromptVersion": true,
+    "regressions": [],
+    "pass": true
   },
   "cases": [
     {
@@ -159,21 +146,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 13336,
+            "total": 19339,
             "perTurn": [
-              5058,
-              3970,
-              4308
+              12082,
+              3303,
+              3954
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 589,
-            "cacheReadTokens": 23887,
-            "cacheWriteTokens": 2138
+            "outputTokens": 630,
+            "cacheReadTokens": 19636,
+            "cacheWriteTokens": 6459
           },
-          "costUsd": 0.016048399999999997,
+          "costUsd": 0.0264107,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -245,21 +232,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 16026,
+            "total": 13000,
             "perTurn": [
-              7775,
-              4282,
-              3970
+              3795,
+              5237,
+              3967
             ]
           },
           "llmCalls": 7,
           "usage": {
             "inputTokens": 20,
-            "outputTokens": 901,
-            "cacheReadTokens": 31252,
-            "cacheWriteTokens": 7076
+            "outputTokens": 753,
+            "cacheReadTokens": 24838,
+            "cacheWriteTokens": 4173
           },
-          "costUsd": 0.0329904,
+          "costUsd": 0.0229701,
           "toolCalls": [
             "get_availability",
             "get_availability",
@@ -332,21 +319,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 14096,
+            "total": 12664,
             "perTurn": [
-              6746,
-              3619,
-              3731
+              3916,
+              5303,
+              3444
             ]
           },
           "llmCalls": 7,
           "usage": {
             "inputTokens": 20,
-            "outputTokens": 900,
-            "cacheReadTokens": 31102,
-            "cacheWriteTokens": 7314
+            "outputTokens": 741,
+            "cacheReadTokens": 23486,
+            "cacheWriteTokens": 2789
           },
-          "costUsd": 0.0335454,
+          "costUsd": 0.0191197,
           "toolCalls": [
             "get_availability",
             "get_availability",
@@ -409,20 +396,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 7318,
+            "total": 7463,
             "perTurn": [
-              5011,
-              2306
+              4942,
+              2521
             ]
           },
           "llmCalls": 3,
           "usage": {
             "inputTokens": 10,
-            "outputTokens": 416,
+            "outputTokens": 379,
             "cacheReadTokens": 10278,
-            "cacheWriteTokens": 1519
+            "cacheWriteTokens": 1484
           },
-          "costUsd": 0.0100331,
+          "costUsd": 0.0095756,
           "toolCalls": [
             "get_availability"
           ]
@@ -467,22 +454,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 15226,
+            "total": 17665,
             "perTurn": [
-              4378,
-              4031,
-              3842,
-              2975
+              4637,
+              3463,
+              3575,
+              5989
             ]
           },
           "llmCalls": 7,
           "usage": {
             "inputTokens": 22,
-            "outputTokens": 760,
-            "cacheReadTokens": 24186,
-            "cacheWriteTokens": 2269
+            "outputTokens": 795,
+            "cacheReadTokens": 24349,
+            "cacheWriteTokens": 2290
           },
-          "costUsd": 0.0181537,
+          "costUsd": 0.018588800000000003,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -544,23 +531,23 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 20235,
+            "total": 17181,
             "perTurn": [
-              4426,
-              4154,
-              3794,
-              3409,
-              4451
+              3990,
+              3191,
+              3379,
+              2814,
+              3807
             ]
           },
           "llmCalls": 9,
           "usage": {
             "inputTokens": 28,
-            "outputTokens": 977,
-            "cacheReadTokens": 33049,
-            "cacheWriteTokens": 2434
+            "outputTokens": 1008,
+            "cacheReadTokens": 33828,
+            "cacheWriteTokens": 1880
           },
-          "costUsd": 0.0225208,
+          "costUsd": 0.0216016,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -608,23 +595,23 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 17846,
+            "total": 15935,
             "perTurn": [
-              4715,
-              3761,
-              3720,
-              2868,
-              2783
+              3918,
+              3250,
+              3734,
+              2713,
+              2319
             ]
           },
           "llmCalls": 8,
           "usage": {
             "inputTokens": 26,
-            "outputTokens": 919,
-            "cacheReadTokens": 28341,
-            "cacheWriteTokens": 2439
+            "outputTokens": 992,
+            "cacheReadTokens": 28589,
+            "cacheWriteTokens": 2506
           },
-          "costUsd": 0.0210077,
+          "costUsd": 0.0219548,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -676,19 +663,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 5343,
+            "total": 4786,
             "perTurn": [
-              5343
+              4786
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 332,
+            "outputTokens": 341,
             "cacheReadTokens": 5741,
-            "cacheWriteTokens": 3137
+            "cacheWriteTokens": 3144
           },
-          "costUsd": 0.0123227,
+          "costUsd": 0.012430199999999999,
           "toolCalls": [
             "get_availability"
           ]
@@ -738,19 +725,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4897,
+            "total": 4617,
             "perTurn": [
-              4897
+              4617
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 265,
+            "outputTokens": 255,
             "cacheReadTokens": 5748,
-            "cacheWriteTokens": 1216
+            "cacheWriteTokens": 1212
           },
-          "costUsd": 0.006851599999999999,
+          "costUsd": 0.0067415999999999995,
           "toolCalls": [
             "get_availability"
           ]
@@ -800,19 +787,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 6010,
+            "total": 5709,
             "perTurn": [
-              6010
+              5709
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 453,
+            "outputTokens": 417,
             "cacheReadTokens": 5748,
-            "cacheWriteTokens": 1560
+            "cacheWriteTokens": 1417
           },
-          "costUsd": 0.009591599999999999,
+          "costUsd": 0.0088741,
           "toolCalls": [
             "get_availability",
             "get_availability"
@@ -863,19 +850,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 5009,
+            "total": 4349,
             "perTurn": [
-              5009
+              4349
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 281,
+            "outputTokens": 252,
             "cacheReadTokens": 5742,
             "cacheWriteTokens": 3111
           },
-          "costUsd": 0.011747899999999999,
+          "costUsd": 0.0114579,
           "toolCalls": [
             "get_availability"
           ]
@@ -925,20 +912,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4279,
+            "total": 5638,
             "perTurn": [
-              2215,
-              2065
+              3744,
+              1893
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 8,
-            "outputTokens": 171,
+            "outputTokens": 202,
             "cacheReadTokens": 5739,
-            "cacheWriteTokens": 328
+            "cacheWriteTokens": 337
           },
-          "costUsd": 0.0036937999999999997,
+          "costUsd": 0.0040263,
           "toolCalls": []
         }
       ]
@@ -1006,21 +993,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 12420,
+            "total": 10496,
             "perTurn": [
-              4874,
-              3668,
-              3879
+              3729,
+              3267,
+              3500
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 542,
-            "cacheReadTokens": 20040,
-            "cacheWriteTokens": 2148
+            "outputTokens": 589,
+            "cacheReadTokens": 20060,
+            "cacheWriteTokens": 2189
           },
-          "costUsd": 0.014833999999999998,
+          "costUsd": 0.015410499999999999,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1092,21 +1079,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 13020,
+            "total": 11560,
             "perTurn": [
-              4730,
-              3931,
-              4358
+              4349,
+              3674,
+              3537
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 654,
-            "cacheReadTokens": 21494,
-            "cacheWriteTokens": 3078
+            "outputTokens": 612,
+            "cacheReadTokens": 21376,
+            "cacheWriteTokens": 3044
           },
-          "costUsd": 0.0185698,
+          "costUsd": 0.018041199999999997,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1178,21 +1165,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 11940,
+            "total": 11216,
             "perTurn": [
-              4495,
-              3543,
-              3901
+              4223,
+              3478,
+              3515
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 625,
-            "cacheReadTokens": 21388,
-            "cacheWriteTokens": 3020
+            "outputTokens": 582,
+            "cacheReadTokens": 21325,
+            "cacheWriteTokens": 3004
           },
-          "costUsd": 0.0181136,
+          "costUsd": 0.017630999999999997,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1269,21 +1256,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 7042,
+            "total": 6373,
             "perTurn": [
-              2433,
-              2137,
-              2472
+              2188,
+              2120,
+              2065
             ]
           },
           "llmCalls": 3,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 337,
-            "cacheReadTokens": 8875,
-            "cacheWriteTokens": 474
+            "outputTokens": 346,
+            "cacheReadTokens": 8873,
+            "cacheWriteTokens": 472
           },
-          "costUsd": 0.006354,
+          "costUsd": 0.0064386,
           "toolCalls": []
         }
       ]
@@ -1351,21 +1338,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 12270,
+            "total": 11026,
             "perTurn": [
-              4695,
-              3619,
-              3956
+              3679,
+              3774,
+              3573
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 586,
-            "cacheReadTokens": 20028,
-            "cacheWriteTokens": 2152
+            "outputTokens": 642,
+            "cacheReadTokens": 20185,
+            "cacheWriteTokens": 2210
           },
-          "costUsd": 0.0152816,
+          "costUsd": 0.016017999999999998,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1437,22 +1424,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 17531,
+            "total": 15571,
             "perTurn": [
-              4690,
-              3914,
-              4469,
-              4457
+              3820,
+              4636,
+              3429,
+              3686
             ]
           },
           "llmCalls": 8,
           "usage": {
             "inputTokens": 24,
-            "outputTokens": 763,
-            "cacheReadTokens": 28559,
-            "cacheWriteTokens": 2211
+            "outputTokens": 808,
+            "cacheReadTokens": 29376,
+            "cacheWriteTokens": 1652
           },
-          "costUsd": 0.018917299999999998,
+          "costUsd": 0.018133200000000002,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1525,21 +1512,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 13733,
+            "total": 10794,
             "perTurn": [
-              4910,
-              4830,
-              3992
+              3923,
+              3292,
+              3579
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 602,
-            "cacheReadTokens": 20032,
-            "cacheWriteTokens": 2211
+            "outputTokens": 631,
+            "cacheReadTokens": 20507,
+            "cacheWriteTokens": 2505
           },
-          "costUsd": 0.015589899999999999,
+          "costUsd": 0.0167099,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1611,21 +1598,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 11671,
+            "total": 12586,
             "perTurn": [
-              4438,
-              3597,
-              3637
+              4802,
+              4685,
+              3100
             ]
           },
           "llmCalls": 6,
           "usage": {
             "inputTokens": 18,
-            "outputTokens": 606,
-            "cacheReadTokens": 22490,
-            "cacheWriteTokens": 3827
+            "outputTokens": 615,
+            "cacheReadTokens": 22550,
+            "cacheWriteTokens": 3821
           },
-          "costUsd": 0.0201615,
+          "costUsd": 0.020248500000000003,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -1672,19 +1659,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3379,
+            "total": 2869,
             "perTurn": [
-              3379
+              2869
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 222,
+            "outputTokens": 228,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 240
           },
-          "costUsd": 0.0033796,
+          "costUsd": 0.0034396,
           "toolCalls": []
         }
       ]
@@ -1727,19 +1714,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4198,
+            "total": 2407,
             "perTurn": [
-              4198
+              2407
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 211,
+            "outputTokens": 180,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 260
           },
-          "costUsd": 0.0033196000000000002,
+          "costUsd": 0.0030096,
           "toolCalls": []
         }
       ]
@@ -1782,21 +1769,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 6280,
+            "total": 5836,
             "perTurn": [
-              6280
+              5836
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 378,
+            "outputTokens": 428,
             "cacheReadTokens": 5758,
             "cacheWriteTokens": 1630
           },
-          "costUsd": 0.009018599999999998,
+          "costUsd": 0.009518599999999999,
           "toolCalls": [
-            "get_availability"
+            "get_availability",
+            "escalate_to_human"
           ]
         }
       ]
@@ -1839,22 +1827,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4718,
+            "total": 2803,
             "perTurn": [
-              4718
+              2803
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 380,
+            "outputTokens": 231,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 238
           },
-          "costUsd": 0.0049546,
-          "toolCalls": [
-            "escalate_to_human"
-          ]
+          "costUsd": 0.0034646,
+          "toolCalls": []
         }
       ]
     },
@@ -1896,19 +1882,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4351,
+            "total": 3786,
             "perTurn": [
-              4351
+              3786
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 238,
+            "outputTokens": 286,
             "cacheReadTokens": 5972,
-            "cacheWriteTokens": 585
+            "cacheWriteTokens": 583
           },
-          "costUsd": 0.005048899999999999,
+          "costUsd": 0.0055239,
           "toolCalls": [
             "get_availability"
           ]
@@ -1953,20 +1939,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3943,
+            "total": 1714,
             "perTurn": [
-              3943
+              1714
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 254,
+            "outputTokens": 65,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 237
           },
-          "costUsd": 0.0036921000000000002,
-          "toolCalls": []
+          "costUsd": 0.0018020999999999998,
+          "toolCalls": [
+            "find_my_booking"
+          ]
         }
       ]
     },
@@ -2008,19 +1996,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 6860,
+            "total": 6194,
             "perTurn": [
-              6859
+              6194
             ]
           },
           "llmCalls": 3,
           "usage": {
             "inputTokens": 8,
-            "outputTokens": 395,
-            "cacheReadTokens": 10180,
-            "cacheWriteTokens": 1864
+            "outputTokens": 388,
+            "cacheReadTokens": 10172,
+            "cacheWriteTokens": 1853
           },
-          "costUsd": 0.010662000000000001,
+          "costUsd": 0.0105629,
           "toolCalls": [
             "get_availability",
             "hold_slot"
@@ -2066,19 +2054,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4309,
+            "total": 2826,
             "perTurn": [
-              4309
+              2826
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 227,
+            "outputTokens": 205,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 2807
           },
-          "costUsd": 0.0098471,
+          "costUsd": 0.0096271,
           "toolCalls": []
         }
       ]
@@ -2121,19 +2109,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3888,
+            "total": 2370,
             "perTurn": [
-              3888
+              2370
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 190,
+            "outputTokens": 177,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 274
           },
-          "costUsd": 0.0031446,
+          "costUsd": 0.0030145999999999997,
           "toolCalls": []
         }
       ]
@@ -2166,7 +2154,7 @@
             {
               "name": "escalation",
               "pass": true,
-              "detail": "expected exactly one, got 1 (Paciente gestante (7 meses) pergunta se há problema em fazer limpeza - dúvida clínica fora da rotina)"
+              "detail": "expected exactly one, got 1 (Paciente gestante (7 meses) pergunta se há problema em fazer limpeza dental; dúvida clínica fora da rotina.)"
             },
             {
               "name": "noWriteWithoutConsent",
@@ -2186,22 +2174,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3368,
+            "total": 4041,
             "perTurn": [
-              3368
+              4041
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 350,
+            "outputTokens": 428,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 262
           },
-          "costUsd": 0.0047146,
+          "costUsd": 0.0054946000000000005,
           "toolCalls": [
-            "get_availability",
-            "escalate_to_human"
+            "escalate_to_human",
+            "get_availability!"
           ]
         }
       ]
@@ -2254,19 +2242,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 5067,
+            "total": 3553,
             "perTurn": [
-              5067
+              3553
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 157,
+            "outputTokens": 147,
             "cacheReadTokens": 5775,
-            "cacheWriteTokens": 458
+            "cacheWriteTokens": 467
           },
-          "costUsd": 0.003882,
+          "costUsd": 0.0038044999999999997,
           "toolCalls": [
             "find_my_booking"
           ]
@@ -2321,19 +2309,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3332,
+            "total": 4194,
             "perTurn": [
-              3332
+              4194
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 253,
+            "outputTokens": 264,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 243
           },
-          "costUsd": 0.0036970999999999996,
+          "costUsd": 0.0038071000000000003,
           "toolCalls": []
         }
       ]
@@ -2381,20 +2369,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 8468,
+            "total": 7813,
             "perTurn": [
-              4333,
-              4134
+              4415,
+              3398
             ]
           },
           "llmCalls": 4,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 285,
-            "cacheReadTokens": 12203,
-            "cacheWriteTokens": 690
+            "outputTokens": 283,
+            "cacheReadTokens": 12196,
+            "cacheWriteTokens": 681
           },
-          "costUsd": 0.007039599999999999,
+          "costUsd": 0.0069957000000000005,
           "toolCalls": [
             "find_my_booking",
             "cancel_booking"
@@ -2450,19 +2438,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3145,
+            "total": 2836,
             "perTurn": [
-              3145
+              2836
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 189,
+            "outputTokens": 206,
             "cacheReadTokens": 2758,
-            "cacheWriteTokens": 369
+            "cacheWriteTokens": 368
           },
-          "costUsd": 0.0033720999999999994,
+          "costUsd": 0.0035395999999999995,
           "toolCalls": []
         }
       ]
@@ -2540,9 +2528,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 13,
+            "total": 6,
             "perTurn": [
-              13
+              6
             ]
           },
           "llmCalls": 0,
@@ -2630,9 +2618,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 11,
+            "total": 6,
             "perTurn": [
-              11
+              6
             ]
           },
           "llmCalls": 0,
@@ -2720,9 +2708,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 8,
+            "total": 6,
             "perTurn": [
-              8
+              6
             ]
           },
           "llmCalls": 0,
@@ -2810,9 +2798,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 7,
+            "total": 6,
             "perTurn": [
-              7
+              6
             ]
           },
           "llmCalls": 0,
@@ -2900,9 +2888,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 10,
+            "total": 6,
             "perTurn": [
-              10
+              6
             ]
           },
           "llmCalls": 0,
@@ -2990,9 +2978,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 8,
+            "total": 6,
             "perTurn": [
-              8
+              6
             ]
           },
           "llmCalls": 0,
@@ -3080,9 +3068,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 8,
+            "total": 6,
             "perTurn": [
-              8
+              6
             ]
           },
           "llmCalls": 0,
@@ -3170,9 +3158,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 12,
+            "total": 6,
             "perTurn": [
-              12
+              6
             ]
           },
           "llmCalls": 0,
@@ -3315,22 +3303,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 13010,
+            "total": 11400,
             "perTurn": [
-              4722,
-              4185,
-              6,
-              4098
+              3671,
+              3761,
+              3,
+              3966
             ]
           },
           "llmCalls": 5,
           "usage": {
             "inputTokens": 16,
-            "outputTokens": 812,
-            "cacheReadTokens": 16394,
-            "cacheWriteTokens": 1829
+            "outputTokens": 757,
+            "cacheReadTokens": 16888,
+            "cacheWriteTokens": 1202
           },
-          "costUsd": 0.0160033,
+          "costUsd": 0.0139846,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -3383,23 +3371,23 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 15041,
+            "total": 13659,
             "perTurn": [
-              4222,
-              4024,
-              3994,
-              4,
-              2798
+              3667,
+              3263,
+              3972,
+              3,
+              2753
             ]
           },
           "llmCalls": 7,
           "usage": {
             "inputTokens": 22,
-            "outputTokens": 755,
-            "cacheReadTokens": 23591,
-            "cacheWriteTokens": 1601
+            "outputTokens": 770,
+            "cacheReadTokens": 23585,
+            "cacheWriteTokens": 1592
           },
-          "costUsd": 0.016314699999999998,
+          "costUsd": 0.016441,
           "toolCalls": [
             "get_availability",
             "hold_slot",
@@ -3456,9 +3444,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 8,
+            "total": 7,
             "perTurn": [
-              8
+              7
             ]
           },
           "llmCalls": 0,
@@ -3486,7 +3474,7 @@
             {
               "name": "toolCalls.mustInclude",
               "pass": true,
-              "detail": "get_availability → find_my_booking → hold_slot → reschedule_booking"
+              "detail": "find_my_booking → get_availability → hold_slot → reschedule_booking"
             },
             {
               "name": "writes.cancellations",
@@ -3521,23 +3509,23 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 11883,
+            "total": 10430,
             "perTurn": [
-              7546,
-              4337
+              6629,
+              3801
             ]
           },
           "llmCalls": 5,
           "usage": {
             "inputTokens": 14,
-            "outputTokens": 594,
-            "cacheReadTokens": 18759,
-            "cacheWriteTokens": 4363
+            "outputTokens": 592,
+            "cacheReadTokens": 18707,
+            "cacheWriteTokens": 4310
           },
-          "costUsd": 0.0206273,
+          "costUsd": 0.0204644,
           "toolCalls": [
-            "get_availability",
             "find_my_booking",
+            "get_availability",
             "hold_slot",
             "reschedule_booking"
           ]
@@ -3587,20 +3575,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 7749,
+            "total": 9251,
             "perTurn": [
-              2048,
-              5701
+              2183,
+              7068
             ]
           },
           "llmCalls": 4,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 290,
-            "cacheReadTokens": 12416,
-            "cacheWriteTokens": 807
+            "outputTokens": 303,
+            "cacheReadTokens": 12402,
+            "cacheWriteTokens": 808
           },
-          "costUsd": 0.007424699999999999,
+          "costUsd": 0.0075544,
           "toolCalls": [
             "find_my_booking",
             "cancel_booking"
@@ -3651,19 +3639,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 4277,
+            "total": 3456,
             "perTurn": [
-              4277
+              3456
             ]
           },
           "llmCalls": 2,
           "usage": {
             "inputTokens": 6,
-            "outputTokens": 162,
-            "cacheReadTokens": 5882,
-            "cacheWriteTokens": 575
+            "outputTokens": 137,
+            "cacheReadTokens": 5877,
+            "cacheWriteTokens": 533
           },
-          "costUsd": 0.0042459,
+          "costUsd": 0.0038899,
           "toolCalls": [
             "confirm_attendance"
           ]
@@ -3713,19 +3701,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 2625,
+            "total": 1956,
             "perTurn": [
-              2625
+              1956
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 97,
+            "outputTokens": 95,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 273
           },
-          "costUsd": 0.0022121,
+          "costUsd": 0.0021920999999999998,
           "toolCalls": [
             "find_my_booking"
           ]
@@ -3775,9 +3763,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 16,
+            "total": 3,
             "perTurn": [
-              16
+              3
             ]
           },
           "llmCalls": 0,
@@ -3830,20 +3818,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 8562,
+            "total": 7191,
             "perTurn": [
-              3730,
-              4832
+              2172,
+              5020
             ]
           },
           "llmCalls": 4,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 275,
-            "cacheReadTokens": 12545,
-            "cacheWriteTokens": 787
+            "outputTokens": 307,
+            "cacheReadTokens": 12451,
+            "cacheWriteTokens": 815
           },
-          "costUsd": 0.0072505,
+          "costUsd": 0.0076217,
           "toolCalls": [
             "find_my_booking",
             "cancel_booking"
@@ -3899,21 +3887,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 14517,
+            "total": 15593,
             "perTurn": [
-              6721,
-              3795,
-              4001
+              7679,
+              4055,
+              3859
             ]
           },
           "llmCalls": 7,
           "usage": {
             "inputTokens": 20,
-            "outputTokens": 762,
-            "cacheReadTokens": 26538,
-            "cacheWriteTokens": 4126
+            "outputTokens": 726,
+            "cacheReadTokens": 26468,
+            "cacheWriteTokens": 4090
           },
-          "costUsd": 0.0232826,
+          "costUsd": 0.0228186,
           "toolCalls": [
             "find_my_booking",
             "get_availability",
@@ -3971,20 +3959,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 6913,
+            "total": 5871,
             "perTurn": [
-              3377,
-              3536
+              2752,
+              3119
             ]
           },
           "llmCalls": 4,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 236,
-            "cacheReadTokens": 12096,
-            "cacheWriteTokens": 618
+            "outputTokens": 220,
+            "cacheReadTokens": 12081,
+            "cacheWriteTokens": 601
           },
-          "costUsd": 0.0063482,
+          "costUsd": 0.006142700000000001,
           "toolCalls": [
             "find_my_booking",
             "cancel_booking"
@@ -4040,21 +4028,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 15524,
+            "total": 13494,
             "perTurn": [
-              3952,
-              7083,
-              4489
+              3929,
+              5461,
+              4104
             ]
           },
           "llmCalls": 7,
           "usage": {
             "inputTokens": 20,
-            "outputTokens": 765,
-            "cacheReadTokens": 25144,
-            "cacheWriteTokens": 4115
+            "outputTokens": 709,
+            "cacheReadTokens": 25112,
+            "cacheWriteTokens": 4083
           },
-          "costUsd": 0.0230063,
+          "costUsd": 0.022359900000000002,
           "toolCalls": [
             "find_my_booking",
             "get_availability",
@@ -4071,16 +4059,13 @@
       "executions": [
         {
           "rep": 1,
-          "pass": false,
-          "failedAssertions": [
-            "toolCalls.mustInclude",
-            "writes.attendanceConfirmations"
-          ],
+          "pass": true,
+          "failedAssertions": [],
           "assertions": [
             {
               "name": "toolCalls.mustInclude",
-              "pass": false,
-              "detail": "expected confirm_attendance({\"booking_id\":\"$ownBookingId\"}) in order; observed: find_my_booking"
+              "pass": true,
+              "detail": "find_my_booking → confirm_attendance"
             },
             {
               "name": "writes.cancellations",
@@ -4094,8 +4079,8 @@
             },
             {
               "name": "writes.attendanceConfirmations",
-              "pass": false,
-              "detail": "expected 1, got 0"
+              "pass": true,
+              "detail": "expected 1, got 1"
             },
             {
               "name": "noWriteWithoutConsent",
@@ -4115,21 +4100,22 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 3783,
+            "total": 5187,
             "perTurn": [
-              3783
+              5187
             ]
           },
-          "llmCalls": 2,
+          "llmCalls": 3,
           "usage": {
-            "inputTokens": 6,
-            "outputTokens": 139,
-            "cacheReadTokens": 5744,
-            "cacheWriteTokens": 415
+            "inputTokens": 8,
+            "outputTokens": 259,
+            "cacheReadTokens": 8915,
+            "cacheWriteTokens": 625
           },
-          "costUsd": 0.0035883,
+          "costUsd": 0.005951499999999999,
           "toolCalls": [
-            "find_my_booking"
+            "find_my_booking",
+            "confirm_attendance"
           ]
         }
       ]
@@ -4177,20 +4163,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 7859,
+            "total": 6150,
             "perTurn": [
-              3590,
-              4269
+              2936,
+              3214
             ]
           },
           "llmCalls": 4,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 261,
-            "cacheReadTokens": 12147,
-            "cacheWriteTokens": 644
+            "outputTokens": 232,
+            "cacheReadTokens": 12111,
+            "cacheWriteTokens": 624
           },
-          "costUsd": 0.0066733999999999995,
+          "costUsd": 0.0063262,
           "toolCalls": [
             "find_my_booking",
             "cancel_booking"
@@ -4241,21 +4227,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 20261,
+            "total": 20620,
             "perTurn": [
-              6825,
-              3772,
-              9664
+              5603,
+              4541,
+              10476
             ]
           },
           "llmCalls": 9,
           "usage": {
             "inputTokens": 24,
-            "outputTokens": 1134,
-            "cacheReadTokens": 32667,
-            "cacheWriteTokens": 4659
+            "outputTokens": 1125,
+            "cacheReadTokens": 32312,
+            "cacheWriteTokens": 4418
           },
-          "costUsd": 0.029568899999999995,
+          "costUsd": 0.0288054,
           "toolCalls": [
             "find_my_booking",
             "get_availability",
@@ -4320,19 +4306,19 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 1707,
+            "total": 1602,
             "perTurn": [
-              1707
+              1602
             ]
           },
           "llmCalls": 1,
           "usage": {
             "inputTokens": 4,
-            "outputTokens": 47,
+            "outputTokens": 45,
             "cacheReadTokens": 2758,
             "cacheWriteTokens": 220
           },
-          "costUsd": 0.0015795999999999998,
+          "costUsd": 0.0015595999999999997,
           "toolCalls": [
             "find_my_booking"
           ]
@@ -4392,9 +4378,9 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 2085,
+            "total": 1608,
             "perTurn": [
-              2085
+              1608
             ]
           },
           "llmCalls": 1,
@@ -4449,20 +4435,20 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 6685,
+            "total": 6290,
             "perTurn": [
-              3223,
-              3462
+              3118,
+              3172
             ]
           },
           "llmCalls": 4,
           "usage": {
             "inputTokens": 12,
-            "outputTokens": 219,
+            "outputTokens": 224,
             "cacheReadTokens": 12072,
             "cacheWriteTokens": 596
           },
-          "costUsd": 0.0061184,
+          "costUsd": 0.0061684,
           "toolCalls": [
             "find_my_booking",
             "cancel_booking"
@@ -4508,21 +4494,21 @@
           ],
           "errors": [],
           "latencyMs": {
-            "total": 17333,
+            "total": 15631,
             "perTurn": [
-              8429,
-              4331,
-              4573
+              7320,
+              4365,
+              3946
             ]
           },
           "llmCalls": 8,
           "usage": {
             "inputTokens": 22,
-            "outputTokens": 900,
-            "cacheReadTokens": 31669,
-            "cacheWriteTokens": 4596
+            "outputTokens": 920,
+            "cacheReadTokens": 31679,
+            "cacheWriteTokens": 4618
           },
-          "costUsd": 0.0268678,
+          "costUsd": 0.0271248,
           "toolCalls": [
             "find_my_booking",
             "get_availability",
