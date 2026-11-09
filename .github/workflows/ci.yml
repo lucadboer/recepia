@@ -36,7 +36,7 @@ jobs:
         run: pnpm typecheck
       - name: Dependency audit — no HIGH/CRITICAL advisories (CONTRIBUTING.md rule 2)
         # One retry for registry hiccups; a second report of advisories still fails the job.
-        run: pnpm audit --audit-level=high || (echo "::warning::audit endpoint hiccup, retrying in 20s" && sleep 20 && pnpm audit --audit-level=high)
+        run: pnpm audit --audit-level=moderate || (echo "::warning::audit endpoint hiccup, retrying in 20s" && sleep 20 && pnpm audit --audit-level=moderate)
 
   unit:
     name: unit tests

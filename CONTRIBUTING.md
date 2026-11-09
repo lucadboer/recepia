@@ -21,9 +21,9 @@ The goal is to **always be on the latest, vulnerability-free versions** — neve
 
 2. **Vulnerability gate — required before merging a dependency change:**
    ```bash
-   pnpm audit               # must report no HIGH or CRITICAL advisories
+   pnpm audit               # must report no MODERATE, HIGH or CRITICAL advisories
    ```
-   If a HIGH/CRITICAL is found: upgrade past it, replace the package, or (last resort) document an accepted exception with rationale.
+   If one is found: upgrade past it, replace the package, or (last resort) document an accepted exception with rationale.
 
 3. **Supply-chain controls stay ON (configured in `pnpm-workspace.yaml`):**
    - **Build scripts are blocked by default.** Only explicitly approved packages may run install scripts (`allowBuilds`). Today: `esbuild` only (needed by tsx/vitest).
@@ -56,7 +56,7 @@ pnpm perf:smoke           # webhook load smoke with fakes: zero overbooking + p9
 pnpm evals:fake           # golden set through the real orchestrator with the scripted stand-in (CI gate)
 pnpm evals:readme --check # README evaluation block equals the latest live report
 pnpm retention:purge --dry-run  # LGPD retention: what the daily purge would delete (counts only)
-pnpm audit --audit-level=high
+pnpm audit --audit-level=moderate
 ```
 
 The concurrency test (no overbooking under simultaneous holds) is a non-negotiable gate and must stay green.
@@ -66,9 +66,9 @@ The concurrency test (no overbooking under simultaneous holds) is a non-negotiab
 `.github/workflows/ci.yml` runs on every push to `main` and every pull request: `quality`
 (lint, typecheck, audit), `unit`, and `integration` (integration suite + the concurrency gate as a
 named step + coverage) against a `postgres:16` service. `evals.yml` runs the deterministic
-evaluation gate (`fake`) on every push/PR and the live evaluation (`live`) weekly, on demand and on
-PRs when the `live-evals` label is applied (one paid run per application over
-`evals/live-subset.txt`; a PR touching `prompts/**` gets a warning asking for the label).
+evaluation gate (`fake`) on every push/PR; the live evaluation (`live`) spends API credit and runs
+only when started by hand (Actions → evals → Run workflow; `cases` narrows it to a subset such as
+`evals/live-subset.txt`; a PR touching `prompts/**` gets a warning asking for that run).
 `perf.yml` runs the perf smoke on `main`,
 nightly, on demand and on PRs labelled `perf`; `codeql.yml` runs static analysis; Dependabot opens
 weekly grouped dependency PRs with a 3-day cooldown.
@@ -137,7 +137,7 @@ signals reach the script). They are linted and type-checked like `src/`.
 `rewriteRelativeImportExtensions` turns them into `.js` on `pnpm build`. Files read at runtime
 relative to the code must be copied into the image at the same path (see the `Dockerfile`). Base
 images are pinned by digest and bumped by Dependabot; `docker.yml` must stay green (Trivy has no
-fixable HIGH/CRITICAL finding, the smoke test boots the image as `nonroot`, both compose files
+fixable MEDIUM/HIGH/CRITICAL finding, the smoke test boots the image as `nonroot`, both compose files
 validate, and publishing waits for the repository scan). In compose, anything in `.env` that names
 a host path or a host loopback URL needs a container equivalent: the Calendar key is a read-only
 bind mount, the Evolution API is reached through `docker-compose.evolution.yml`.

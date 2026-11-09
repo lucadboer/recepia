@@ -168,9 +168,8 @@ Two modes share everything except the model port:
   least one adversarial case fail — demonstrated and recorded in the
   [quickstart](specs/004-evaluation-harness/quickstart.md).
 - **Live** (`pnpm evals:live`): the same set against the production model (`claude-sonnet-5-5`),
-  weekly and on demand (1 execution per case under a US$ 0.75 cap by default), and on a pull
-  request only when the `live-evals` label is applied (the cases in
-  [`evals/live-subset.txt`](evals/live-subset.txt), US$ 0.40 cap). Compared with the committed
+  only when started by hand — it spends API credit (1 execution per case under a US$ 0.75 cap by
+  default, or a subset such as [`evals/live-subset.txt`](evals/live-subset.txt)). Compared with the committed
   [`evals/baseline.json`](evals/) (regression = any category down > 5 pp or any adversarial write;
   categories a subset run did not include are never counted). Skipped explicitly without the
   credential — never reported as a pass. Full-set reports are published through a pull request;
@@ -230,8 +229,8 @@ and the captured trace below: [docs/observability.md](docs/observability.md).
 
 Every push and pull request runs [`ci.yml`](.github/workflows/ci.yml):
 
-- **quality** — Biome lint/format, strict `tsc --noEmit`, `pnpm audit --audit-level=high` (the
-  dependency policy in [CONTRIBUTING.md](CONTRIBUTING.md) allows no HIGH/CRITICAL advisories).
+- **quality** — Biome lint/format, strict `tsc --noEmit`, `pnpm audit --audit-level=moderate` (the
+  dependency policy in [CONTRIBUTING.md](CONTRIBUTING.md) allows no moderate-or-higher advisories).
 - **unit** — `pnpm test:unit`.
 - **integration** — the integration suite against a `postgres:16` service, the **no-overbooking
   concurrency test as a named gate**, and full-suite coverage with thresholds enforced from
@@ -239,9 +238,9 @@ Every push and pull request runs [`ci.yml`](.github/workflows/ci.yml):
 
 [`evals.yml`](.github/workflows/evals.yml) runs the deterministic evaluation gate on every push
 and pull request (`fake`: the golden set + `pnpm evals:readme --check`, which fails if the README
-block above was edited by hand) and the live evaluation (`live`: weekly, on demand, and on pull
-requests labelled `live-evals` — a push never spends; full-set runs publish their report through a
-PR, never a direct commit).
+block above was edited by hand) and the live evaluation (`live`: only when started by hand —
+no schedule, push or pull request spends; full-set runs publish their report through a PR, never
+a direct commit).
 
 [`perf.yml`](.github/workflows/perf.yml) runs [`scripts/perf-smoke.ts`](scripts/perf-smoke.ts) on
 `main`, nightly and on demand: real webhook + orchestrator + Postgres with fake LLM/calendar/WhatsApp,
@@ -253,7 +252,7 @@ median turn p95 must stay under budget. The numbers live in the job summary and 
 keeps dependencies on their latest audited versions with a short cooldown.
 
 [`docker.yml`](.github/workflows/docker.yml) builds the image with the GitHub Actions cache,
-scans the repository and the image with Trivy (fails on fixable HIGH/CRITICAL; SARIF to the Security
+scans the repository and the image with Trivy (fails on fixable MEDIUM/HIGH/CRITICAL; SARIF to the Security
 tab), smoke-tests the image against Postgres (`/healthz`, `/readyz`, non-root) and, on `main`,
 pushes it to GHCR with an SBOM and provenance; a weekly run rescans.
 
