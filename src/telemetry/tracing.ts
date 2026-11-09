@@ -16,7 +16,7 @@ import {
   trace,
 } from "@opentelemetry/api";
 
-export const TRACER_NAME = "recepia";
+const TRACER_NAME = "recepia";
 
 export const SPAN = {
   inbound: "webhook.inbound",

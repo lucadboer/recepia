@@ -154,11 +154,3 @@ export function hasEscalatedFlag(err: unknown): boolean {
     (err as unknown as Record<symbol, unknown>)[ESCALATED_FLAG] === true
   );
 }
-
-/** The LLM tool-use loop hit its safety cap without finishing. */
-export class MaxIterationsExceeded extends Error {
-  constructor(message = "Limite de iterações da conversa excedido.") {
-    super(message);
-    this.name = "MaxIterationsExceeded";
-  }
-}

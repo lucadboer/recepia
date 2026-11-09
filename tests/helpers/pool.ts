@@ -11,7 +11,7 @@ export interface InterceptOptions {
   after?: (sql: string) => Promise<void> | void;
 }
 
-export function sqlOf(args: unknown[]): string {
+function sqlOf(args: unknown[]): string {
   return typeof args[0] === "string" ? args[0] : ((args[0] as { text?: string })?.text ?? "");
 }
 

@@ -1,6 +1,6 @@
 import type { Booking, Hold, Slot } from "./types.ts";
 
-export function slotOf(b: Booking): Slot {
+function slotOf(b: Booking): Slot {
   return { start: b.start, end: b.end, type: b.appointmentType };
 }
 

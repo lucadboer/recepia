@@ -104,7 +104,7 @@ function weekdayPt(now: Date, timezone: string): string {
 }
 
 /** The one line that changes per turn: today's weekday, date, time, zone and ISO offset. */
-export function datedLine({ now, timezone }: PromptContext): string {
+function datedLine({ now, timezone }: PromptContext): string {
   const { date, time } = formatLocalPt(now, timezone);
   const offset = formatOffset(now, timezone);
   const example = `${toLocalParts(now, timezone).dateStr}T09:00:00${offset}`;

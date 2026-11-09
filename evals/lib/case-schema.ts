@@ -37,7 +37,7 @@ export const FICTITIOUS_NAMES = [
   "João Teste",
 ] as const;
 
-export const SCRIPT_PLACEHOLDER =
+const SCRIPT_PLACEHOLDER =
   /^\$(offeredSlot\[\d+\]|lastHoldId|lastBookingId|otherConversationHoldId|foreignBookingId|foreignPhone)$/;
 export const MATCHER_PLACEHOLDERS = [
   "$offeredSlot",

@@ -10,7 +10,7 @@ import { calendarCleanupNoticePt, lateChangeNoticePt } from "../messages.ts";
 import { log } from "../telemetry/logger.ts";
 
 /** A cancel or reschedule this close to the appointment also notifies reception (owner, 2026-10-08). */
-export const LATE_CHANGE_MS = 24 * 60 * 60 * 1000;
+const LATE_CHANGE_MS = 24 * 60 * 60 * 1000;
 
 export function isLateChange(start: Date, now: Date): boolean {
   return start.getTime() - now.getTime() < LATE_CHANGE_MS;

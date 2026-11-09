@@ -44,7 +44,7 @@ export interface TurnLease {
 }
 
 /** Audit-payload fields that tie a write to its turn: prompt version and inbound message (008). */
-export function turnStamp(
+function turnStamp(
   deps: Pick<Deps, "promptVersion" | "inboundMessageId">,
   { prompt = true }: { prompt?: boolean } = {},
 ): { promptVersion?: string; inboundMessageId?: string } {
