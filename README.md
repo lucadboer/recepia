@@ -10,11 +10,14 @@ and every write is audited. Built test-first with Spec Driven Development (GitHu
 TypeScript, PostgreSQL and the Anthropic API.
 
 <p align="center">
-  <img src="docs/img/whatsapp-demo.svg" width="400" alt="Animated WhatsApp conversation: a patient books a cleaning; labels under the agent's messages show get_availability, hold_slot and confirm_booking doing each step; a day before, the reminder's SIM is confirmed with no model call">
+  <img src="docs/img/whatsapp-demo.svg" width="820" alt="Animated demo. Left, a WhatsApp chat in Portuguese: a parent asks for a cleaning for their daughter next week, after 4 pm, not on Tuesday; the agent lists the real free times; the parent answers 'sim, quarta! mas se tiver 17h é melhor'; the agent holds Wednesday at 17:00, asks for an explicit yes and then the booking is confirmed. Right, under the hood: which steps were the model (reading the constraints, picking the time out of a sentence) and which were deterministic code (get_availability, hold_slot, confirm_booking to Google Calendar, a fixed confirmation template).">
 </p>
-<p align="center"><sub>Every label is the deterministic tool that did that step. The model's wording is
-illustrative; the confirmation and the reminder are the product's exact templates, and the
-reminder's "SIM" never reaches the model.</sub></p>
+<p align="center"><sub>A real run, not a mock-up: the patient's messages are golden case
+<a href="evals/cases/date-06-filha-depois-das-16h-sim-mas.json"><code>date-06</code></a>, the agent's
+replies are verbatim from a live <code>claude-sonnet-5-5</code> run with prompt v004 (bold shown as
+WhatsApp renders it), and the last message is the product's fixed template. Every push replays the
+conversation through the real orchestrator with a scripted stand-in model and checks every write; the
+live evaluation re-checks it against the real model.</sub></p>
 
 > **Status (honest):** side project. No clinic is using it yet and there are no production
 > metrics. The real adapters (Anthropic, Google Calendar, WhatsApp Cloud API and Evolution) exist
@@ -115,7 +118,7 @@ queue, graceful shutdown) · `src/cli` (operator commands).
 | State and prompt stay bounded | history trimmed at turn boundaries, offered slots pruned and capped | `tests/unit/conversation-bounds.test.ts` |
 | Clinic time is DST-safe | IANA zone through `Intl`, proven against zones with DST | `tests/unit/time.test.ts` |
 | The process stops cleanly and the webhook refuses abuse | exact-path routing, 256 KiB body cap, timeouts, drain-then-close shutdown | `webhook-server.test.ts`, `tests/unit/shutdown.test.ts` |
-| The guardrails hold against hostile model behaviour, end to end | 62 authored pt-BR conversations (14 adversarial) through the real orchestrator and Postgres, scored on tool calls, writes, consent, hallucinated slots, escalations and final status | `pnpm evals:fake` (CI job `evals / fake`, any failing case blocks the change), `tests/integration/evals-suite.test.ts` (exactly repeatable) |
+| The guardrails hold against hostile model behaviour, end to end | 63 authored pt-BR conversations (14 adversarial) through the real orchestrator and Postgres, scored on tool calls, writes, consent, hallucinated slots, escalations and final status | `pnpm evals:fake` (CI job `evals / fake`, any failing case blocks the change), `tests/integration/evals-suite.test.ts` (exactly repeatable) |
 | A model refusal or a truncated tool call never produces an empty reply or a half-run tool | `stop_reason: refusal` / `max_tokens` with `tool_use` → hand-off to reception, tools skipped | `tests/integration/orchestrator.test.ts` ("production model migration") |
 | One patient message = one trace, with no personal data | OpenTelemetry API (no-op unless an OTLP endpoint is set): webhook → turn → GenAI `chat` spans → `execute_tool` spans with the guardrail that rejected a call → SQL → delivery linked to its turn; keyed patient pseudonym, content never recorded | `tests/integration/tracing.test.ts`, `tests/integration/pii-scan.test.ts`, CI log scan in `evals / fake` |
 | A conversation cannot run up an unbounded bill | usage and estimated cost per conversation, budget checked before every model call (default US$ 0.25 → hand-off `budget_exceeded`); unknown models are charged at the highest price; spend of a failed turn is still recorded; prompt caching of tools + static instructions | `tests/integration/orchestrator-budget.test.ts`, `tests/unit/anthropic-llm.test.ts`, live check in `tests/live` |
@@ -146,13 +149,13 @@ queue, graceful shutdown) · `src/cli` (operator commands).
 
 ## Evaluation (measured behaviour)
 
-The agent's behaviour is measured, not asserted. [`evals/`](evals/) holds a **golden set of 62
+The agent's behaviour is measured, not asserted. [`evals/`](evals/) holds a **golden set of 63
 authored Brazilian-Portuguese conversations** — happy path (8), alternative slot (4),
 reschedule/cancel (10: cancel, move, late cancel, a held time that expires, two bookings, no
 booking, opt-out, attendance confirmation), replies to a reminder (7: a plain "SIM" with no model
 call, "sim, mas…", "não vou poder ir", two pending reminders, "me tira da lista" vs "me tira dessa
 consulta"),
-ambiguous dates (5), out of scope (8), opt-out (3), consent refusal (3) and 14 prompt-injection
+ambiguous dates (6, one of them the demo conversation at the top of this page), out of scope (8), opt-out (3), consent refusal (3) and 14 prompt-injection
 attempts (fake system messages, booking for another phone, inventing a tool, holding a never-offered
 slot, confirming another conversation's hold, `escalate` + `confirm` in one response,
 oversized/JSON payloads, cancelling by an invented id, cancelling another patient's booking,
