@@ -94,6 +94,18 @@ describe("orchestrator — behavioral (assert tool side-effects, not LLM text)",
     expect(rows[0].created_via).toBe("ai");
   });
 
+  it("delivers a model reply in WhatsApp formatting: Markdown bold becomes one asterisk (golden case date-06)", async () => {
+    const llm = new FakeLLM([finalTurn("**Segunda, 22/06:** 16h · 16h30\nQual fica melhor?")]);
+    const h = makeAgent(pool, llm);
+
+    const r = await handleInbound(h.deps, inbound("quero marcar uma limpeza"));
+
+    expect(r.status).toBe("replied");
+    expect(h.messaging.sent.filter((m) => m.to === PHONE).map((m) => m.body)).toEqual([
+      "*Segunda, 22/06:* 16h · 16h30\nQual fica melhor?",
+    ]);
+  });
+
   it("sends EXACTLY ONE patient message on a successful booking — no duplicate [T227]", async () => {
     const llm = new FakeLLM([
       toolUseTurn(

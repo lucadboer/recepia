@@ -57,6 +57,7 @@ import { classifyIntent, isAffirmative, isStrictAffirmative } from "./intent.ts"
 import { reply } from "./reply.ts";
 import { summarizeHistory } from "./summary.ts";
 import { buildSystemPrompt, reminderContextLine } from "./system-prompt.ts";
+import { toWhatsAppText } from "./text.ts";
 import { toolFeedback } from "./tool-feedback.ts";
 import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry.ts";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas.ts";
@@ -620,7 +621,8 @@ async function runTurn(
     return { status: "max_iterations", reply: reply.couldNotComplete() };
   }
 
-  const replyText = finalText.trim().length > 0 ? finalText : reply.couldNotComplete();
+  const replyText =
+    finalText.trim().length > 0 ? toWhatsAppText(finalText) : reply.couldNotComplete();
   state = await persist(state);
   // Only after the compare-and-swap succeeded: deliver this turn's committed confirmation
   // BEFORE our own closing reply, so the patient reads the confirmation first.
