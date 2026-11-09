@@ -127,7 +127,7 @@ describe("cancel_booking", () => {
       to_phone: PATIENT.phone,
       dedupe_key: `booking_cancellation:${id}`,
     });
-    expect(msgs[0].body).toContain("16/06/2026 às 09:00");
+    expect(msgs[0].body).toContain("terça, 16/06, às 9h");
     expect(await outbox("reception_notice")).toHaveLength(0);
     const audit = await pool.query(
       "SELECT actor, payload FROM audit_log WHERE action = 'booking_cancelled'",

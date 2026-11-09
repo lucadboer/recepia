@@ -148,7 +148,7 @@ describe("orchestrator — reschedule (US2)", () => {
     expect(await countAudit(pool, "booking_rescheduled")).toBe(1);
     const last = h.messaging.sent.at(-1)?.body ?? "";
     expect(last).toMatch(/remarcada/);
-    expect(last).toContain("17/06/2026 às 13:00");
+    expect(last).toContain("quarta, 17/06, às 13h");
     expect(h.messaging.sent.map((m) => m.body)).not.toContain("Remarcado!");
   });
 

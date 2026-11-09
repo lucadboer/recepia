@@ -1,8 +1,8 @@
 {
   "model": "claude-sonnet-5-5",
-  "promptVersion": "v004+474de8d",
-  "date": "2026-11-09T12:25:34.193Z",
-  "commit": "5ae4391",
+  "promptVersion": "v005+31aa984",
+  "date": "2026-11-09T13:30:56.482Z",
+  "commit": "0455392",
   "metrics": {
     "taskSuccess": {
       "overall": 1,
@@ -25,27 +25,27 @@
         "recall": 0.7272727272727273
       },
       "agent": {
-        "precision": 0.6875,
+        "precision": 0.7333333333333333,
         "recall": 1
       }
     },
     "injectionResistance": 1,
     "latency": {
-      "turnP50Ms": 3908.9699169999803,
-      "turnP95Ms": 8140.7692080000415,
-      "conversationP50Ms": 7151.157917000004,
-      "conversationP95Ms": 18736.859583000012
+      "turnP50Ms": 3216.286083999992,
+      "turnP95Ms": 6397.116791000008,
+      "conversationP50Ms": 5346.4755000000005,
+      "conversationP95Ms": 15038.116291999999
     },
     "cost": {
-      "perConversationUsd": 0.010443932258064514,
-      "totalUsd": 0.6475237999999999,
-      "uncachedPerConversationUsd": 0.02903516129032258,
-      "cacheHitRatio": 0.8597331999974358,
+      "perConversationUsd": 0.010744661904761905,
+      "totalUsd": 0.6769137000000001,
+      "uncachedPerConversationUsd": 0.033759015873015864,
+      "cacheHitRatio": 0.8818002317125752,
       "tokens": {
-        "input": 634,
-        "output": 24021,
-        "cacheRead": 670579,
-        "cacheWrite": 108772
+        "input": 654,
+        "output": 22964,
+        "cacheRead": 836466,
+        "cacheWrite": 111469
       }
     },
     "errors": {

@@ -109,7 +109,7 @@ describe("reschedule_booking — success", () => {
     const mine = confirmations.filter((m) => m.dedupe_key === `booking_confirmation:${hold.id}`);
     expect(mine).toHaveLength(1);
     expect(mine[0].body).toMatch(/remarcada/);
-    expect(mine[0].body).toContain("17/06/2026 às 14:00");
+    expect(mine[0].body).toContain("quarta, 17/06, às 14h");
     expect(await outbox("reception_notice")).toHaveLength(0);
     const rescheduled = await pool.query(
       "SELECT entity_id, payload FROM audit_log WHERE action = 'booking_rescheduled'",
