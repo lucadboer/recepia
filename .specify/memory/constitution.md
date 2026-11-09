@@ -1,104 +1,112 @@
 <!--
 Sync Impact Report
 ==================
-Version change: TEMPLATE → 1.0.0
-Modified principles: N/A (ratificação inicial)
-Added sections:
-  - Core Principles (I. Test-First, II. A LLM Nunca Escreve, III. Simplicidade & YAGNI,
-    IV. Escalar na Dúvida, V. Rastreabilidade & LGPD)
-  - Restrições de Domínio
-  - Governance
+Version change: 1.0.0 → 1.1.0
+Bump rationale: MINOR — the whole document is translated to English (wording only, no principle,
+  gate or rule changes meaning) and one domain constraint is added: code and documentation are
+  in English (owner decision 2026-11-09).
+Modified principles (titles translated, content unchanged):
+  - II. A LLM Nunca Escreve → II. The LLM Never Writes
+  - III. Simplicidade & YAGNI → III. Simplicity & YAGNI
+  - IV. Escalar na Dúvida → IV. Escalate When in Doubt
+  - V. Rastreabilidade & LGPD → V. Traceability & LGPD
+Renamed sections: Restrições de Domínio → Domain Constraints
+Added sections: none (one bullet added to Domain Constraints)
 Removed sections: none
 Templates requiring updates:
-  - .specify/templates/plan-template.md (Constitution Check deve referenciar os 5 princípios)
+  - ✅ .specify/templates/plan-template.md — generic "Constitution Check", no principle names
+  - ✅ .specify/templates/spec-template.md — no constitution-specific content
+  - ✅ .specify/templates/tasks-template.md — no constitution-specific content
+  - ✅ CLAUDE.md — executable summary translated in the same change
 Follow-up TODOs: none
 -->
 
-# Constituição — Agente de Agendamento Odontológico
+# Constitution — dental appointment booking agent
 
-Projeto: agente de WhatsApp que agenda consultas de rotina de forma autônoma para uma
-clínica odontológica, gravando na agenda (Google Calendar), e escala para humano tudo
-que sai do escopo. Vende-se em cima de redução de faltas (no-show).
+Project: a WhatsApp agent that books routine appointments autonomously for a dental clinic,
+writing them to the clinic's calendar (Google Calendar), and escalates to a human everything out
+of scope. It is sold on no-show reduction.
 
 ## Core Principles
 
 ### I. Test-First (NON-NEGOTIABLE)
 
-TDD é obrigatório para toda a lógica de domínio — capacidade, disponibilidade, hold,
-booking. O ciclo é estrito:
+TDD is mandatory for all domain logic — capacity, availability, hold, booking. The cycle is
+strict:
 
-1. Teste escrito e revisado.
-2. Teste falha (RED) — confirma que mede algo real.
-3. Implementação mínima para passar (GREEN).
-4. Refatoração com a suíte verde (REFACTOR).
+1. Test written and reviewed.
+2. Test fails (RED) — proving it measures something real.
+3. Minimal implementation to pass (GREEN).
+4. Refactor with the suite green (REFACTOR).
 
-A camada de conversa (LLM) é validada por testes de comportamento sobre as ferramentas
-que ela chama, não pela saída textual. Obrigatório: teste de concorrência provando que
-holds simultâneos no mesmo horário nunca geram overbooking.
+The conversation layer (LLM) is validated by behavioural tests over the tools it calls, not by
+its text output. Mandatory: a concurrency test proving that simultaneous holds on the same time
+never overbook.
 
-**Rationale**: o core é correção-crítico (concorrência, contexto de saúde). Sem testes
-primeiro, race conditions e regressões passam silenciosas até falhar na frente do paciente.
+**Rationale**: the core is correctness-critical (concurrency, a health context). Without tests
+first, race conditions and regressions stay silent until they fail in front of a patient.
 
-### II. A LLM Nunca Escreve (NON-NEGOTIABLE)
+### II. The LLM Never Writes (NON-NEGOTIABLE)
 
-A LLM conduz a conversa e decide a intenção, mas **todo commit** (agendar, remarcar,
-cancelar, gravar no Calendar) passa exclusivamente pelas ferramentas determinísticas.
-A LLM propõe; o código valida e executa. `get_availability` é a única fonte de horário —
-nenhum horário pode vir da memória do modelo.
+The LLM leads the conversation and decides the intent, but **every commit** (book, reschedule,
+cancel, write to the Calendar) goes exclusively through the deterministic tools. The LLM
+proposes; the code validates and executes. `get_availability` is the only source of times — no
+time may come from the model's memory.
 
-**Rationale**: separa a parte não-determinística (linguagem) da parte que exige garantia
-(escrita). É o que torna a autonomia segura o suficiente para demonstrar.
+**Rationale**: it separates the non-deterministic part (language) from the part that needs
+guarantees (writes). That is what makes the autonomy safe enough to demonstrate.
 
-### III. Simplicidade & YAGNI
+### III. Simplicity & YAGNI
 
-Implemente apenas o que a spec da feature atual exige. Proibido:
+Implement only what the current feature's spec requires. Forbidden:
 
-- Abstrações para casos hipotéticos.
-- Camadas extras (port, adapter, factory) sem dois consumidores reais. (Exceção válida:
-  `MessagingPort` tem dois — Evolution e Cloud API; `CalendarPort` isola a integração testável.)
-- Generalização preventiva antes da terceira ocorrência do padrão.
+- Abstractions for hypothetical cases.
+- Extra layers (port, adapter, factory) without two real consumers. (Valid exception:
+  `MessagingPort` has two — Evolution and the Cloud API; `CalendarPort` isolates the testable
+  integration.)
+- Pre-emptive generalisation before the pattern's third occurrence.
 
-Nada do Não-escopo (calendário por dentista, roteamento por especialidade, otimização de
-agenda, integração com software odontológico, pagamentos) entra sem spec dedicada.
+Nothing from the out-of-scope list (per-dentist calendars, routing by speciality, schedule
+optimisation, integration with dental practice software, payments) goes in without a dedicated
+spec.
 
-**Rationale**: complexidade prematura é a maior fonte de retrabalho num projeto novo.
+**Rationale**: premature complexity is the biggest source of rework in a new project.
 
-### IV. Escalar na Dúvida (NON-NEGOTIABLE — segurança clínica)
+### IV. Escalate When in Doubt (NON-NEGOTIABLE — clinical safety)
 
-O agente nunca inventa horário, convênio, preço ou informação clínica. Escala para humano
-em qualquer dúvida, ambiguidade, urgência/dor, procedimento especializado (Invisalign,
-ortodontia, implante, cirurgia), tratamento em andamento, pedido de dentista específico,
-reclamação ou assunto financeiro. Antes de qualquer commit de agendamento, exige
-confirmação explícita do paciente.
+The agent never invents a time, insurance, price or clinical information. It escalates to a
+human on any doubt, ambiguity, urgency/pain, specialised procedure (Invisalign, orthodontics,
+implant, surgery), ongoing treatment, request for a specific dentist, complaint or financial
+matter. Before any booking commit it requires the patient's explicit confirmation.
 
-**Rationale**: em saúde, errar com confiança é pior que escalar. A rede de escalação é o
-que torna a autonomia aceitável.
+**Rationale**: in health care, being confidently wrong is worse than escalating. The escalation
+safety net is what makes the autonomy acceptable.
 
-### V. Rastreabilidade & LGPD (NON-NEGOTIABLE)
+### V. Traceability & LGPD (NON-NEGOTIABLE)
 
-Toda escrita registra em `audit_log` (append-only). Dado de saúde é categoria sensível:
-opt-in claro, opt-out fácil, coleta mínima, finalidade definida. Sem uso para marketing
-sem consentimento.
+Every write is recorded in `audit_log` (append-only). Health data is a sensitive category: clear
+opt-in, easy opt-out, minimal collection, a defined purpose. No marketing use without consent.
 
-**Rationale**: exigência legal e diferencial de venda. Sem trilha de auditoria não há
-como provar conformidade nem depurar uma marcação errada.
+**Rationale**: a legal requirement and a selling point. Without an audit trail there is no way to
+prove compliance or to debug a wrong booking.
 
-## Restrições de Domínio
+## Domain Constraints
 
-- Modelo de capacidade pooled: paciente não escolhe dentista; disponibilidade é um contador
-  de capacidade, não casamento de recursos. Modo `assigned` fica fora do escopo até spec dedicada.
-- Google Calendar é a fonte de verdade dos eventos confirmados; Postgres guarda capacidade,
-  holds e estado de sync. Nenhuma chamada direta a Calendar ou WhatsApp sem camada testável
-  intermediária (port).
-- O agente atende apenas tipos de consulta de rotina. Qualquer outro tipo é escalado.
-- Toda string visível ao paciente é em português.
+- Pooled capacity model: the patient does not choose a dentist; availability is a capacity
+  counter, not resource matching. The `assigned` mode is out of scope until a dedicated spec.
+- Google Calendar is the source of truth for confirmed events; Postgres keeps capacity, holds and
+  sync state. No direct call to the Calendar or WhatsApp without an intermediate testable layer
+  (a port).
+- The agent handles routine appointment types only. Any other type is escalated.
+- Every string a patient sees is in Brazilian Portuguese.
+- Code and documentation are in English.
 
 ## Governance
 
-Esta constituição prevalece sobre preferências pessoais ou convenções herdadas de outros
-projetos. Cumprir todos os princípios é gate explícito no `/speckit.plan`.
+This constitution prevails over personal preferences or conventions inherited from other
+projects. Meeting every principle is an explicit gate in `/speckit.plan`.
 
-Mudanças seguem versionamento semântico e passam por `/speckit.constitution` — edição manual
-quebra o Sync Impact Report e a propagação para templates dependentes.
+Changes follow semantic versioning and go through `/speckit.constitution` — editing by hand
+breaks the Sync Impact Report and the propagation to dependent templates.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-18 | **Last Amended**: 2026-06-18
+**Version**: 1.1.0 | **Ratified**: 2026-06-18 | **Last Amended**: 2026-11-09
