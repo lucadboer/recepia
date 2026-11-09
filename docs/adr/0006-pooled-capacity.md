@@ -5,7 +5,7 @@
 ## Context
 Routine appointments in a small clinic are interchangeable across chairs/professionals. Letting
 patients pick a dentist multiplies the scheduling surface (specialties, individual calendars,
-routing) and is explicitly out of scope for the MVP (SPEC.md "Não-escopo").
+routing) and is explicitly out of scope for the MVP (SPEC.md, "Out of scope").
 
 ## Decision
 Availability is a capacity counter per 30-minute slot: `free(T) = capacity(T) − confirmed(T) −

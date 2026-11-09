@@ -259,17 +259,17 @@ describe("outbox — dispatch (T241, FR-214)", () => {
       conv: string,
       body: string,
     ) => enqueueOutbox(pool, { kind, toPhone: to, conversationPhone: conv, body, now: NOW });
-    await row("escalation", RECEPTION, B, "sobre B");
-    await row("booking_confirmation", B, B, "para B");
-    await row("escalation", RECEPTION, A, "sobre A");
-    await row("booking_confirmation", A, A, "para A");
+    await row("escalation", RECEPTION, B, "about B");
+    await row("booking_confirmation", B, B, "to B");
+    await row("escalation", RECEPTION, A, "about A");
+    await row("booking_confirmation", A, A, "to A");
 
     const r = await dispatchOutbox(makeDeps(clock, messaging), { conversationPhone: A });
 
     expect(r.sent).toBe(2);
-    expect(messaging.sent.map((m) => m.body).sort()).toEqual(["para A", "sobre A"]);
+    expect(messaging.sent.map((m) => m.body).sort()).toEqual(["about A", "to A"]);
     const pending = (await rows()).filter((x) => x.status === "pending");
-    expect(pending.map((x) => x.body).sort()).toEqual(["para B", "sobre B"]);
+    expect(pending.map((x) => x.body).sort()).toEqual(["about B", "to B"]);
   });
 
   it("cancelPendingForRecipient cancels only that recipient's pending rows; the dispatcher skips them", async () => {

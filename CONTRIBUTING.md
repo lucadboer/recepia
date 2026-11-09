@@ -35,6 +35,16 @@ The goal is to **always be on the latest, vulnerability-free versions** — neve
 
 This project is built with the GitHub Spec Kit. Every feature starts from a spec under `specs/NNN-feature/`. Flow: `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement`. See [CLAUDE.md](CLAUDE.md) and the [constitution](.specify/memory/constitution.md).
 
+## Language
+
+Code, comments, specs and documentation are in English. The agent works in Brazilian Portuguese, so
+these stay in Portuguese on purpose: everything a patient or the clinic's reception reads
+(`src/messages.ts`, `src/agent/reply.ts`, escalation and notice texts), the text the model reads
+(the versioned system prompt under `prompts/system/`, tool results, the judge rubric), the triage and
+intent keyword patterns, the golden-set conversations under `evals/cases/` (whose ids name the
+phrase under test), and the landing page under `site/`. Portuguese examples quoted inside English
+docs are patient utterances.
+
 ## Quality gates
 
 ```bash
