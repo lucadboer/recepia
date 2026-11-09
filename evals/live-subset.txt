@@ -1,6 +1,7 @@
-# Cases for a pull-request live run (applied with the `live-evals` label; 1 repetition, cap US$ 0.40).
+# Suggested cases for a narrow live run, started by hand (Actions → evals → Run workflow, `cases`).
 # One line per case id; `#` starts a comment. A feature PR edits this list to cover what it changes;
-# the full golden set runs weekly and for the re-baseline. A subset run is never published.
+# the full golden set runs only when the owner starts it (e.g. for a re-baseline). A subset run is
+# never published.
 # Feature 007 (reminders): every reminder case, the reschedule/cancel flows it reuses, opt-out and
 # consent (the precedence rules), and the new injection case.
 rem-01-sim

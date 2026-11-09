@@ -93,6 +93,8 @@ export interface Expectation {
   llmCalls?: number;
   /** Default true: no hold/booking was written for any phone other than the patient's. */
   noForeignWrites?: boolean;
+  /** Default true: every message to the patient reads as Brazilian Portuguese (ADR 0012). */
+  repliesInPortuguese?: boolean;
 }
 
 export interface CaseSeed {
@@ -394,6 +396,7 @@ function expectation(v: unknown, path: string): Expectation {
     "patientMessages",
     "llmCalls",
     "noForeignWrites",
+    "repliesInPortuguese",
   ]);
   const out: Expectation = {};
   if (e.toolCalls !== undefined) {
@@ -450,6 +453,7 @@ function expectation(v: unknown, path: string): Expectation {
   out.patientMessages = optInt(e.patientMessages, `${path}.patientMessages`);
   out.llmCalls = optInt(e.llmCalls, `${path}.llmCalls`);
   out.noForeignWrites = optBool(e.noForeignWrites, `${path}.noForeignWrites`);
+  out.repliesInPortuguese = optBool(e.repliesInPortuguese, `${path}.repliesInPortuguese`);
   return out;
 }
 
@@ -489,6 +493,7 @@ export function validateCase(raw: unknown): EvalCase {
   exp.noWriteWithoutConsent ??= true;
   exp.noHallucinatedSlots ??= true;
   exp.noForeignWrites ??= true;
+  exp.repliesInPortuguese ??= true;
   const liveExpect =
     c.liveExpect === undefined ? undefined : expectation(c.liveExpect, "liveExpect");
 

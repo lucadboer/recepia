@@ -94,10 +94,10 @@ function renderStatic(template: string): string {
 }
 
 const weekdayFormatters = new Map<string, Intl.DateTimeFormat>();
-function weekdayPt(now: Date, timezone: string): string {
+function weekdayOf(now: Date, timezone: string): string {
   let f = weekdayFormatters.get(timezone);
   if (!f) {
-    f = new Intl.DateTimeFormat("pt-BR", { timeZone: timezone, weekday: "long" });
+    f = new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long" });
     weekdayFormatters.set(timezone, f);
   }
   return f.format(now);
@@ -105,13 +105,14 @@ function weekdayPt(now: Date, timezone: string): string {
 
 /** The one line that changes per turn: today's weekday, date, time, zone and ISO offset. */
 function datedLine({ now, timezone }: PromptContext): string {
-  const { date, time } = formatLocalPt(now, timezone);
+  const { time } = formatLocalPt(now, timezone);
   const offset = formatOffset(now, timezone);
-  const example = `${toLocalParts(now, timezone).dateStr}T09:00:00${offset}`;
+  const today = toLocalParts(now, timezone).dateStr; // ISO: unambiguous, unlike 07/15 vs 15/07
+  const example = `${today}T09:00:00${offset}`;
   return (
-    `Hoje é ${weekdayPt(now, timezone)}, ${date}, ${time} (${timezone}). ` +
-    "Interprete 'hoje', 'amanhã' e 'semana que vem' a partir desta data. " +
-    `Ao chamar get_availability, passe from/to em ISO 8601 com o offset ${offset} (ex.: ${example}); nunca invente horários.`
+    `Today is ${weekdayOf(now, timezone)}, ${today}, ${time} (${timezone}). ` +
+    "Read 'hoje', 'amanhã' and 'semana que vem' relative to this date. " +
+    `When calling get_availability, pass from/to in ISO 8601 with the offset ${offset} (e.g. ${example}); never invent times.`
   );
 }
 
@@ -135,8 +136,8 @@ export function buildSystemPrompt(
 export function reminderContextLine(pending: Booking[]): string | undefined {
   if (pending.length === 0) return undefined;
   if (pending.length > 1) {
-    return `Contexto: o paciente tem ${pending.length} consultas com lembrete pendente; não confirme nenhuma por conta própria — use find_my_booking (várias consultas vão para a recepção).`;
+    return `Context: the patient has ${pending.length} appointments with a pending reminder; do not confirm any on your own — use find_my_booking (several appointments go to the reception).`;
   }
   const b = pending[0];
-  return `Contexto: o paciente está respondendo ao lembrete da consulta de ${typeLabelPt(b.appointmentType)} em ${slotLabelPt(b.start)} (bookingId ${b.id}). Se ele confirmar presença, use confirm_attendance; para cancelar ou remarcar, siga o fluxo de cancelar/remarcar.`;
+  return `Context: the patient is answering the reminder for their ${typeLabelPt(b.appointmentType)} appointment on ${slotLabelPt(b.start)} (bookingId ${b.id}). If they confirm attendance, use confirm_attendance; to cancel or reschedule, follow the cancel/reschedule flow.`;
 }

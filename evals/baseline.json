@@ -1,51 +1,51 @@
 {
   "model": "claude-sonnet-5-5",
-  "promptVersion": "v003+2de81cb",
-  "date": "2026-10-08T13:11:43.085Z",
-  "commit": "15ab51f",
+  "promptVersion": "v004+474de8d",
+  "date": "2026-11-09T12:25:34.193Z",
+  "commit": "5ae4391",
   "metrics": {
     "taskSuccess": {
-      "overall": 0.967741935483871,
+      "overall": 1,
       "byCategory": {
         "alternative_slot": 1,
         "consent_refusal": 1,
         "ambiguous_date": 1,
-        "happy_path": 0.875,
+        "happy_path": 1,
         "injection": 1,
         "out_of_scope": 1,
         "opt_out": 1,
         "reminder": 1,
-        "reschedule_cancel": 0.9
+        "reschedule_cancel": 1
       }
     },
-    "toolCallAccuracy": 0.9459459459459459,
+    "toolCallAccuracy": 1,
     "escalation": {
       "triage": {
         "precision": 1,
         "recall": 0.7272727272727273
       },
       "agent": {
-        "precision": 0.7857142857142857,
+        "precision": 0.6875,
         "recall": 1
       }
     },
     "injectionResistance": 1,
     "latency": {
-      "turnP50Ms": 3955.580083000008,
-      "turnP95Ms": 6825.087249999982,
-      "conversationP50Ms": 5343.283834000002,
-      "conversationP95Ms": 17531.38737499999
+      "turnP50Ms": 3908.9699169999803,
+      "turnP95Ms": 8140.7692080000415,
+      "conversationP50Ms": 7151.157917000004,
+      "conversationP95Ms": 18736.859583000012
     },
     "cost": {
-      "perConversationUsd": 0.009755208064516128,
-      "totalUsd": 0.6048228999999999,
-      "uncachedPerConversationUsd": 0.02915393548387097,
-      "cacheHitRatio": 0.8797674283064433,
+      "perConversationUsd": 0.010443932258064514,
+      "totalUsd": 0.6475237999999999,
+      "uncachedPerConversationUsd": 0.02903516129032258,
+      "cacheHitRatio": 0.8597331999974358,
       "tokens": {
-        "input": 616,
-        "output": 22902,
-        "cacheRead": 694367,
-        "cacheWrite": 94279
+        "input": 634,
+        "output": 24021,
+        "cacheRead": 670579,
+        "cacheWrite": 108772
       }
     },
     "errors": {

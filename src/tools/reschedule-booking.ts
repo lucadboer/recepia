@@ -82,7 +82,7 @@ export async function rescheduleBooking(
   const old = await getById(deps.pool, bookingId);
   if (!old || old.patientPhone !== phone) throw new BookingNotFoundError();
   const hold = await getById(deps.pool, holdId);
-  if (!hold || hold.patientPhone !== phone) throw new HoldExpiredError("Reserva não encontrada.");
+  if (!hold || hold.patientPhone !== phone) throw new HoldExpiredError("Hold not found.");
 
   if (ACTIVE.has(hold.status) && hold.rescheduledFrom === old.id) {
     // Idempotent repeat: finish the old event's removal (a lost COMMIT acknowledgment must not

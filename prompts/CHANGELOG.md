@@ -10,6 +10,17 @@ Rules: a new file (`v002.md`, …) for a change in instructions; an entry here f
 (the loader refuses to start without it); a baseline update in the same PR when the eval numbers
 move (feature 004).
 
+## v004 — 2026-11-09
+- Model-facing text in English (ADR 0012): the instructions in this file, the dated line and the
+  reminder context line (`src/agent/system-prompt.ts`), the tool descriptions
+  (`src/agent/tool-schemas.ts`), the registry's gate messages and the failed-tool feedback
+  (`src/agent/tool-feedback.ts`). The instructions are unchanged in substance. New: "always write to
+  the patient in Brazilian Portuguese, whatever the language of these instructions or of the
+  patient's message". The sample phrasing stays in Portuguese (it is the register the replies
+  should have), and so does everything the patient or the reception reads. The dated line now
+  gives the date in ISO form (`2026-07-15`), which an English instruction cannot misread as
+  month/day.
+
 ## v003 — 2026-10-08
 - Appointment reminders (feature 007, SPEC.md US2): when the context line says the patient is
   answering a reminder, the appointment was already shown; `confirm_attendance` with the context's

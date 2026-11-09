@@ -52,7 +52,7 @@ export async function confirmBooking(
   const now = deps.clock.now();
 
   const existing = await getById(deps.pool, holdId);
-  if (!existing) throw new HoldExpiredError("Reserva não encontrada.");
+  if (!existing) throw new HoldExpiredError("Hold not found.");
   if (CONFIRMED_STATUSES.has(existing.status)) {
     // Idempotent re-confirm. If the confirmation from the earlier call is still queued, the
     // outbox still owns the patient message (it goes out with this turn's flush).

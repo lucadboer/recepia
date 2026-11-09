@@ -17,13 +17,13 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.availability,
     description:
-      "Lista os horários de rotina realmente livres em um período (no máximo 40, os mais próximos; se `truncated` for true, consulte um período menor). É a ÚNICA fonte de horários — nunca invente horários.",
+      "Lists the routine times that are genuinely free in a period (at most 40, the nearest first; if `truncated` is true, ask for a shorter period). It is the ONLY source of times — never invent a time.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
       properties: {
-        from: { type: "string", description: "Início do período (ISO 8601)" },
-        to: { type: "string", description: "Fim do período (ISO 8601)" },
+        from: { type: "string", description: "Start of the period (ISO 8601)" },
+        to: { type: "string", description: "End of the period (ISO 8601)" },
         type: { type: "string", enum: [...ROUTINE_TYPES] },
       },
       required: ["from", "to", "type"],
@@ -32,14 +32,14 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.hold,
     description:
-      "Reserva temporariamente um horário. O 'start' deve ser exatamente um horário retornado por get_availability.",
+      "Temporarily reserves a time. 'start' must be exactly a time returned by get_availability.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
       properties: {
         start: {
           type: "string",
-          description: "Início do horário (ISO 8601), exatamente como ofertado",
+          description: "Start of the time (ISO 8601), exactly as offered",
         },
         type: { type: "string", enum: [...ROUTINE_TYPES] },
       },
@@ -49,7 +49,7 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.confirm,
     description:
-      "Confirma uma reserva criada NESTA conversa, somente após a confirmação explícita do paciente.",
+      "Confirms a hold created in THIS conversation, only after the patient's explicit confirmation.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
@@ -62,7 +62,8 @@ export const toolDefs: LlmToolDef[] = [
   },
   {
     name: TOOL_NAMES.escalate,
-    description: "Encaminha à recepção quando o pedido sai do escopo de rotina ou na dúvida.",
+    description:
+      "Hands the conversation to the reception when the request is outside routine care, or when in doubt.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
@@ -76,7 +77,7 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.findBooking,
     description:
-      "Busca a próxima consulta do paciente desta conversa (para cancelar ou remarcar). Mostre a consulta ao paciente e peça a confirmação dele; nenhuma ou várias consultas vão para a recepção automaticamente.",
+      "Finds the next appointment of this conversation's patient (to cancel or reschedule it). Show the appointment to the patient and ask them to confirm; none or several appointments go to the reception automatically.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
@@ -87,12 +88,12 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.cancelBooking,
     description:
-      "Cancela a consulta retornada por find_my_booking NESTA conversa, somente depois que o paciente confirmou o cancelamento em uma mensagem posterior.",
+      "Cancels the appointment returned by find_my_booking in THIS conversation, only after the patient confirmed the cancellation in a later message.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
       properties: {
-        booking_id: { type: "string", description: "bookingId retornado por find_my_booking" },
+        booking_id: { type: "string", description: "bookingId returned by find_my_booking" },
       },
       required: ["booking_id"],
     },
@@ -100,13 +101,13 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.rescheduleBooking,
     description:
-      "Remarca a consulta retornada por find_my_booking para um horário reservado com hold_slot NESTA conversa (mesmo tipo de consulta), somente depois que o paciente confirmou o novo horário em uma mensagem posterior.",
+      "Moves the appointment returned by find_my_booking to a time held with hold_slot in THIS conversation (same appointment type), only after the patient confirmed the new time in a later message.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
       properties: {
-        booking_id: { type: "string", description: "bookingId retornado por find_my_booking" },
-        hold_id: { type: "string", description: "holdId retornado por hold_slot" },
+        booking_id: { type: "string", description: "bookingId returned by find_my_booking" },
+        hold_id: { type: "string", description: "holdId returned by hold_slot" },
       },
       required: ["booking_id", "hold_id"],
     },
@@ -114,12 +115,12 @@ export const toolDefs: LlmToolDef[] = [
   {
     name: TOOL_NAMES.confirmAttendance,
     description:
-      "Confirma a presença do paciente na consulta do lembrete (a consulta indicada no contexto desta conversa), quando ele disser que vai comparecer.",
+      "Confirms the patient's attendance at the reminder's appointment (the one named in this conversation's context) when they say they will come.",
     inputSchema: {
       type: "object",
       additionalProperties: false, // required by strict tool schemas
       properties: {
-        booking_id: { type: "string", description: "bookingId da consulta do lembrete" },
+        booking_id: { type: "string", description: "bookingId of the reminder's appointment" },
       },
       required: ["booking_id"],
     },

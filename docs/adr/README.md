@@ -16,3 +16,4 @@ the specs (`specs/*/spec.md`); these are the technical ones a reviewer would ask
 | [0009](0009-reschedule-as-new-row.md) | A reschedule is a new booking row swapped in atomically (`rescheduled_from`, unique); cancel is database-first; the calendar is compensated, never trusted over Postgres |
 | [0010](0010-durable-inbound-queue.md) | Store-then-ack inbound queue: FIFO per phone with a lease, jittered retries, dead letter to reception, replay guard for reclaimed messages |
 | [0011](0011-container-image.md) | Container image: `tsc` build with import-extension rewriting, distroless non-root runtime pinned by digest, `@googleapis/calendar`, Trivy + smoke test in CI, GHCR push with SBOM and provenance |
+| [0012](0012-english-model-facing-text.md) | Model-facing text (prompt, tool descriptions, gate messages) in English; everything the patient or the reception reads stays pt-BR, proven by the `repliesInPortuguese` eval invariant |

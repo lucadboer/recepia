@@ -139,7 +139,7 @@ describe("perf smoke — BookingScriptLLM state machine", () => {
       input([
         user("#0"),
         assistantToolUse(TOOL_NAMES.hold, { start: "a", type: "cleaning" }),
-        toolResult("Esse horário acabou de ser preenchido.", true),
+        toolResult("That time was just taken. Offer to look for other free times.", true),
         assistantToolUse(TOOL_NAMES.availability, {}),
         toolResult(JSON.stringify(slots)),
       ]),

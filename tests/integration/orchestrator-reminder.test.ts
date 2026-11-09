@@ -142,9 +142,9 @@ describe("the model path: the appointment is in context and counted as shown", (
     const id = await reminded(h);
     await handleInbound(h.deps, msg("sim, mas preciso mudar o horário", "r7"));
     expect(llm.callCount).toBe(1);
-    expect(system).toMatch(/Hoje é/);
-    expect(system.indexOf(id)).toBeGreaterThan(system.indexOf("Hoje é"));
-    expect(system).toMatch(/lembrete/i);
+    expect(system).toMatch(/Today is/);
+    expect(system.indexOf(id)).toBeGreaterThan(system.indexOf("Today is"));
+    expect(system).toMatch(/reminder/i);
     const saved = await h.conversations.load(PHONE);
     expect(saved?.surfacedBookings).toEqual([{ bookingId: id, turn: saved?.turnSeq }]);
   });
