@@ -14,7 +14,7 @@ import { DbConversationStore } from "../db/repositories/conversation-repo.ts";
 export async function releaseConversation(pool: Pool, phone: string, now: Date): Promise<boolean> {
   const store = new DbConversationStore(pool);
   const current = await store.load(phone);
-  if (!current || current.status !== "escalated") return false;
+  if (current?.status !== "escalated") return false;
 
   const client = await pool.connect();
   try {

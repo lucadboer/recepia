@@ -26,7 +26,7 @@ export const OUTBOX_BACKOFF_MS = [5_000, 30_000, 120_000, 600_000, 1_800_000];
 /** The attempt whose failure dead-letters the row (~43 min of retries in total). */
 export const OUTBOX_MAX_ATTEMPTS = 6;
 /** Messaging adapters have no timeout of their own; bound each send here. */
-export const OUTBOX_SEND_TIMEOUT_MS = 15_000;
+const OUTBOX_SEND_TIMEOUT_MS = 15_000;
 
 export interface DispatchOutboxOptions {
   /** Max rows processed per call (one transaction each). Default 20. */
@@ -85,7 +85,7 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
-export function backoffFor(attempts: number): number {
+function backoffFor(attempts: number): number {
   const idx = Math.min(Math.max(attempts - 1, 0), OUTBOX_BACKOFF_MS.length - 1);
   return OUTBOX_BACKOFF_MS[idx];
 }

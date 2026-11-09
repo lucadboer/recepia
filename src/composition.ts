@@ -21,7 +21,7 @@ function isCloudProvider(raw: string | undefined): boolean {
 }
 
 /** Pick the outbound WhatsApp provider. MESSAGING_PROVIDER=cloud -> Cloud API; default -> Evolution. */
-export function buildMessaging(): MessagingPort {
+function buildMessaging(): MessagingPort {
   return isCloudProvider(process.env.MESSAGING_PROVIDER)
     ? new CloudApiMessaging()
     : new EvolutionMessaging();

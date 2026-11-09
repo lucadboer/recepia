@@ -104,7 +104,7 @@ function orderedRun(run: RunReport): RunReport {
   };
 }
 
-export function renderMarkdown(run: RunReport): string {
+function renderMarkdown(run: RunReport): string {
   const m = run.metrics;
   const lines: string[] = [];
   lines.push("# Evaluation report");

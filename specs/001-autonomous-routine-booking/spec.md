@@ -6,9 +6,9 @@
 
 **Status**: Draft
 
-**Input**: User description: "Agendamento autônomo de consulta de rotina via WhatsApp (User Story 1 do SPEC.md): paciente pede horário, o sistema consulta disponibilidade real por capacidade, reserva com hold atômico, confirma e grava no Google Calendar, sem overbooking. Use o SPEC.md da raiz como base (modelo de capacidade pooled, modelo de dados, contratos das ferramentas). Começar pela camada determinística, sem LLM, integrações atrás de ports."
+**Input**: User description (translated from Portuguese): "Autonomous booking of a routine appointment over WhatsApp (User Story 1 of SPEC.md): the patient asks for a time, the system checks real availability by capacity, reserves it with an atomic hold, confirms it and writes it to Google Calendar, with no overbooking. Use the root SPEC.md as the basis (pooled capacity model, data model, tool contracts). Start with the deterministic layer, no LLM, integrations behind ports."
 
-> Note: Spec artifacts are written in English by author preference (token economy). Patient-facing product strings remain in Portuguese — see FR-019. The ratified [SPEC.md](../../SPEC.md) and [constitution.md](../../.specify/memory/constitution.md) stay in Portuguese.
+> Note: spec artifacts are written in English; patient-facing product strings remain in Portuguese — see FR-019.
 
 ## Clarifications
 

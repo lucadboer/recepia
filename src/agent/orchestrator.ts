@@ -289,7 +289,7 @@ async function runTurn(
   state = startTurn(markProcessed(state, msg.providerMessageId, now), now); // 006 FR-603 clock
   state = appendUserText(state, msg.text, now);
 
-  // 2. Opt-out fast path (LGPD "opt-out fácil").
+  // 2. Opt-out fast path (LGPD "easy opt-out").
   if (classifyIntent(msg.text) === "opt_out") {
     await recordOptOut(deps, msg.phone);
     state = setAwaitingConsent(state, false, now);
@@ -346,7 +346,7 @@ async function runTurn(
     state = recordSurfacedBooking(state, pendingReminders[0].id, now);
   }
 
-  // 3. Deterministic escalation triage — BEFORE the LLM ("escalar na dúvida").
+  // 3. Deterministic escalation triage — BEFORE the LLM ("escalate when in doubt").
   const triaged = triage(msg.text);
   if (triaged.escalate) {
     await escalateToHuman(msgDeps, {

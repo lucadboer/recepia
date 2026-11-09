@@ -22,7 +22,7 @@ function maskAttrs(attrs: Attrs | undefined, drop?: Set<string>): Attrs {
   return out as Attrs;
 }
 
-export function redactSpan(span: ReadableSpan): ReadableSpan {
+function redactSpan(span: ReadableSpan): ReadableSpan {
   const status = {
     ...span.status,
     ...(span.status.message

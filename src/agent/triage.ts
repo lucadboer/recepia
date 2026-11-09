@@ -1,4 +1,4 @@
-// Deterministic escalation-signal detector — the "escalar na dúvida" backstop that
+// Deterministic escalation-signal detector — the "escalate when in doubt" backstop that
 // runs BEFORE the LLM. Accent-insensitive keyword/regex over the constitution's
 // trigger categories. Conservative by design (assert-tested per category).
 

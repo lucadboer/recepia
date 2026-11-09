@@ -1,5 +1,5 @@
 // Light deterministic intent routing used by the orchestrator (opt-out is the
-// LGPD "opt-out fácil" path; booking/greeting steer the conversation).
+// LGPD "easy opt-out" path; booking/greeting steer the conversation).
 
 import { normalize } from "./text.ts";
 

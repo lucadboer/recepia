@@ -141,7 +141,7 @@ export function classifyError(e: unknown): ExecutionError {
 }
 
 /** Truncate the mutable tables and apply the case seed (capacity, overrides, bookings, consent). */
-export async function seedCase(pool: Pool, c: EvalCase, deps: AgentDeps): Promise<CaseContext> {
+async function seedCase(pool: Pool, c: EvalCase, deps: AgentDeps): Promise<CaseContext> {
   await resetDb(pool);
   for (const r of c.seed.capacity) {
     await seedRule(pool, {

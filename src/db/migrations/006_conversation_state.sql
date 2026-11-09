@@ -1,5 +1,5 @@
 -- Per-phone conversation state for the orchestrator (one live conversation per patient).
--- Retention/purge policy is DEFERRED — NEEDS-USER (LGPD finalidade/retenção).
+-- Retention/purge policy is DEFERRED — NEEDS-USER (LGPD purpose and retention).
 
 CREATE TABLE conversation_state (
   phone      text        PRIMARY KEY,

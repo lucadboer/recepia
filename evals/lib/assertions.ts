@@ -85,11 +85,7 @@ export function matchValue(actual: unknown, matcher: Matcher, obs: Observations)
   return actual === matcher;
 }
 
-export function matchCall(
-  call: ObservedToolCall,
-  expected: ExpectedCall,
-  obs: Observations,
-): boolean {
+function matchCall(call: ObservedToolCall, expected: ExpectedCall, obs: Observations): boolean {
   if (call.name !== expected.name) return false;
   if (!expected.input) return true;
   const input = (call.input ?? {}) as Record<string, unknown>;

@@ -1,30 +1,27 @@
-# Recepia — landing page (site estático)
+# recepia — landing page (static site)
 
-Landing page institucional/marketing da Recepia. HTML/CSS puro, **sem build**, pronta para publicar.
+The product's public landing page, in Brazilian Portuguese for dental clinics. Plain HTML and CSS,
+**no build step**. Live at [recepia-app.vercel.app](https://recepia-app.vercel.app).
 
-## Arquivos
-- `index.html` — landing principal (SEO técnico completo: title/description, Open Graph, Twitter, JSON-LD Organization/WebSite/Service/FAQPage, semântico, a11y).
-- `privacidade.html`, `termos.html` — páginas legais (LGPD).
-- `favicon.svg`, `og-image.svg` — ícone e imagem de compartilhamento.
-- `robots.txt`, `sitemap.xml` — SEO/crawlers.
+## Files
 
-## ⚠️ Antes de publicar: trocar o domínio
-Os arquivos usam `https://recepia-app.vercel.app/` como URL canônica. Se for publicar em outro
-endereço (ex.: `recepia-app.vercel.app`), substitua `https://recepia-app.vercel.app/` por sua URL real em:
-`index.html` (canonical + Open Graph + JSON-LD), `privacidade.html`, `termos.html`,
-`sitemap.xml` e `robots.txt`.
+- `index.html` — the landing page (full technical SEO: title/description, Open Graph, Twitter
+  cards, JSON-LD Organization/WebSite/Service/FAQPage, semantic markup, accessibility).
+- `privacidade.html`, `termos.html` — privacy policy and terms of use (LGPD). Meta's app setup for
+  the WhatsApp Cloud API asks for a privacy policy URL.
+- `favicon.svg` — the brand icon.
+- `og-image.png` — the 1200×630 link-preview image (WhatsApp and Facebook render a PNG more
+  reliably than an SVG); `og-image.svg` is the vector version.
+- `robots.txt`, `sitemap.xml` — for crawlers.
 
-## Publicar
+## Domain
 
-### Vercel (mais rápido)
-1. `vercel` na pasta `site/` (ou conecte o repo e defina o **Root Directory = `site`**).
-2. Pronto — HTTPS automático.
+Every file uses `https://recepia-app.vercel.app/` as the canonical URL. To publish under another
+domain, replace it in `index.html` (canonical, Open Graph, JSON-LD), `privacidade.html`,
+`termos.html`, `sitemap.xml` and `robots.txt`.
 
-### GitHub Pages
-1. Copie o conteúdo de `site/` para um repositório (ou use uma branch `gh-pages`).
-2. Settings → Pages → Source: a branch/pasta com estes arquivos.
+## Publishing
 
-## Imagem de compartilhamento (WhatsApp/Facebook)
-`og-image.svg` funciona, mas **WhatsApp/Facebook renderizam melhor um PNG**. Para preview
-perfeito nos links, gere um `og-image.png` 1200×630 e troque as tags `og:image`/`twitter:image`
-para `og-image.png`.
+- **Vercel**: run `vercel` in `site/`, or connect the repository with **Root Directory = `site`**.
+  HTTPS is automatic.
+- **GitHub Pages**: publish the contents of `site/` from a branch or folder (Settings → Pages).
