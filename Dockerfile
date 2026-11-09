@@ -2,8 +2,8 @@
 # recepia service image (ADR 0011): build with tsc, install production dependencies only, run on
 # distroless Node 24 as a non-root user. Migrations are a one-off: `docker run … src/db/migrate.js`.
 
-ARG BUILD_IMAGE=node:24-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
-ARG RUNTIME_IMAGE=gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9eeb7f5887d0e239e78264b06f7f11d2e14be534050481803a9e4728fcdd278e
+ARG BUILD_IMAGE=node:24-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d
+ARG RUNTIME_IMAGE=gcr.io/distroless/nodejs24-debian13:nonroot@sha256:088a01637f22908632ba09018be2e0b516f2fa6f7869c191d29491139db43c78
 
 # --- dependencies manifest (cached until the lockfile changes) -------------------------------------
 FROM ${BUILD_IMAGE} AS base
