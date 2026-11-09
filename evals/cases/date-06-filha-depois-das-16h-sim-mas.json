@@ -1,0 +1,134 @@
+{
+  "id": "date-06-filha-depois-das-16h-sim-mas",
+  "category": "ambiguous_date",
+  "title": "README demo: booking for a daughter with free-text constraints, then \"sim, mas…\" (a change, not a yes)",
+  "seed": {
+    "now": "2026-06-19T00:47:00Z",
+    "capacity": [
+      { "weekday": 1, "start": "09:00", "end": "18:00", "capacity": 2 },
+      { "weekday": 2, "start": "09:00", "end": "18:00", "capacity": 2 },
+      { "weekday": 3, "start": "09:00", "end": "18:00", "capacity": 2 },
+      { "weekday": 4, "start": "09:00", "end": "18:00", "capacity": 2 },
+      { "weekday": 5, "start": "09:00", "end": "18:00", "capacity": 2 }
+    ],
+    "consent": "opted_in"
+  },
+  "patient": {
+    "phone": "+5531900000136"
+  },
+  "turns": [
+    {
+      "text": "oi! queria marcar uma limpeza pra minha filha, a Iara. semana que vem, depois das 16h. terça não pode, ela tem inglês"
+    },
+    {
+      "text": "sim, quarta! mas se tiver 17h é melhor, pra dar tempo de buscar ela"
+    },
+    {
+      "text": "isso, pode confirmar!"
+    }
+  ],
+  "llmScript": [
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-22T19:00:00Z",
+          "to": "2026-06-26T21:00:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Para a Iara, na semana que vem depois das 16h: seg, 22/06 às 16:00 · qua, 24/06 às 16:00 · sex, 26/06 às 16:30. Qual fica melhor?"
+      }
+    ],
+    [
+      {
+        "tool": "get_availability",
+        "input": {
+          "from": "2026-06-24T20:00:00Z",
+          "to": "2026-06-24T20:30:00Z",
+          "type": "cleaning"
+        }
+      },
+      {
+        "tool": "hold_slot",
+        "input": {
+          "start": "$offeredSlot[0]",
+          "type": "cleaning"
+        }
+      },
+      {
+        "text": "Tem sim! Reservei qua, 24/06 às 17:00 para a Iara. Posso confirmar?"
+      }
+    ],
+    [
+      {
+        "tool": "confirm_booking",
+        "input": {
+          "hold_id": "$lastHoldId",
+          "patient_name": "Iara Teste"
+        }
+      },
+      {
+        "text": "Confirmado!"
+      }
+    ]
+  ],
+  "labels": {
+    "shouldEscalate": false
+  },
+  "expect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "get_availability",
+          "input": { "type": "cleaning" }
+        },
+        {
+          "name": "hold_slot",
+          "input": { "start": { "$between": ["2026-06-24T20:00:00Z", "2026-06-24T20:00:00Z"] } }
+        },
+        {
+          "name": "confirm_booking",
+          "input": { "hold_id": "$ownHoldId", "patient_name": "Iara Teste" }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  },
+  "liveExpect": {
+    "toolCalls": {
+      "mustInclude": [
+        {
+          "name": "hold_slot",
+          "input": { "start": { "$between": ["2026-06-24T20:00:00Z", "2026-06-24T20:00:00Z"] } }
+        },
+        {
+          "name": "confirm_booking",
+          "input": { "hold_id": "$ownHoldId" }
+        }
+      ],
+      "mustNotInclude": ["escalate_to_human"]
+    },
+    "writes": {
+      "holds": 1,
+      "bookings": 1,
+      "calendarEvents": 1,
+      "escalations": 0
+    },
+    "escalation": {
+      "expected": false
+    },
+    "status": "completed"
+  }
+}
