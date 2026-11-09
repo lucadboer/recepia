@@ -32,8 +32,8 @@ import {
   surfacedTurnOf,
 } from "./conversation.ts";
 import { isChangeRequest } from "./intent.ts";
-import { errorReply } from "./reply.ts";
 import { summarizeHistory } from "./summary.ts";
+import { errorFeedback } from "./tool-feedback.ts";
 import { TOOL_NAMES } from "./tool-schemas.ts";
 import type { ConversationState } from "./types.ts";
 
@@ -95,7 +95,7 @@ function result(
 const INVALID = { rejectedBy: "invalid_args" } as const;
 
 const CONFIRM_FIRST =
-  "Ainda não: mostre ao paciente a consulta (e o novo horário, se for remarcação) e peça a confirmação dele. Execute só depois que ele responder.";
+  "Not yet: show the patient the appointment (and the new time, for a reschedule) and ask them to confirm. Act only after they reply.";
 
 /**
  * GUARDRAILS 4 and 5 (006): a cancel/reschedule acts only on a booking find_my_booking showed in
@@ -107,7 +107,7 @@ function lifecycleGate(state: ConversationState, bookingId: string): ToolDispatc
   if (turn === null) {
     return result(
       state,
-      "Essa consulta não foi encontrada nesta conversa; use find_my_booking primeiro.",
+      "That appointment was not found in this conversation; use find_my_booking first.",
       true,
       { rejectedBy: "not_surfaced" },
     );
@@ -138,7 +138,7 @@ export async function dispatchTool(
         const to = asString(input.to);
         const type = asString(input.type);
         if (!from || !to || !type) {
-          return result(state, "Argumentos inválidos para get_availability.", true, INVALID);
+          return result(state, "Invalid arguments for get_availability.", true, INVALID);
         }
         const all = await getAvailability(deps, { from: new Date(from), to: new Date(to) }, type);
         // Expose at most AVAILABILITY_MAX_SLOTS (the earliest). What the model sees is EXACTLY
@@ -168,13 +168,13 @@ export async function dispatchTool(
         const start = asString(input.start);
         const type = asString(input.type);
         if (!start || !type) {
-          return result(state, "Argumentos inválidos para hold_slot.", true, INVALID);
+          return result(state, "Invalid arguments for hold_slot.", true, INVALID);
         }
         // GUARDRAIL 2: the slot must have been offered by get_availability in this conversation.
         if (!isOfferedSlot(state, new Date(start).toISOString())) {
           return result(
             state,
-            "Esse horário não foi oferecido nesta conversa; consulte a disponibilidade primeiro.",
+            "That time was not offered in this conversation; check availability first.",
             true,
             { rejectedBy: "not_offered" },
           );
@@ -197,11 +197,11 @@ export async function dispatchTool(
         const holdId = asString(input.hold_id);
         const patientName = asString(input.patient_name);
         if (!holdId || !patientName) {
-          return result(state, "Argumentos inválidos para confirm_booking.", true, INVALID);
+          return result(state, "Invalid arguments for confirm_booking.", true, INVALID);
         }
         // GUARDRAIL 3: only confirm a hold created in THIS conversation.
         if (!hasActiveHold(state, holdId)) {
-          return result(state, "Reserva não reconhecida nesta conversa.", true, {
+          return result(state, "Hold not recognised in this conversation.", true, {
             rejectedBy: "foreign_hold",
           });
         }
@@ -262,7 +262,7 @@ export async function dispatchTool(
       case TOOL_NAMES.cancelBooking: {
         const bookingId = asString(input.booking_id);
         if (!bookingId) {
-          return result(state, "Argumentos inválidos para cancel_booking.", true, INVALID);
+          return result(state, "Invalid arguments for cancel_booking.", true, INVALID);
         }
         const refused = lifecycleGate(state, bookingId);
         if (refused) return refused;
@@ -285,13 +285,13 @@ export async function dispatchTool(
         const bookingId = asString(input.booking_id);
         const holdId = asString(input.hold_id);
         if (!bookingId || !holdId) {
-          return result(state, "Argumentos inválidos para reschedule_booking.", true, INVALID);
+          return result(state, "Invalid arguments for reschedule_booking.", true, INVALID);
         }
         const refused = lifecycleGate(state, bookingId);
         if (refused) return refused;
         // GUARDRAIL 3 (reused): the new time must be a hold created in THIS conversation...
         if (!hasActiveHold(state, holdId)) {
-          return result(state, "Reserva não reconhecida nesta conversa.", true, {
+          return result(state, "Hold not recognised in this conversation.", true, {
             rejectedBy: "foreign_hold",
           });
         }
@@ -319,7 +319,7 @@ export async function dispatchTool(
       case TOOL_NAMES.confirmAttendance: {
         const bookingId = asString(input.booking_id);
         if (!bookingId) {
-          return result(state, "Argumentos inválidos para confirm_attendance.", true, INVALID);
+          return result(state, "Invalid arguments for confirm_attendance.", true, INVALID);
         }
         // GUARDRAIL 4 only: the booking must be the one shown in this conversation (the reminder's,
         // pre-recorded by the orchestrator, or find_my_booking's). Confirming attendance is not
@@ -327,7 +327,7 @@ export async function dispatchTool(
         if (surfacedTurnOf(state, bookingId) === null) {
           return result(
             state,
-            "Essa consulta não foi encontrada nesta conversa; use find_my_booking primeiro.",
+            "That appointment was not found in this conversation; use find_my_booking first.",
             true,
             { rejectedBy: "not_surfaced" },
           );
@@ -336,7 +336,7 @@ export async function dispatchTool(
         if (ctx.inboundText !== undefined && isChangeRequest(ctx.inboundText)) {
           return result(
             state,
-            "O paciente pediu uma mudança nesta mensagem; não confirme a presença. Siga o fluxo de cancelar ou remarcar.",
+            "The patient asked for a change in this message; do not confirm attendance. Follow the cancel or reschedule flow.",
             true,
             { rejectedBy: "change_requested" },
           );
@@ -371,7 +371,7 @@ export async function dispatchTool(
 
       default:
         // GUARDRAIL 1: closed allowlist — the LLM cannot invoke anything else.
-        return result(state, `Ferramenta desconhecida: ${name}`, true, {
+        return result(state, `Unknown tool: ${name}`, true, {
           rejectedBy: "unknown_tool",
         });
     }
@@ -384,6 +384,6 @@ export async function dispatchTool(
     const escalated = hasEscalatedFlag(e);
     if (escalated) state = markEscalated(state, now);
     const errorType = errorTypeOf(e);
-    return result(state, errorReply(e), true, { escalated, errorType });
+    return result(state, errorFeedback(e), true, { escalated, errorType });
   }
 }

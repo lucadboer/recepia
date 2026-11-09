@@ -57,6 +57,7 @@ import { classifyIntent, isAffirmative, isStrictAffirmative } from "./intent.ts"
 import { reply } from "./reply.ts";
 import { summarizeHistory } from "./summary.ts";
 import { buildSystemPrompt, reminderContextLine } from "./system-prompt.ts";
+import { toolFeedback } from "./tool-feedback.ts";
 import { dispatchTool, type ToolContext, type ToolDispatchResult } from "./tool-registry.ts";
 import { TOOL_NAMES, toolDefs } from "./tool-schemas.ts";
 import { triage } from "./triage.ts";
@@ -513,7 +514,7 @@ async function runTurn(
       // confirm_booking after escalate_to_human would flip the status back to completed.
       if (escalatedThisTurn) {
         return {
-          content: reply.toolCancelledAfterHandoff(),
+          content: toolFeedback.cancelledAfterHandoff(),
           isError: true,
           outcome: "rejected",
           rejectedBy: "after_handoff",

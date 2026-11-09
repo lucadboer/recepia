@@ -1,7 +1,7 @@
 /** Explicit, recoverable booking errors. Never thrown silently. */
 
 export class SlotUnavailableError extends Error {
-  constructor(message = "O horário não está mais disponível.") {
+  constructor(message = "The time is no longer available.") {
     super(message);
     this.name = "SlotUnavailableError";
   }
@@ -12,7 +12,7 @@ export class SlotUnavailableError extends Error {
  * indistinguishable to the caller, so a guessed id reveals nothing). 006.
  */
 export class BookingNotFoundError extends Error {
-  constructor(message = "Não encontrei essa consulta.") {
+  constructor(message = "Appointment not found.") {
     super(message);
     this.name = "BookingNotFoundError";
   }
@@ -20,7 +20,7 @@ export class BookingNotFoundError extends Error {
 
 /** The booking can no longer be cancelled or moved (already started, past, or not active). 006. */
 export class BookingNotChangeableError extends Error {
-  constructor(message = "Essa consulta não pode mais ser alterada.") {
+  constructor(message = "This appointment can no longer be changed.") {
     super(message);
     this.name = "BookingNotChangeableError";
   }
@@ -31,8 +31,8 @@ export class InvalidRescheduleError extends Error {
   constructor(public readonly reason: "same_time" | "different_type") {
     super(
       reason === "same_time"
-        ? "O novo horário é o mesmo da consulta atual."
-        : "O novo horário é de outro tipo de consulta.",
+        ? "The new time is the same as the current appointment."
+        : "The new time is for a different appointment type.",
     );
     this.name = "InvalidRescheduleError";
   }
@@ -40,14 +40,14 @@ export class InvalidRescheduleError extends Error {
 
 /** The requested start is outside [now + lead, now + horizon] or off the 30-min grid. */
 export class SlotOutOfWindowError extends Error {
-  constructor(message = "O horário está fora da janela de agendamento.") {
+  constructor(message = "The time is outside the booking window.") {
     super(message);
     this.name = "SlotOutOfWindowError";
   }
 }
 
 export class HoldExpiredError extends Error {
-  constructor(message = "A reserva expirou.") {
+  constructor(message = "The hold expired.") {
     super(message);
     this.name = "HoldExpiredError";
   }
@@ -55,20 +55,20 @@ export class HoldExpiredError extends Error {
 
 export class OutOfScopeError extends Error {
   constructor(public readonly requestedType: string) {
-    super(`Tipo fora do escopo de rotina: ${requestedType}`);
+    super(`Not a routine appointment type: ${requestedType}`);
     this.name = "OutOfScopeError";
   }
 }
 
 export class CalendarWriteError extends Error {
-  constructor(message = "Falha ao gravar o evento na agenda.") {
+  constructor(message = "Could not write the calendar event.") {
     super(message);
     this.name = "CalendarWriteError";
   }
 }
 
 export class MessagingSendError extends Error {
-  constructor(message = "Falha ao enviar a mensagem.") {
+  constructor(message = "Could not send the message.") {
     super(message);
     this.name = "MessagingSendError";
   }

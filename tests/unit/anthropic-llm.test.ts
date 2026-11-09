@@ -149,15 +149,15 @@ describe("AnthropicLLM — request shape for claude-sonnet-5-5 (research R1)", (
 describe("AnthropicLLM — prompt caching and timeout (005 FR-511, R5/R7)", () => {
   it("splits system into [static + cache_control, dated] and turns on automatic caching for the tail", async () => {
     const { client, calls } = stubClient([message({})]);
-    const system = "ESTÁTICO\n\nHoje é segunda-feira";
+    const system = "STATIC\n\nToday is Monday";
     await new AnthropicLLM({ client }).turn({
       ...input,
       system,
-      systemCacheablePrefix: "ESTÁTICO".length,
+      systemCacheablePrefix: "STATIC".length,
     });
     expect(calls[0].system).toEqual([
-      { type: "text", text: "ESTÁTICO", cache_control: { type: "ephemeral" } },
-      { type: "text", text: "\n\nHoje é segunda-feira" },
+      { type: "text", text: "STATIC", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "\n\nToday is Monday" },
     ]);
     expect(calls[0].cache_control).toEqual({ type: "ephemeral" });
   });

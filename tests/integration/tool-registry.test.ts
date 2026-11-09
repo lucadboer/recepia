@@ -47,7 +47,7 @@ describe("tool-registry — structural guardrails", () => {
   it("rejects an unknown tool name (closed allowlist) with no side-effects", async () => {
     const r = await dispatchTool(ctx(), "writeBooking", { sql: "DROP" });
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/desconhecida/);
+    expect(r.content).toMatch(/Unknown tool/);
     expect(await bookingCount()).toBe(0);
   });
 
@@ -67,7 +67,7 @@ describe("tool-registry — structural guardrails", () => {
       type: "cleaning",
     });
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/não foi oferecido/);
+    expect(r.content).toMatch(/was not offered/);
     expect(await bookingCount()).toBe(0);
   });
 
@@ -96,7 +96,7 @@ describe("tool-registry — structural guardrails", () => {
       patient_name: "Intruso",
     });
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/não reconhecida/);
+    expect(r.content).toMatch(/not recognised/);
     expect(calendar.createdCount).toBe(0);
   });
 
@@ -121,7 +121,7 @@ describe("tool-registry — structural guardrails", () => {
     });
 
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/não reconhecida/);
+    expect(r.content).toMatch(/not recognised/);
     expect(r.state).toBe(c.state); // state untouched
     expect(calendar.createdCount).toBe(0);
     expect(messaging.sent).toHaveLength(0);
@@ -279,7 +279,7 @@ describe("tool-registry × state bounds (T239)", () => {
       type: "cleaning",
     });
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/não foi oferecido/);
+    expect(r.content).toMatch(/was not offered/);
     expect(await bookingCount()).toBe(0);
   });
 });

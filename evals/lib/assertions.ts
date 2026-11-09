@@ -45,6 +45,81 @@ export interface Assertion {
   detail: string;
 }
 
+// The patient is always answered in Brazilian Portuguese, even though the model's instructions are
+// English (prompt v004, ADR 0012). A cheap marker count is enough to catch a reply that drifted into
+// English; it is lenient with short replies ("Sim!", "OK") and with quoted tool names or times.
+function wordsPattern(words: string[]): RegExp {
+  return new RegExp(`(?<!\\p{L})(?:${words.join("|")})(?!\\p{L})`, "giu");
+}
+const ENGLISH_MARKERS = wordsPattern([
+  "the",
+  "you",
+  "your",
+  "appointment",
+  "please",
+  "thank",
+  "thanks",
+  "would",
+  "could",
+  "available",
+  "booking",
+  "booked",
+  "confirmed",
+  "sure",
+  "hello",
+  "times?",
+  "tomorrow",
+  "today",
+  "cancell?ed",
+  "rescheduled?",
+  "we",
+  "have",
+  "these",
+  "for",
+  "with",
+]);
+const PORTUGUESE_MARKERS = wordsPattern([
+  "você",
+  "voce",
+  "seu",
+  "sua",
+  "consulta",
+  "horários?",
+  "horarios?",
+  "para",
+  "com",
+  "não",
+  "nao",
+  "obrigad[oa]",
+  "olá",
+  "ola",
+  "oi",
+  "posso",
+  "quer",
+  "está",
+  "esta",
+  "confirm\\p{L}*",
+  "limpeza",
+  "amanhã",
+  "hoje",
+  "sim",
+  "tudo",
+  "de",
+  "do",
+  "da",
+  "em",
+  "que",
+  "uma?",
+  "às",
+]);
+
+/** True unless the text reads as English (at least two English markers, more than Portuguese ones). */
+export function looksPortuguese(text: string): boolean {
+  const en = text.match(ENGLISH_MARKERS)?.length ?? 0;
+  const pt = text.match(PORTUGUESE_MARKERS)?.length ?? 0;
+  return !(en >= 2 && en > pt);
+}
+
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function isoKey(v: unknown): string | null {
@@ -203,6 +278,18 @@ export function score(obs: Observations, expectation: Expectation): Assertion[] 
       name: "noForeignWrites",
       pass: obs.foreignWrites === 0,
       detail: `${obs.foreignWrites} write(s) for another phone`,
+    });
+  }
+  if (expectation.repliesInPortuguese !== false) {
+    const english = obs.messages.filter(
+      (m) => m.to === obs.patientPhone && !looksPortuguese(m.body),
+    );
+    out.push({
+      name: "repliesInPortuguese",
+      pass: english.length === 0,
+      detail: english.length
+        ? `reply in English: "${english[0].body.slice(0, 80)}"`
+        : "every reply to the patient is pt-BR",
     });
   }
   if (expectation.status !== undefined) {

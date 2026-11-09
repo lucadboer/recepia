@@ -109,8 +109,8 @@ describe("buildSystemPrompt — versioned text (FR-409) + dated line (FR-213)", 
     const b = buildSystemPrompt({ ...ctx, now: new Date("2026-06-17T19:30:00Z") }).text.split("\n");
     expect(a.slice(0, -1)).toEqual(b.slice(0, -1));
     expect(a.at(-1)).not.toEqual(b.at(-1));
-    expect(a.at(-1)).toContain("segunda-feira");
-    expect(b.at(-1)).toContain("quarta-feira");
+    expect(a.at(-1)).toContain("Monday");
+    expect(b.at(-1)).toContain("Wednesday");
   });
 
   it("cacheablePrefixLength marks the static block: identical across instants, dated line after it", () => {
@@ -119,8 +119,8 @@ describe("buildSystemPrompt — versioned text (FR-409) + dated line (FR-213)", 
     expect(a.cacheablePrefixLength).toBeGreaterThan(200);
     expect(a.cacheablePrefixLength).toBe(b.cacheablePrefixLength);
     expect(a.text.slice(0, a.cacheablePrefixLength)).toBe(b.text.slice(0, b.cacheablePrefixLength));
-    expect(a.text.slice(a.cacheablePrefixLength)).toContain("segunda-feira");
-    expect(a.text.slice(0, a.cacheablePrefixLength)).not.toContain("Hoje é");
+    expect(a.text.slice(a.cacheablePrefixLength)).toContain("Monday");
+    expect(a.text.slice(0, a.cacheablePrefixLength)).not.toContain("Today is");
   });
 
   it("renders a given artifact (so a test can pin the exact instructions)", () => {

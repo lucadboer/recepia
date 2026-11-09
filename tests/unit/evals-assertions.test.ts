@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isSubsequence, matchValue, type Observations, score } from "../../evals/lib/assertions";
+import {
+  isSubsequence,
+  looksPortuguese,
+  matchValue,
+  type Observations,
+  score,
+} from "../../evals/lib/assertions";
 import type { Expectation } from "../../evals/lib/case-schema";
 
 // T412 — scoring is pure and over what the agent DID. Every matcher, the ordered-subsequence
@@ -131,6 +137,7 @@ describe("score — one assertion per expectation field", () => {
         "noHallucinatedSlots",
         "noWriteWithoutConsent",
         "patientMessages",
+        "repliesInPortuguese",
         "status",
         "toolCalls.mustInclude",
         "toolCalls.mustNotInclude",
@@ -261,5 +268,40 @@ describe("006 — booking-lifecycle matchers and writes", () => {
       "writes.calendarDeletes": true,
       "writes.receptionNotices": false,
     });
+  });
+});
+
+describe("repliesInPortuguese — the patient is always answered in pt-BR (prompt v004, ADR 0012)", () => {
+  it("accepts Brazilian Portuguese replies, including ones that quote a tool name or a time", () => {
+    for (const text of [
+      "Tenho estes horários livres: ter, 14/07 às 14:00. Qual prefere?",
+      "Sua consulta de limpeza está confirmada para 15/07/2026 às 09:30. Até breve!",
+      "Sim!",
+      "OK",
+    ]) {
+      expect(looksPortuguese(text)).toBe(true);
+    }
+  });
+
+  it("rejects a reply written in English", () => {
+    expect(
+      looksPortuguese("Sure! I have these times available for your appointment: Tuesday at 2 pm."),
+    ).toBe(false);
+    expect(looksPortuguese("Your booking is confirmed. Thank you!")).toBe(false);
+  });
+
+  it("is a default invariant: an English reply to the patient fails the case", () => {
+    const english = obs({
+      messages: [{ to: "+5531900000101", body: "Your appointment is confirmed, thank you!" }],
+    });
+    const a = score(english, {}).find((x) => x.name === "repliesInPortuguese");
+    expect(a?.pass).toBe(false);
+    const pt = score(obs(), {}).find((x) => x.name === "repliesInPortuguese");
+    expect(pt?.pass).toBe(true);
+    // Reception's messages are not the patient's: they are not checked here.
+    const toReception = obs({
+      messages: [{ to: "+5511999999999", body: "Your patient is confirmed" }],
+    });
+    expect(score(toReception, {}).find((x) => x.name === "repliesInPortuguese")?.pass).toBe(true);
   });
 });
