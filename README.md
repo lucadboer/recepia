@@ -9,10 +9,20 @@ everything else to the clinic's reception. The model proposes; **only determinis
 and every write is audited. Built test-first with Spec Driven Development (GitHub Spec Kit),
 TypeScript, PostgreSQL and the Anthropic API.
 
+<p align="center">
+  <img src="docs/img/whatsapp-demo.svg" width="400" alt="Animated WhatsApp conversation: a patient books a cleaning; labels under the agent's messages show get_availability, hold_slot and confirm_booking doing each step; a day before, the reminder's SIM is confirmed with no model call">
+</p>
+<p align="center"><sub>Every label is the deterministic tool that did that step. The model's wording is
+illustrative; the confirmation and the reminder are the product's exact templates, and the
+reminder's "SIM" never reaches the model.</sub></p>
+
 > **Status (honest):** side project. No clinic is using it yet and there are no production
 > metrics. The real adapters (Anthropic, Google Calendar, WhatsApp Cloud API and Evolution) exist
 > and were exercised manually with real credentials; everything described below is verified by the
 > automated suite against a real PostgreSQL with in-memory fakes for the external systems.
+
+The product's landing page (pt-BR, for Brazilian clinics) is live at
+[recepia-app.vercel.app](https://recepia-app.vercel.app); its static source is in [`site/`](site/).
 
 ## The problem
 
