@@ -118,7 +118,9 @@ describe("FallbackLLM", () => {
   });
 });
 
-describe('review fix H1 — classification with REAL Anthropic SDK errors (the SDK leaves name = "Error")', async () => {
+// Review fix H1: the classifier goes by class and status, never by `name` — SDK 0.x left every
+// error named "Error", SDK 1.x names them properly; either way the verdict must be the same.
+describe("review fix H1 — classification with REAL Anthropic SDK errors (class and status, not name)", async () => {
   const Anthropic = (await import("@anthropic-ai/sdk")).default;
   const headers = new Headers();
   it.each([
@@ -131,7 +133,9 @@ describe('review fix H1 — classification with REAL Anthropic SDK errors (the S
     ["AuthenticationError 401", new Anthropic.AuthenticationError(401, {}, "auth", headers), false],
     ["APIUserAbortError", new Anthropic.APIUserAbortError(), false],
   ])("%s → transient %s", (_label, err, expected) => {
-    expect(err.name).toBe("Error"); // why name-based checks were wrong
+    expect(isTransientLlmError(err)).toBe(expected);
+    // The same error with its name wiped (as SDK 0.x shipped it) is classified the same way.
+    Object.defineProperty(err, "name", { value: "Error" });
     expect(isTransientLlmError(err)).toBe(expected);
   });
 
