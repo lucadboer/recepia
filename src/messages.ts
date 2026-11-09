@@ -1,6 +1,6 @@
 // Patient-facing strings — Portuguese only (FR-019, constitution).
 
-import type { AppointmentType } from "./config.ts";
+import { type AppointmentType, CLINIC_TIMEZONE } from "./config.ts";
 import { formatLocalPt } from "./domain/time.ts";
 
 const TYPE_LABELS_PT: Record<AppointmentType, string> = {
@@ -21,18 +21,41 @@ export function formatSlotPt(start: Date): string {
   return `${date} às ${time}`;
 }
 
+const weekdayLongPt = new Map<string, Intl.DateTimeFormat>();
+
+/**
+ * How a person says an appointment time in a chat, in clinic-local time: "quarta, 24/06, às 17h"
+ * or "segunda, 22/06, às 9h30". Used in the patient's session messages; reception notices and the
+ * reminder (which mirrors an approved WhatsApp template) keep the full DD/MM/YYYY às HH:MM.
+ */
+export function friendlySlotPt(start: Date, tz: string = CLINIC_TIMEZONE): string {
+  let f = weekdayLongPt.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat("pt-BR", { timeZone: tz, weekday: "long" });
+    weekdayLongPt.set(tz, f);
+  }
+  const weekday = f.format(start).replace(/-feira$/, "");
+  const { date, time } = formatLocalPt(start, tz);
+  const [hh, mi] = time.split(":") as [string, string];
+  const hour = `${Number(hh)}h${mi === "00" ? "" : mi}`;
+  return `${weekday}, ${date.slice(0, 5)}, às ${hour}`;
+}
+
+// Session messages below: warm but brief, and phrased so they also read right when the
+// appointment is for someone else (a parent booking for a child) — no "sua" in front of it.
+
 export function confirmationMessagePt(type: AppointmentType, start: Date): string {
-  return `Sua consulta de ${TYPE_LABELS_PT[type]} está confirmada para ${formatSlotPt(start)}. Até breve!`;
+  return `Prontinho! Consulta de ${TYPE_LABELS_PT[type]} confirmada para ${friendlySlotPt(start)}. Até lá! 😊`;
 }
 
 /** Patient: the cancellation committed with the change (006 FR-604). */
 export function cancellationMessagePt(type: AppointmentType, start: Date): string {
-  return `Sua consulta de ${TYPE_LABELS_PT[type]} de ${formatSlotPt(start)} foi cancelada. Se quiser marcar outro horário, é só me chamar.`;
+  return `Pronto, a consulta de ${TYPE_LABELS_PT[type]} de ${friendlySlotPt(start)} foi cancelada. Quando quiser marcar outro horário, é só me chamar por aqui.`;
 }
 
 /** Patient: the reschedule committed with the change (006 FR-605). */
 export function rescheduledMessagePt(type: AppointmentType, from: Date, to: Date): string {
-  return `Pronto! Sua consulta de ${TYPE_LABELS_PT[type]} foi remarcada de ${formatSlotPt(from)} para ${formatSlotPt(to)}. Até breve!`;
+  return `Prontinho! A consulta de ${TYPE_LABELS_PT[type]} foi remarcada de ${friendlySlotPt(from)} para ${friendlySlotPt(to)}. Até lá!`;
 }
 
 /** Reception: a cancel or reschedule less than 24h before the appointment (006 FR-606). */
@@ -98,7 +121,7 @@ export function reminderTemplateParams(r: ReminderInput): string[] {
 
 /** Patient: attendance confirmed after the reminder (007 FR-703). */
 export function attendanceConfirmedMessagePt(type: AppointmentType, start: Date): string {
-  return `Presença confirmada na sua consulta de ${TYPE_LABELS_PT[type]} em ${formatSlotPt(start)}. Até lá!`;
+  return `Que bom! Presença confirmada na consulta de ${TYPE_LABELS_PT[type]} de ${friendlySlotPt(start)}. Te esperamos!`;
 }
 
 /** Reception: the patient did not answer the reminder (007 FR-705). */

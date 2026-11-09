@@ -10,6 +10,19 @@ Rules: a new file (`v002.md`, …) for a change in instructions; an entry here f
 (the loader refuses to start without it); a baseline update in the same PR when the eval numbers
 move (feature 004).
 
+## v005 — 2026-11-09
+- Voice (owner feedback on the README demo: "achei a IA meio rude"). The live v004 replies were
+  correct but stiff ("Excluindo a terça, os horários livres após as 16h são estes:", "Fica
+  assim:") and once pushy ("A reserva fica garantida por alguns minutos, então me responda
+  logo."). New "Voice" section: warm, natural, professional WhatsApp pt-BR; acknowledge the
+  request; use the name of the person the appointment is for; one to three short paragraphs; WhatsApp
+  formatting only (*single asterisks*, bold for days and times); never narrate internal steps;
+  never rush the patient or mention the hold timer unless asked or expired; at most one emoji,
+  none in sensitive moments; a kind sentence and a next step when something does not work out.
+- Sample phrasing rewritten in that voice (times grouped by day instead of a numbered list; no
+  "(responda SIM)" on the booking confirmation — the model reads "pode", "isso", "sim").
+  Instructions and gates are unchanged.
+
 ## v004 — 2026-11-09
 - Model-facing text in English (ADR 0012): the instructions in this file, the dated line and the
   reminder context line (`src/agent/system-prompt.ts`), the tool descriptions

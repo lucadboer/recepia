@@ -40,7 +40,7 @@ describe("follow-ups", () => {
   it("attendance reply restates the day and time", () => {
     const m = attendanceConfirmedMessagePt("cleaning", START);
     expect(m).toMatch(/confirmada/);
-    expect(m).toContain("18/06/2026 às 09:00");
+    expect(m).toContain("quinta, 18/06, às 9h");
   });
 
   it("reception's unconfirmed notice names the patient, the phone and the time", () => {

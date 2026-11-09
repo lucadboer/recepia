@@ -16,7 +16,7 @@ describe("patient messages", () => {
   it("cancellation names the type and the local date/time and invites a new booking", () => {
     const m = cancellationMessagePt("cleaning", OLD);
     expect(m).toContain("limpeza");
-    expect(m).toContain("18/06/2026 às 09:00");
+    expect(m).toContain("quinta, 18/06, às 9h");
     expect(m).toMatch(/cancelada/);
     expect(m).not.toMatch(/UTC|Z\b/);
   });
@@ -24,8 +24,8 @@ describe("patient messages", () => {
   it("reschedule shows the old and the new local time", () => {
     const m = rescheduledMessagePt("evaluation", OLD, NEW);
     expect(m).toContain("avaliação");
-    expect(m).toContain("18/06/2026 às 09:00");
-    expect(m).toContain("19/06/2026 às 14:00");
+    expect(m).toContain("quinta, 18/06, às 9h");
+    expect(m).toContain("sexta, 19/06, às 14h");
     expect(m).toMatch(/remarcada/);
   });
 });
