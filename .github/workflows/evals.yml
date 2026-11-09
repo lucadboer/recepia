@@ -3,23 +3,20 @@
 #    with the scripted stand-in on every push to main and every pull request; any failing case
 #    fails the job (SC-401: < 2 min, exactly repeatable).
 #  - `live`: the golden set against the production model (claude-sonnet-5-5), compared with
-#    evals/baseline.json under a spend cap. Owner budget (004 amendment, 2026-10-08): weekly and on
-#    demand at 1 repetition / US$ 0.75 by default; on a pull request ONLY when the `live-evals`
-#    label is applied (one paid run per application, a push never spends), over the cases in
-#    evals/live-subset.txt under US$ 0.40. Skipped explicitly (never a pass) when ANTHROPIC_API_KEY
-#    is not configured as a repository secret. Full-set scheduled/dispatched runs publish their
-#    report through a pull request — never a direct commit; a subset run is never published; the
-#    baseline is never written by automation (FR-406, FR-407). The live check on a pull request is
-#    opt-in and informational — never configure it as a required check; `fake` is the gate.
+#    evals/baseline.json under a spend cap. It spends API credit, so it runs ONLY when started by
+#    hand (owner decision 2026-11-09): Actions → evals → Run workflow, at 1 repetition / US$ 0.75 by
+#    default; `cases` narrows it to a subset (e.g. the ids in evals/live-subset.txt). No schedule,
+#    no push and no pull request ever starts it. Skipped explicitly (never a pass) when
+#    ANTHROPIC_API_KEY is not configured as a repository secret. A full-set run on main publishes
+#    its report through a pull request — never a direct commit; a subset run is never published;
+#    the baseline is never written by automation (FR-406, FR-407). Never a required check: `fake`
+#    is the gate.
 name: evals
 
 on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
-  schedule:
-    - cron: "0 6 * * 0" # Sunday 06:00 UTC — weekly live run
   workflow_dispatch:
     inputs:
       model:
@@ -84,11 +81,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - name: Prompt changed? (the live run is opt-in through the live-evals label)
+      - name: Prompt changed? (the live run is started by hand)
         if: github.event_name == 'pull_request'
         run: |
           if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^prompts/'; then
-            echo "::warning::prompts/** changed — apply the live-evals label to measure this prompt against the baseline (1 repetition, cap US\$ 0.40)"
+            echo "::warning::prompts/** changed — run the live evaluation on this branch by hand (Actions → evals → Run workflow) to measure this prompt against the baseline"
           fi
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
@@ -125,9 +122,8 @@ jobs:
 
   live:
     name: live metrics (production model vs committed baseline)
-    if: >-
-      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.event.action == 'labeled' && github.event.label.name == 'live-evals')
+    # Spends API credit: only ever started by hand (owner decision 2026-11-09).
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 25 # SC-406: a full run must finish under 20 minutes
     permissions:
