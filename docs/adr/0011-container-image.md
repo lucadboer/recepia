@@ -25,7 +25,8 @@ prompt, the pricing table, `package.json`).
   other Google API (production dependencies 314 MB → ~70 MB; image 457 MB → 212 MB). Validated with
   the live Calendar test.
 - **CI (`docker.yml`)**: Trivy on the repository (dependencies, secrets, misconfiguration) and on
-  the image, failing on fixable HIGH/CRITICAL findings and uploading SARIF to the Security tab; a
+  the image, failing on fixable MEDIUM/HIGH/CRITICAL findings (MEDIUM added 2026-11-09, owner
+  decision) and uploading SARIF to the Security tab; a
   build with the GitHub Actions cache; a smoke test that migrates a Postgres service and probes
   `/healthz` and `/readyz` on the running image as `nonroot`; on `main`, a push to
   `ghcr.io/lucadboer/recepia` (commit-sha and `latest` tags) with an SBOM and provenance. A weekly
